@@ -4,13 +4,12 @@ on:
   pull_request:
     types:
       - labeled
-
-pull_request_review:
+  workflow_dispatch:
+  pull_request_review:
     types:
-      - dismissed
       - submitted
 
-workflow_dispatch:
+
 
 jobs:
   merge:
