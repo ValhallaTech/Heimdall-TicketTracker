@@ -1,0 +1,968 @@
+﻿//using System;
+//using System.Diagnostics;
+//using System.Linq;
+//using System.Threading.Tasks;
+//using Microsoft.AspNetCore.Identity;
+//using ValhallaHeimdall.BLL.Models;
+
+//namespace ValhallaHeimdall.DAL.Data
+//{
+//    public enum Roles
+//    {
+//        Administrator,
+
+//        ProjectManager,
+
+//        Developer,
+
+//        Submitter,
+
+//        NewUser,
+
+//        DemoUser
+//    }
+
+//    public enum TicketTypes
+//    {
+//        BasicFunctionality,
+
+//        UserInterface,
+
+//        FeatureEnhancement,
+
+//        DocumentationUpdate,
+
+//        Bug
+//    }
+
+//    public enum TicketPriorities
+//    {
+//        Low,
+
+//        Moderate,
+
+//        Major,
+
+//        Critical
+//    }
+
+//    public enum TicketStatuses
+//    {
+//        Opened,
+
+//        InProgress,
+
+//        QualityAssurance,
+
+//        FinalPass,
+
+//        Closed
+//    }
+
+//    public static class ContextSeed
+//    {
+//        // Seed Roles
+//        public static async Task SeedRolesAsync( RoleManager<IdentityRole> roleManager )
+//        {
+//            await roleManager.CreateAsync( new IdentityRole( nameof( Roles.Administrator ) ) ).ConfigureAwait( false );
+//            await roleManager.CreateAsync( new IdentityRole( nameof( Roles.ProjectManager ) ) ).ConfigureAwait( false );
+//            await roleManager.CreateAsync( new IdentityRole( nameof( Roles.Developer ) ) ).ConfigureAwait( false );
+//            await roleManager.CreateAsync( new IdentityRole( nameof( Roles.Submitter ) ) ).ConfigureAwait( false );
+//            await roleManager.CreateAsync( new IdentityRole( nameof( Roles.NewUser ) ) ).ConfigureAwait( false );
+//            await roleManager.CreateAsync( new IdentityRole( nameof( Roles.DemoUser ) ) ).ConfigureAwait( false );
+//        }
+
+//        // Seed Users
+//        public static async Task SeedDefaultUsersAsync( UserManager<HeimdallUser> userManager )
+//        {
+//            HeimdallUser defaultAdmin = new HeimdallUser
+//                                        {
+//                                            UserName       = "testmail01@mailinator.com",
+//                                            Email          = "testmail01@mailinator.com",
+//                                            FirstName      = "Fred",
+//                                            LastName       = "Smith",
+//                                            EmailConfirmed = true
+//                                        };
+
+//            try
+//            {
+//                HeimdallUser user = await userManager.FindByEmailAsync( defaultAdmin.Email ).ConfigureAwait( false );
+
+//                if ( user == null )
+//                {
+//                    await userManager.CreateAsync( defaultAdmin, "rQN$714hv!2E" ).ConfigureAwait( false );
+//                    await userManager.AddToRoleAsync( defaultAdmin, nameof( Roles.Administrator ) )
+//                                     .ConfigureAwait( false );
+//                }
+//            }
+//            catch ( Exception ex )
+//            {
+//                Debug.WriteLine( "************ ERROR  ************" );
+//                Debug.WriteLine( "Error Seeding Default Administrator User." );
+//                Debug.WriteLine( ex.Message );
+//                Debug.WriteLine( "********************************" );
+
+//                throw;
+//            }
+
+//            HeimdallUser defaultPm = new HeimdallUser
+//                                     {
+//                                         UserName       = "testmail02@mailinator.com",
+//                                         Email          = "testmail02@mailinator.com",
+//                                         FirstName      = "Bill",
+//                                         LastName       = "Williams",
+//                                         EmailConfirmed = true
+//                                     };
+
+//            try
+//            {
+//                HeimdallUser user = await userManager.FindByEmailAsync( defaultPm.Email ).ConfigureAwait( false );
+
+//                if ( user == null )
+//                {
+//                    await userManager.CreateAsync( defaultPm, "Abc&123!" ).ConfigureAwait( false );
+//                    await userManager.AddToRoleAsync( defaultPm, nameof( Roles.ProjectManager ) )
+//                                     .ConfigureAwait( false );
+//                }
+//            }
+//            catch ( Exception ex )
+//            {
+//                Debug.WriteLine( "************ ERROR  ************" );
+//                Debug.WriteLine( "Error Seeding Default ProjectManager User." );
+//                Debug.WriteLine( ex.Message );
+//                Debug.WriteLine( "********************************" );
+
+//                throw;
+//            }
+
+
+
+//            HeimdallUser defaultDeveloper = new HeimdallUser
+//                                            {
+//                                                UserName       = "testmail03@mailinator.com",
+//                                                Email          = "testmail03@mailinator.com",
+//                                                FirstName      = "Nugz",
+//                                                LastName       = "McNugz",
+//                                                EmailConfirmed = true
+//                                            };
+
+//            try
+//            {
+//                HeimdallUser user =
+//                    await userManager.FindByEmailAsync( defaultDeveloper.Email ).ConfigureAwait( false );
+
+//                if ( user == null )
+//                {
+//                    await userManager.CreateAsync( defaultDeveloper, "Abc&123!" ).ConfigureAwait( false );
+//                    await userManager.AddToRoleAsync( defaultDeveloper, nameof( Roles.Developer ) )
+//                                     .ConfigureAwait( false );
+//                }
+//            }
+//            catch ( Exception ex )
+//            {
+//                Debug.WriteLine( "************ ERROR  ************" );
+//                Debug.WriteLine( "Error Seeding Default Developer User." );
+//                Debug.WriteLine( ex.Message );
+//                Debug.WriteLine( "********************************" );
+
+//                throw;
+//            }
+
+
+
+//            #region Default Submitter
+
+//            HeimdallUser defaultSubmitter = new HeimdallUser
+//                                            {
+//                                                UserName       = "testmail04@mailinator.com",
+//                                                Email          = "testmail04@mailinator.com",
+//                                                FirstName      = "Nill",
+//                                                LastName       = "Nullable",
+//                                                EmailConfirmed = true
+//                                            };
+
+//            try
+//            {
+//                HeimdallUser user =
+//                    await userManager.FindByEmailAsync( defaultSubmitter.Email ).ConfigureAwait( false );
+
+//                if ( user == null )
+//                {
+//                    await userManager.CreateAsync( defaultSubmitter, "Abc&123!" ).ConfigureAwait( false );
+//                    await userManager.AddToRoleAsync( defaultSubmitter, nameof( Roles.Submitter ) )
+//                                     .ConfigureAwait( false );
+//                }
+//            }
+//            catch ( Exception ex )
+//            {
+//                Debug.WriteLine( "************ ERROR  ************" );
+//                Debug.WriteLine( "Error Seeding Default Submitter User." );
+//                Debug.WriteLine( ex.Message );
+//                Debug.WriteLine( "********************************" );
+
+//                throw;
+//            }
+
+//            #endregion
+
+//            #region Default New User
+
+//            HeimdallUser defaultNewUser = new HeimdallUser
+//                                          {
+//                                              UserName       = "testmail05@mailinator.com",
+//                                              Email          = "testmail05@mailinator.com",
+//                                              FirstName      = "Noob",
+//                                              LastName       = "Neophyte",
+//                                              EmailConfirmed = true
+//                                          };
+
+//            try
+//            {
+//                HeimdallUser user = await userManager.FindByEmailAsync( defaultNewUser.Email ).ConfigureAwait( false );
+
+//                if ( user == null )
+//                {
+//                    await userManager.CreateAsync( defaultNewUser, "Abc&123!" ).ConfigureAwait( false );
+//                    await userManager.AddToRoleAsync( defaultNewUser, nameof( Roles.NewUser ) ).ConfigureAwait( false );
+//                }
+//            }
+//            catch ( Exception ex )
+//            {
+//                Debug.WriteLine( "************ ERROR  ************" );
+//                Debug.WriteLine( "Error Seeding Default NewUser User." );
+//                Debug.WriteLine( ex.Message );
+//                Debug.WriteLine( "********************************" );
+
+//                throw;
+//            }
+
+//            #endregion
+//        }
+
+//        // In order to have default values in place for our Ticket types, statuses, and priorities, we need to seed
+//        // default values in place.
+//        public static async Task SeedTicketListsAsync( ApplicationDbContext context )
+//        {
+//            try
+//            {
+//                // Types
+//                bool types = context.TicketTypes.Any( );
+
+//                if ( types == false )
+//                {
+//                    TicketType type = new TicketType { Name = TicketTypes.BasicFunctionality.ToString( ) };
+//                    await context.TicketTypes.AddAsync( type ).ConfigureAwait( false );
+//                    type = new TicketType { Name = TicketTypes.UserInterface.ToString( ) };
+//                    await context.TicketTypes.AddAsync( type ).ConfigureAwait( false );
+//                    type = new TicketType { Name = TicketTypes.FeatureEnhancement.ToString( ) };
+//                    await context.TicketTypes.AddAsync( type ).ConfigureAwait( false );
+//                    type = new TicketType { Name = TicketTypes.DocumentationUpdate.ToString( ) };
+//                    await context.TicketTypes.AddAsync( type ).ConfigureAwait( false );
+//                    type = new TicketType { Name = TicketTypes.Bug.ToString( ) };
+//                    await context.TicketTypes.AddAsync( type ).ConfigureAwait( false );
+//                    await context.SaveChangesAsync( ).ConfigureAwait( false );
+//                }
+
+//                // Priority
+//                bool priorites = context.TicketPriorities.Any( );
+
+//                if ( priorites == false )
+//                {
+//                    TicketPriority priority = new TicketPriority { Name = TicketPriorities.Low.ToString( ) };
+//                    await context.TicketPriorities.AddAsync( priority ).ConfigureAwait( false );
+//                    priority = new TicketPriority { Name = TicketPriorities.Moderate.ToString( ) };
+//                    await context.TicketPriorities.AddAsync( priority ).ConfigureAwait( false );
+//                    priority = new TicketPriority { Name = TicketPriorities.Major.ToString( ) };
+//                    await context.TicketPriorities.AddAsync( priority ).ConfigureAwait( false );
+//                    priority = new TicketPriority { Name = TicketPriorities.Critical.ToString( ) };
+//                    await context.TicketPriorities.AddAsync( priority ).ConfigureAwait( false );
+//                    await context.SaveChangesAsync( ).ConfigureAwait( false );
+//                }
+
+//                // Status
+//                bool statuses = context.TicketStatuses.Any( );
+
+//                if ( statuses == false )
+//                {
+//                    TicketStatus status = new TicketStatus { Name = TicketStatuses.Opened.ToString( ) };
+//                    await context.TicketStatuses.AddAsync( status ).ConfigureAwait( false );
+//                    status = new TicketStatus { Name = TicketStatuses.InProgress.ToString( ) };
+//                    await context.TicketStatuses.AddAsync( status ).ConfigureAwait( false );
+//                    status = new TicketStatus { Name = TicketStatuses.QualityAssurance.ToString( ) };
+//                    await context.TicketStatuses.AddAsync( status ).ConfigureAwait( false );
+//                    status = new TicketStatus { Name = TicketStatuses.FinalPass.ToString( ) };
+//                    await context.TicketStatuses.AddAsync( status ).ConfigureAwait( false );
+//                    status = new TicketStatus { Name = TicketStatuses.Closed.ToString( ) };
+//                    await context.TicketStatuses.AddAsync( status ).ConfigureAwait( false );
+//                    await context.SaveChangesAsync( ).ConfigureAwait( false );
+//                }
+//            }
+//            catch ( Exception ex )
+//            {
+//                Debug.WriteLine( "*********** ERROR **********" );
+//                Debug.WriteLine( "Error Seeding Ticket Priorities." );
+//                Debug.WriteLine( ex.Message );
+//                Debug.WriteLine( "****************************" );
+
+//                throw;
+//            }
+//        }
+
+//        #region Demo Admin Seed
+
+//        public static async Task SeedDemoUsersAsync(
+//            UserManager<HeimdallUser> userManager,
+//            RoleManager<IdentityRole> roleManager )
+//        {
+//            HeimdallUser demoAdmin = new HeimdallUser
+//                                     {
+//                                         UserName       = "demomail01@mailinator.com",
+//                                         Email          = "demomail01@mailinator.com",
+//                                         FirstName      = "Fred",
+//                                         LastName       = "Smith",
+//                                         EmailConfirmed = true
+//                                     };
+
+//            try
+//            {
+//                HeimdallUser user = await userManager.FindByEmailAsync( demoAdmin.Email ).ConfigureAwait( false );
+
+//                if ( user == null )
+//                {
+//                    await userManager.CreateAsync( demoAdmin, "rQN$714hv!2E" ).ConfigureAwait( false );
+
+//                    await userManager.AddToRoleAsync( demoAdmin, nameof( Roles.Administrator ) )
+//                                     .ConfigureAwait( false );
+//                }
+//            }
+//            catch ( Exception ex )
+//            {
+//                Debug.WriteLine( "************ ERROR  ************" );
+//                Debug.WriteLine( "Error Seeding Default Administrator User." );
+//                Debug.WriteLine( ex.Message );
+//                Debug.WriteLine( "********************************" );
+
+//                throw;
+//            }
+
+//            #endregion
+
+//            // SeedDefault Project Manager
+//            HeimdallUser demoPm = new HeimdallUser
+//                                  {
+//                                      UserName       = "demomail02@mailinator.com",
+//                                      Email          = "demomail02@mailinator.com",
+//                                      FirstName      = "Bill",
+//                                      LastName       = "Williams",
+//                                      EmailConfirmed = true
+//                                  };
+
+//            try
+//            {
+//                HeimdallUser user = await userManager.FindByEmailAsync( demoPm.Email ).ConfigureAwait( false );
+
+//                if ( user == null )
+//                {
+//                    await userManager.CreateAsync( demoPm, "rQN$714hv!2E" ).ConfigureAwait( false );
+
+//                    await userManager.AddToRoleAsync( demoPm, nameof( Roles.ProjectManager ) ).ConfigureAwait( false );
+//                }
+//            }
+//            catch ( Exception ex )
+//            {
+//                Debug.WriteLine( "************ ERROR  ************" );
+//                Debug.WriteLine( "Error Seeding Default ProjectManager User." );
+//                Debug.WriteLine( ex.Message );
+//                Debug.WriteLine( "********************************" );
+
+//                throw;
+//            }
+
+//            // Seed Demo Developer
+//            HeimdallUser demoDeveloper = new HeimdallUser
+//                                         {
+//                                             UserName       = "demomail03@mailinator.com",
+//                                             Email          = "demomail03@mailinator.com",
+//                                             FirstName      = "Nugz",
+//                                             LastName       = "McNugz",
+//                                             EmailConfirmed = true
+//                                         };
+
+//            try
+//            {
+//                HeimdallUser user = await userManager.FindByEmailAsync( demoDeveloper.Email ).ConfigureAwait( false );
+
+//                if ( user == null )
+//                {
+//                    await userManager.CreateAsync( demoDeveloper, "Abc&123!" ).ConfigureAwait( false );
+
+//                    await userManager.AddToRoleAsync( demoDeveloper, nameof( Roles.Developer ) )
+//                                     .ConfigureAwait( false );
+//                }
+//            }
+//            catch ( Exception ex )
+//            {
+//                Debug.WriteLine( "************ ERROR  ************" );
+//                Debug.WriteLine( "Error Seeding Default Developer User." );
+//                Debug.WriteLine( ex.Message );
+//                Debug.WriteLine( "********************************" );
+
+//                throw;
+//            }
+
+//            // Seed Demo Submitter
+//            HeimdallUser demoSubmitter = new HeimdallUser
+//                                         {
+//                                             UserName       = "demomail04@mailinator.com",
+//                                             Email          = "demomail04@mailinator.com",
+//                                             FirstName      = "Nill",
+//                                             LastName       = "Nullable",
+//                                             EmailConfirmed = true
+//                                         };
+
+//            try
+//            {
+//                HeimdallUser user = await userManager.FindByEmailAsync( demoSubmitter.Email ).ConfigureAwait( false );
+
+//                if ( user == null )
+//                {
+//                    await userManager.CreateAsync( demoSubmitter, "Abc&123!" ).ConfigureAwait( false );
+
+//                    await userManager.AddToRoleAsync( demoSubmitter, nameof( Roles.Submitter ) )
+//                                     .ConfigureAwait( false );
+//                }
+//            }
+//            catch ( Exception ex )
+//            {
+//                Debug.WriteLine( "************ ERROR  ************" );
+//                Debug.WriteLine( "Error Seeding Default Submitter User." );
+//                Debug.WriteLine( ex.Message );
+//                Debug.WriteLine( "********************************" );
+
+//                throw;
+//            }
+
+//            // SeedDefault NewUser
+//            HeimdallUser demoNewUser = new HeimdallUser
+//                                       {
+//                                           UserName       = "demomail05@mailinator.com",
+//                                           Email          = "demomail05@mailinator.com",
+//                                           FirstName      = "Noob",
+//                                           LastName       = "Neophyte",
+//                                           EmailConfirmed = true
+//                                       };
+
+//            try
+//            {
+//                HeimdallUser user = await userManager.FindByEmailAsync( demoNewUser.Email ).ConfigureAwait( false );
+
+//                if ( user == null )
+//                {
+//                    await userManager.CreateAsync( demoNewUser, "Abc&123!" ).ConfigureAwait( false );
+//                    await userManager.AddToRoleAsync( demoNewUser, nameof( Roles.NewUser ) ).ConfigureAwait( false );
+//                }
+//            }
+//            catch ( Exception ex )
+//            {
+//                Debug.WriteLine( "************ ERROR  ************" );
+//                Debug.WriteLine( "Error Seeding Default NewUser User." );
+//                Debug.WriteLine( ex.Message );
+//                Debug.WriteLine( "********************************" );
+
+//                throw;
+//            }
+//        }
+//    }
+//}
+
+
+
+
+using System;
+using System.Collections.Generic;
+using System.Linq;
+using System.Threading.Tasks;
+using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.Mvc.Rendering;
+using Microsoft.EntityFrameworkCore;
+using BugTracker.Data;
+using BugTracker.Models;
+using BugTracker.Utilities;
+using Microsoft.AspNetCore.Http;
+using Microsoft.AspNetCore.Identity;
+using BugTracker.Services;
+using Microsoft.AspNetCore.Authorization;
+
+namespace BugTracker.Controllers
+{
+    [Authorize]
+    public class TicketsController : Controller
+    {
+        private readonly ApplicationDbContext _context;
+        private readonly UserManager<BTUser> _userManager;
+        private readonly IBTHistoriesService _historiesService;
+        private readonly IBTRolesService _rolesService;
+        private readonly IBTAccessService _accessService;
+
+        #region Constructor Comments
+        // The method below is a constructor. The purpose of the constructor is to initialize objects. 
+        // Constructor's name MUST MATCH the class name, and cannot have a return type(like void or int).
+        // A good way to think about setting up a contructor:
+        // 1) Inject the service I want to reference as a parameter in the Constructor.
+        // 2) Create a local, private readonly reference to the service injected. This goes above the Constructor.
+        // 3) Assign the value of the injection to local reference 
+        #endregion
+        public TicketsController(ApplicationDbContext context, UserManager<BTUser> userManager, IBTHistoriesService historiesService, IBTRolesService rolesService, IBTAccessService accessService)
+        {
+            _userManager = userManager;
+            _context = context;
+            _historiesService = historiesService;
+            _rolesService = rolesService;
+            _accessService = accessService;
+        }
+
+        #region All Tickets Index
+        // Shows all tickets created in the Tickets/Index View.
+        //
+        // The code block for this action declares a local var. called applicationDbContext.
+        // The local var. is assigned the value of a LINQ statement that queries the database for 
+        // info. 
+        // 
+        // The block reads something like this: "local var applicationDbContext is going into
+        // the db (_context is our reference to the db that we injected in our constructor) and grabbing 
+        // the Tickets table. The .Include statements are including the information we want from the Tickets
+        // table, such as the DeveloperUser column info, OwnerUser column info, etc. Finally, the return 
+        // statement at the end of the block returns the view of all of the information we asked our local
+        // var to hold and puts in in an async list with the .ToListAsync() method (this is why the await is 
+        // needed in front of the local var)".
+        #endregion
+        // GET: Tickets Index
+        public async Task<IActionResult> Index()
+        {
+            var applicationDbContext = _context.Tickets
+                    .Include(t => t.DeveloperUser)
+                    .Include(t => t.OwnerUser)
+                    .Include(t => t.Project)
+                    .Include(t => t.TicketPriority)
+                    .Include(t => t.TicketStatus)
+                    .Include(t => t.TicketType);
+
+            return View(await applicationDbContext.ToListAsync());
+        }
+
+
+        #region My Tickets Action (For users to see their tickets)
+        // Shows a filtered version of all tickets created for specific users; For example, if i'm signed in
+        // as Joe Shmoe and go to the appropriate view (Tickets/MyTickets), I will only see the tickets that 
+        // Joe Shmoe has created. This method allows a user to quickly navigate to tickets that they've submitted
+        // instead of having to look through all tickets (Tickets/Index)
+        //
+        // The codeblock for this action declares two local var's in the beginning: model is assigned a new list of type
+        // Ticket, while userId is assigned the value of User by using the injected reference of UserManager and the method
+        // .GetUserId. The following code reads something like "If the user is in the role of Admin, model will be assigned the
+        // value of a list of info queried from the Tickets table" (using a LINQ statment). Since Admin is GodMode, this is all
+        // of the info. The codeblock continues "else if the user in role is the Project Manager, only show a list of tickets
+        // that are associated with the ProjectManager
+        //
+        //Previous Action name that was asynchronous: public async Task<IActionResult> MyTickets()
+        #endregion
+        // GET: MyTickets Index
+        public IActionResult MyTickets()
+        {   //Create an item of type "new List" of type Ticket
+            var model = new List<Ticket>();
+            var userId = _userManager.GetUserId(User);
+
+            #region Method for showing tickets to User who owns them (MyTickets method + associated view)
+            if (User.IsInRole("Admin"))
+            {
+                model = _context.Tickets
+                    .Include(t => t.DeveloperUser)
+                    .Include(t => t.OwnerUser)
+                    .Include(t => t.Project)
+                    .Include(t => t.TicketPriority)
+                    .Include(t => t.TicketStatus)
+                    .Include(t => t.TicketType).ToList();
+            }
+            else if (User.IsInRole("ProjectManager"))
+            {
+                var projectIds = new List<int>();
+                //Actively grabbing data I want NOW;
+                var userProjects = _context.ProjectUsers.Where(pu => pu.UserId == userId).ToList();
+
+
+                foreach (var record in userProjects)
+                {
+                    projectIds.Add(record.ProjectId);
+
+                }
+                foreach (var id in projectIds)
+                {
+                    var tickets = _context.Tickets.Where(t => t.ProjectId == id)
+                    .Include(t => t.DeveloperUser)
+                    .Include(t => t.OwnerUser)
+                    .Include(t => t.Project)
+                    .Include(t => t.TicketPriority)
+                    .Include(t => t.TicketStatus)
+                    .Include(t => t.TicketType).ToList();
+                    model.AddRange(tickets);
+                    //If and if elses are useful for ranges
+                }
+            }
+            else if (User.IsInRole("Developer"))
+            {
+                model = _context.Tickets
+                    //This will grab ONLY criteria im trying to match
+                    .Where(t => t.DeveloperUserId == userId)
+
+                    .Include(t => t.OwnerUser)
+                    .Include(t => t.Project)
+                    .Include(t => t.TicketPriority)
+                    .Include(t => t.TicketStatus)
+                    .Include(t => t.TicketType).ToList();
+            }
+            else if (User.IsInRole("Submitter"))
+            {
+                model = _context.Tickets
+                    .Where(t => t.OwnerUserId == userId)
+                    .Include(t => t.OwnerUser)
+                    .Include(t => t.Project)
+                    .Include(t => t.TicketPriority)
+                    .Include(t => t.TicketStatus)
+                    .Include(t => t.TicketType).ToList();
+
+            }
+            else
+            {
+                return NotFound();
+            }
+            return View(model);
+            #endregion
+
+
+            #region 11/10 Code that Drew said had something to do with showing tickets to specific users;
+
+            // What is this? why is this? what the heck is going on
+
+            //var user = _userManager.GetUserId(User);
+            //var myRole = await _rolesService.ListUserRoles(_context.Users.Find(user));
+            //var test = myRole.FirstOrDefault();
+            //switch (test)
+            //{
+            //    case "Admin":
+            //        var model = _context.Tickets.ToList();
+            //        break;
+            //    case "ProjectManager":
+            //        model = 1; //The foreach loops
+            //        break;
+            //    case "Developer":
+            //    case "NewUser":
+            //        model = _context.Tickets.Where(t => t.DeveloperUserId == user).ToList(); //The foreach loops
+            //        break;
+            //    case "Submitter":
+            //        model = _context.Tickets.Where(t => t.OwnerUserId == user).ToList(); //The foreach loops
+            //        break;
+            //}
+
+            //This is supposed to have something to do with PM's getting tickets? 
+            //var projectIds = new List<int>();
+            //var model = new List<Ticket>();
+            //var userProjects = _context.ProjectUsers.Where(pu => pu.UserId == userId).ToList();
+            //foreach (var record in userProjects)
+            //{
+            //    projectIds.Add(_context.Projects.Find(record.ProjectId).Id);
+
+            //}
+            //foreach (var id in projectIds)
+            //{
+            //    var tickets = _context.Tickets.Where(t => t.ProjectId == id).ToList();
+            //    model.AddRange(tickets);
+            //}
+            #endregion
+
+
+            #region Linq Statements
+            // The method below could be written out in one long string, but it is easier to read and understand
+            // when it is divided like it is. The code below is saying "create a variable (applicationDbContext).
+            // Then 
+
+            //var applicationDbContext = _context.Tickets
+            //    .Include(t => t.DeveloperUser)
+            //    .Include(t => t.OwnerUser)
+            //    .Include(t => t.Project)
+            //    .Include(t => t.TicketPriority)
+            //    .Include(t => t.TicketStatus)
+            //    .Include(t => t.TicketType);
+            //return View(await applicationDbContext.ToListAsync());
+            #endregion
+        }
+
+        // GET: Tickets/Details
+        public async Task<IActionResult> Details(int? id)
+        {
+            if (id == null)
+            {
+                return NotFound();
+            }
+
+            //These are referencing the services we injected into the constructor. We'll need these
+            //for the code below
+            var userId = _userManager.GetUserId(User);
+            var roleName = (await _userManager.GetRolesAsync(await _userManager.GetUserAsync(User))).FirstOrDefault();
+
+            if (await _accessService.CanInteractTicket(userId, (int)id, roleName))
+            {
+                #region Lamda Expression
+                //Lamda Expression Notes: 
+                //var ticket, which we create, Says wer're going to the database and inside the ticket table , 
+                //and we go into Ticket Table. From there we include Developer User, Owner User columns, etc. first or default is a statement saying 
+                //"give me the first row where the first row id is the same as the id's we were given."
+                #endregion
+                var ticket = await _context.Tickets
+                    .Include(t => t.DeveloperUser)
+                    .Include(t => t.OwnerUser)
+                    .Include(t => t.Project)
+                    .Include(t => t.TicketPriority)
+                    .Include(t => t.TicketStatus)
+                    .Include(t => t.TicketType)
+                    .Include(t => t.Comments).ThenInclude(tc => tc.User)
+                    .Include(t => t.Attachments)
+                    .FirstOrDefaultAsync(m => m.Id == id);
+
+                if (ticket == null)
+                {
+                    return NotFound();
+                }
+
+                return View(ticket);
+
+            }
+            //Possible Returns, 2 lines below
+            TempData["InvalidAccess"] = "You do not have access to this ticket. Contact admin for help";
+            return RedirectToAction("Index");
+
+        }
+
+        
+
+        // GET: Tickets/Create
+        public IActionResult Create(int? id)
+        {
+            var model = new Ticket();
+
+            //This if statement is used(along with view logic) to let me create a new ticket and show the dropdown menu
+            if (id != null)
+            {
+                model.ProjectId = (int)id;
+            }
+
+
+
+            #region ViewData/SelectLists
+            // These are the fields that a user can select through when creating a ticket. For example, the user should see a select list for the following things; 
+            // Developer assigned to ticket, owner of ticket, the project the ticket is assigned to, etc.
+            //in parameters of new SelectList, second var. is what prints out
+            #endregion
+            //ViewData["OwnerUserId"] = new SelectList(_context.Users, "Id", "FullName");
+            ViewData["ProjectId"] = new SelectList(_context.Projects, "Id", "Name");
+
+
+            #region Role Authentication
+            // This is an example of role authentication; Since the common user should not be selecting the ticket priority or status, this if UserIsInRole method
+            // hides those select lists for anyone who is not logged in and in the role of Admin or PM. The else statement sets the ticket priority and status to a default
+            // pending, which the admin/PM will later assess and change to the appropriate priority or status.
+            #endregion
+            if (User.IsInRole("Admin") || User.IsInRole("ProjectManager"))
+            {
+                ViewData["TicketPriorityId"] = new SelectList(_context.TicketPriorities, "Id", "Name");
+                ViewData["TicketStatusId"] = new SelectList(_context.TicketStatuses, "Id", "Name");
+                ViewData["DeveloperUserId"] = new SelectList(_context.Users, "Id", "FullName"); //Need to filter this to only developers
+                ViewData["TicketTypeId"] = new SelectList(_context.TicketTypes, "Id", "Name");
+            }
+            else
+            {
+                model.TicketTypeId = _context.TicketTypes.Where(tp => tp.Name == "Pending").FirstOrDefault().Id; ;
+                model.TicketPriorityId = _context.TicketPriorities.Where(tp => tp.Name == "Pending").FirstOrDefault().Id;
+                model.TicketStatusId = _context.TicketStatuses.Where(tp => tp.Name == "Pending").FirstOrDefault().Id; ;
+                model.DeveloperUserId = null; //Nullable by default
+            }
+            return View(model);
+        }
+
+
+        // POST: Tickets/Create
+        // To protect from overposting attacks, enable the specific properties you want to bind to, for 
+        // more details, see http://go.microsoft.com/fwlink/?LinkId=317598.
+        [HttpPost]
+        [ValidateAntiForgeryToken]
+        public async Task<IActionResult> Create([Bind("Title,Description,ProjectId,TicketTypeId,TicketPriorityId,TicketStatusId,OwnerUserId,DeveloperUserId")] Ticket ticket, IFormFile attachment)
+        {
+            if (ModelState.IsValid)
+            {
+                #region Default Settings set in the Controller
+                //We don't want the ticker submitter to be able to set the date/submitter name, so we are doing it by default for them.
+                // The constructor is partly responsible for being able to reference getting user id, the ticket model, etc
+                #endregion
+                ticket.Created = DateTimeOffset.Now;
+                ticket.OwnerUserId = _userManager.GetUserId(User);
+
+
+                #region Using our Attachment Handler Class
+                // This block is saying "If my attachment is not null, var attachmentHandler 
+                // is a new instance of class AttachmentHandler. var ticket goes to Attachments and adds the attachment in the second line
+                #endregion
+                if (attachment != null)
+                {
+                    AttachmentHandler attachmentHandler = new AttachmentHandler();
+                    ticket.Attachments.Add(attachmentHandler.Attach(attachment));
+                }
+
+                _context.Add(ticket);
+                await _context.SaveChangesAsync();
+                return RedirectToAction("MyTickets", "Tickets");
+                /*return RedirectToAction("Details", "Projects", new { id = ticket.ProjectId });*/       //When user creates a new ticket, they will be redirected back to the Projects/Details View instead of the default, which was "Index"
+            }
+            else
+            {
+                return NotFound();
+            }
+            //ViewData["DeveloperUserId"] = new SelectList(_context.Users, "Id", "Id", ticket.DeveloperUserId);
+            //ViewData["OwnerUserId"] = new SelectList(_context.Users, "Id", "Id", ticket.OwnerUserId);
+            //ViewData["ProjectId"] = new SelectList(_context.Projects, "Id", "Name", ticket.ProjectId);
+            //ViewData["TicketPriorityId"] = new SelectList(_context.TicketPriorities, "Id", "Id", ticket.TicketPriorityId);
+            //ViewData["TicketStatusId"] = new SelectList(_context.TicketStatuses, "Id", "Id", ticket.TicketStatusId);
+            //ViewData["TicketTypeId"] = new SelectList(_context.TicketTypes, "Id", "Id", ticket.TicketTypeId);
+            //return View(ticket);
+        }
+
+
+        // GET: Tickets/Edit/5
+        [Authorize(Roles = "Admin, ProjectManager, Developer")]
+        public async Task<IActionResult> Edit(int? id)
+        {
+            //Need ticket comments to show in edit view so I can edit/archive them(as admin/PM)
+            var ticketComment = await _context.TicketComments
+                .Include(t => t.Ticket)
+                .Include(t => t.User)
+                .FirstOrDefaultAsync(m => m.Id == id);
+
+            if (id == null)
+            {
+                return NotFound();
+            }
+
+            var ticket = await _context.Tickets.FindAsync(id);
+            if (ticket == null)
+            {
+                return NotFound();
+            }
+
+            //Need to be able to edit ticket comments; Do I need a linq statement in the get/post or just ViewDataFields?
+            ViewData["DeveloperUserId"] = new SelectList(_context.Users, "Id", "FullName", ticket.DeveloperUserId);
+            ViewData["OwnerUserId"] = new SelectList(_context.Users, "Id", "FullName", ticket.OwnerUserId);
+            ViewData["ProjectId"] = new SelectList(_context.Projects, "Id", "Name", ticket.ProjectId);
+            ViewData["TicketPriorityId"] = new SelectList(_context.TicketPriorities, "Id", "Name", ticket.TicketPriorityId);
+            ViewData["TicketStatusId"] = new SelectList(_context.TicketStatuses, "Id", "Name", ticket.TicketStatusId);
+            ViewData["TicketTypeId"] = new SelectList(_context.TicketTypes, "Id", "Name", ticket.TicketTypeId);
+            return View(ticket);
+        }
+
+        // POST: Tickets/Edit
+        // To protect from overposting attacks, enable the specific properties you want to bind to, for 
+        // more details, see http://go.microsoft.com/fwlink/?LinkId=317598.
+        [HttpPost]
+        [ValidateAntiForgeryToken]
+        public async Task<IActionResult> Edit(int id, [Bind("Id,Title,Description,Created,Updated,ProjectId,TicketTypeId,TicketPriorityId,TicketStatusId,OwnerUserId,DeveloperUserId")] Ticket ticket)
+        {
+
+            ticket.Updated = DateTimeOffset.Now;
+
+
+
+            if (id != ticket.Id)
+            {
+                return NotFound();
+            }
+
+            //Grabbing the Id of the old ticket
+            Ticket oldTicket = await _context.Tickets
+                .AsNoTracking()
+                .FirstOrDefaultAsync(t => t.Id == ticket.Id);
+
+            if (ModelState.IsValid)
+            {
+                try
+                {
+                    _context.Update(ticket);
+                    await _context.SaveChangesAsync();
+                }
+                catch (DbUpdateConcurrencyException)
+                {
+                    if (!TicketExists(ticket.Id))
+                    {
+                        return NotFound();
+                    }
+                    else
+                    {
+                        throw;
+                    }
+                }
+
+                //Add history; 
+                string userId = _userManager.GetUserId(User);
+                await _historiesService.AddHistory(oldTicket, ticket, userId);
+
+
+                return RedirectToAction(nameof(Index));
+            }
+            ViewData["DeveloperUserId"] = new SelectList(_context.Users, "Id", "Id", ticket.DeveloperUserId);
+            ViewData["OwnerUserId"] = new SelectList(_context.Users, "Id", "Id", ticket.OwnerUserId);
+            ViewData["ProjectId"] = new SelectList(_context.Projects, "Id", "Name", ticket.ProjectId);
+            ViewData["TicketPriorityId"] = new SelectList(_context.TicketPriorities, "Id", "Id", ticket.TicketPriorityId);
+            ViewData["TicketStatusId"] = new SelectList(_context.TicketStatuses, "Id", "Id", ticket.TicketStatusId);
+            ViewData["TicketTypeId"] = new SelectList(_context.TicketTypes, "Id", "Id", ticket.TicketTypeId);
+            return View(ticket);
+        }
+
+        // GET: Tickets/Delete/5
+        [Authorize(Roles = "Admin")]
+        public async Task<IActionResult> Delete(int? id)
+        {
+            if (id == null)
+            {
+                return NotFound();
+            }
+
+            var ticket = await _context.Tickets
+                .Include(t => t.DeveloperUser)
+                .Include(t => t.OwnerUser)
+                .Include(t => t.Project)
+                .Include(t => t.TicketPriority)
+                .Include(t => t.TicketStatus)
+                .Include(t => t.TicketType)
+                .FirstOrDefaultAsync(m => m.Id == id);
+            if (ticket == null)
+            {
+                return NotFound();
+            }
+
+            return View(ticket);
+        }
+
+        // POST: Tickets/Delete/5
+        [HttpPost, ActionName("Delete")]
+        [ValidateAntiForgeryToken]
+        public async Task<IActionResult> DeleteConfirmed(int id)
+        {
+            var ticket = await _context.Tickets.FindAsync(id);
+            _context.Tickets.Remove(ticket);
+            await _context.SaveChangesAsync();
+
+            return RedirectToAction("Details", "Projects", new { id = ticket.ProjectId });
+        }
+
+        private bool TicketExists(int id)
+        {
+            return _context.Tickets.Any(e => e.Id == id);
+        }
+    }
+}

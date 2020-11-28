@@ -1,0 +1,17 @@
+{
+    "name": "Heimdall",
+    "version": "1.0.0",
+    "devDependencies": {
+        "jslint": "^0.12.1"
+    },
+    "dependencies": {
+        "eslint": "^7.12.1"
+    },
+    "installConfig": {
+        "pnp": true
+    },
+    "description": "Bug Tracker",
+    "main": "index.js",
+    "author": "Fred Smith valhallatechnc@gmail.com",
+    "license": "MIT"
+}

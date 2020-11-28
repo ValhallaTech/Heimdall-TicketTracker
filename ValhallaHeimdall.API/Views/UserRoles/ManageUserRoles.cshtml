@@ -1,0 +1,55 @@
+﻿@using ValhallaHeimdall.BLL.Models.ViewModels
+@model IEnumerable<ValhallaHeimdall.BLL.Models.ViewModels.ManageUserRolesViewModel>;
+
+<div class = "row" >
+    @foreach (ManageUserRolesViewModel heimdalluser in Model)
+    {
+        <div class = "card col-6"
+             style = "margin: 2px" >
+            <div class = "card-body" >
+                <h2 class = "h3 m-t-0" >
+                    <b>Assign Roles to @heimdalluser.User.FullName</b>
+                </h2>
+                <p class = "font-13 m-b-30 text-muted" >
+                    This form displays the current roles assigned to the user: @heimdalluser.User.FullName. Use the dropdown to select the roles that this user should be assigned. Once roles are selected, click "Assign Roles" to submit the form.
+                </p>
+                <hr />
+                <form asp-action = "ManageUserRoles"
+                      asp-controller = "UserRoles"
+                      method = "post" >
+                    <div asp-validation-summary = "ModelOnly"
+                         class = "text-danger" >
+                    </div>
+                    <input asp-for = "@heimdalluser.User.Id"
+                           type = "hidden" >
+                    <div class = "col-12" >
+                        <div class = "form-group" >
+                            <label asp-for = "@heimdalluser.Roles"
+                                   class = "control-label" >
+                                Roles for @heimdalluser.User.FullName
+                            </label>
+                            <select asp-for = "@heimdalluser.SelectedRoles"
+                                    asp-items = "@heimdalluser.Roles"
+                                    class = "form-control"
+                                    multiple = "multiple" >
+                            </select>
+                        </div>
+                    </div>
+                    <hr />
+                    <div class = "col-12" >
+                        <div class = "form-group pull-right" >
+                            <input class = "btn btn-info"
+                                   type = "submit"
+                                   value = "Assign Roles" />
+                            <a asp-action = "ManageUserRoles"
+                               asp-controller = "UserRoles"
+                               class = "btn btn-info" >
+                                Cancel
+                            </a>
+                        </div>
+                    </div>
+                </form>
+            </div>
+        </div>
+    }
+</div>

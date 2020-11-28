@@ -1,0 +1,333 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<?xml-stylesheet type='text/xsl' href='_LinqUpgradeReport_Files/LinqUpgradeReport.xslt'?>
+
+<LinqUpgradeLog>
+	<Properties>
+		<Property Name="Solution" Value="C:\Users\FRED\source\repos\ValhallaHeimdall\ValhallaHeimdall.sln"></Property>
+		<Property Name="Solution File" Value="C:\Users\FRED\source\repos\ValhallaHeimdall"></Property>
+		<Property Name="Date" Value="11/5/2020 3:10:05 PM"></Property>
+	</Properties>
+	<Event ErrorLevel="3" Project="ValhallaHeimdall" Source="Properties" Description="No need to convert"></Event>
+	<Event ErrorLevel="3" Project="ValhallaHeimdall" Source="launchSettings.json" Description="No need to convert"></Event>
+	<Event ErrorLevel="3" Project="ValhallaHeimdall" Source="serviceDependencies.json" Description="No need to convert"></Event>
+	<Event ErrorLevel="3" Project="ValhallaHeimdall" Source="serviceDependencies.local.json"
+	       Description="No need to convert">
+	</Event>
+	<Event ErrorLevel="3" Project="ValhallaHeimdall" Source="wwwroot" Description="No need to convert"></Event>
+	<Event ErrorLevel="3" Project="ValhallaHeimdall" Source="css" Description="No need to convert"></Event>
+	<Event ErrorLevel="3" Project="ValhallaHeimdall" Source="site.css" Description="No need to convert"></Event>
+	<Event ErrorLevel="3" Project="ValhallaHeimdall" Source="js" Description="No need to convert"></Event>
+	<Event ErrorLevel="3" Project="ValhallaHeimdall" Source="site.js" Description="No need to convert"></Event>
+	<Event ErrorLevel="3" Project="ValhallaHeimdall" Source="lib" Description="No need to convert"></Event>
+	<Event ErrorLevel="3" Project="ValhallaHeimdall" Source="bootstrap" Description="No need to convert"></Event>
+	<Event ErrorLevel="3" Project="ValhallaHeimdall" Source="dist" Description="No need to convert"></Event>
+	<Event ErrorLevel="3" Project="ValhallaHeimdall" Source="css" Description="No need to convert"></Event>
+	<Event ErrorLevel="3" Project="ValhallaHeimdall" Source="bootstrap.css" Description="No need to convert"></Event>
+	<Event ErrorLevel="3" Project="ValhallaHeimdall" Source="bootstrap.css.map" Description="No need to convert"></Event>
+	<Event ErrorLevel="3" Project="ValhallaHeimdall" Source="bootstrap.min.css" Description="No need to convert"></Event>
+	<Event ErrorLevel="3" Project="ValhallaHeimdall" Source="bootstrap.min.css.map" Description="No need to convert"></Event>
+	<Event ErrorLevel="3" Project="ValhallaHeimdall" Source="bootstrap-grid.css" Description="No need to convert"></Event>
+	<Event ErrorLevel="3" Project="ValhallaHeimdall" Source="bootstrap-grid.css.map" Description="No need to convert"></Event>
+	<Event ErrorLevel="3" Project="ValhallaHeimdall" Source="bootstrap-grid.min.css" Description="No need to convert"></Event>
+	<Event ErrorLevel="3" Project="ValhallaHeimdall" Source="bootstrap-grid.min.css.map" Description="No need to convert"></Event>
+	<Event ErrorLevel="3" Project="ValhallaHeimdall" Source="bootstrap-reboot.css" Description="No need to convert"></Event>
+	<Event ErrorLevel="3" Project="ValhallaHeimdall" Source="bootstrap-reboot.css.map" Description="No need to convert"></Event>
+	<Event ErrorLevel="3" Project="ValhallaHeimdall" Source="bootstrap-reboot.min.css" Description="No need to convert"></Event>
+	<Event ErrorLevel="3" Project="ValhallaHeimdall" Source="bootstrap-reboot.min.css.map"
+	       Description="No need to convert">
+	</Event>
+	<Event ErrorLevel="3" Project="ValhallaHeimdall" Source="js" Description="No need to convert"></Event>
+	<Event ErrorLevel="3" Project="ValhallaHeimdall" Source="bootstrap.js" Description="No need to convert"></Event>
+	<Event ErrorLevel="3" Project="ValhallaHeimdall" Source="bootstrap.bundle.js" Description="No need to convert"></Event>
+	<Event ErrorLevel="3" Project="ValhallaHeimdall" Source="bootstrap.bundle.js.map" Description="No need to convert"></Event>
+	<Event ErrorLevel="3" Project="ValhallaHeimdall" Source="bootstrap.bundle.min.js" Description="No need to convert"></Event>
+	<Event ErrorLevel="3" Project="ValhallaHeimdall" Source="bootstrap.bundle.min.js.map" Description="No need to convert"></Event>
+	<Event ErrorLevel="3" Project="ValhallaHeimdall" Source="bootstrap.js.map" Description="No need to convert"></Event>
+	<Event ErrorLevel="3" Project="ValhallaHeimdall" Source="bootstrap.min.js" Description="No need to convert"></Event>
+	<Event ErrorLevel="3" Project="ValhallaHeimdall" Source="bootstrap.min.js.map" Description="No need to convert"></Event>
+	<Event ErrorLevel="3" Project="ValhallaHeimdall" Source="LICENSE" Description="No need to convert"></Event>
+	<Event ErrorLevel="3" Project="ValhallaHeimdall" Source="jquery" Description="No need to convert"></Event>
+	<Event ErrorLevel="3" Project="ValhallaHeimdall" Source="dist" Description="No need to convert"></Event>
+	<Event ErrorLevel="3" Project="ValhallaHeimdall" Source="jquery.js" Description="No need to convert"></Event>
+	<Event ErrorLevel="3" Project="ValhallaHeimdall" Source="jquery.min.js" Description="No need to convert"></Event>
+	<Event ErrorLevel="3" Project="ValhallaHeimdall" Source="jquery.min.map" Description="No need to convert"></Event>
+	<Event ErrorLevel="3" Project="ValhallaHeimdall" Source="LICENSE.txt" Description="No need to convert"></Event>
+	<Event ErrorLevel="3" Project="ValhallaHeimdall" Source="jquery-validation" Description="No need to convert"></Event>
+	<Event ErrorLevel="3" Project="ValhallaHeimdall" Source="dist" Description="No need to convert"></Event>
+	<Event ErrorLevel="3" Project="ValhallaHeimdall" Source="additional-methods.js" Description="No need to convert"></Event>
+	<Event ErrorLevel="3" Project="ValhallaHeimdall" Source="additional-methods.min.js" Description="No need to convert"></Event>
+	<Event ErrorLevel="3" Project="ValhallaHeimdall" Source="jquery.validate.js" Description="No need to convert"></Event>
+	<Event ErrorLevel="3" Project="ValhallaHeimdall" Source="jquery.validate.min.js" Description="No need to convert"></Event>
+	<Event ErrorLevel="3" Project="ValhallaHeimdall" Source="LICENSE.md" Description="No need to convert"></Event>
+	<Event ErrorLevel="3" Project="ValhallaHeimdall" Source="jquery-validation-unobtrusive"
+	       Description="No need to convert">
+	</Event>
+	<Event ErrorLevel="3" Project="ValhallaHeimdall" Source="jquery.validate.unobtrusive.js"
+	       Description="No need to convert">
+	</Event>
+	<Event ErrorLevel="3" Project="ValhallaHeimdall" Source="jquery.validate.unobtrusive.min.js"
+	       Description="No need to convert">
+	</Event>
+	<Event ErrorLevel="3" Project="ValhallaHeimdall" Source="LICENSE.txt" Description="No need to convert"></Event>
+	<Event ErrorLevel="3" Project="ValhallaHeimdall" Source="favicon.ico" Description="No need to convert"></Event>
+	<Event ErrorLevel="3" Project="ValhallaHeimdall" Source=".vs" Description="No need to convert"></Event>
+	<Event ErrorLevel="3" Project="ValhallaHeimdall" Source="Areas" Description="No need to convert"></Event>
+	<Event ErrorLevel="3" Project="ValhallaHeimdall" Source="Identity" Description="No need to convert"></Event>
+	<Event ErrorLevel="3" Project="ValhallaHeimdall" Source="Pages" Description="No need to convert"></Event>
+	<Event ErrorLevel="3" Project="ValhallaHeimdall" Source="Account" Description="No need to convert"></Event>
+	<Event ErrorLevel="3" Project="ValhallaHeimdall" Source="Manage" Description="No need to convert"></Event>
+	<Event ErrorLevel="3" Project="ValhallaHeimdall" Source="_Layout.cshtml" Description="No need to convert"></Event>
+	<Event ErrorLevel="3" Project="ValhallaHeimdall" Source="_ManageNav.cshtml" Description="No need to convert"></Event>
+	<Event ErrorLevel="3" Project="ValhallaHeimdall" Source="_StatusMessage.cshtml" Description="No need to convert"></Event>
+	<Event ErrorLevel="3" Project="ValhallaHeimdall" Source="_ViewImports.cshtml" Description="No need to convert"></Event>
+	<Event ErrorLevel="3" Project="ValhallaHeimdall" Source="ChangePassword.cshtml" Description="No need to convert"></Event>
+	<Event ErrorLevel="3" Project="ValhallaHeimdall" Source="ChangePassword.cshtml.cs" Description="No need to convert"></Event>
+	<Event ErrorLevel="3" Project="ValhallaHeimdall" Source="DeletePersonalData.cshtml" Description="No need to convert"></Event>
+	<Event ErrorLevel="3" Project="ValhallaHeimdall" Source="DeletePersonalData.cshtml.cs"
+	       Description="No need to convert">
+	</Event>
+	<Event ErrorLevel="3" Project="ValhallaHeimdall" Source="Disable2fa.cshtml" Description="No need to convert"></Event>
+	<Event ErrorLevel="3" Project="ValhallaHeimdall" Source="Disable2fa.cshtml.cs" Description="No need to convert"></Event>
+	<Event ErrorLevel="3" Project="ValhallaHeimdall" Source="DownloadPersonalData.cshtml" Description="No need to convert"></Event>
+	<Event ErrorLevel="3" Project="ValhallaHeimdall" Source="DownloadPersonalData.cshtml.cs"
+	       Description="No need to convert">
+	</Event>
+	<Event ErrorLevel="3" Project="ValhallaHeimdall" Source="Email.cshtml" Description="No need to convert"></Event>
+	<Event ErrorLevel="3" Project="ValhallaHeimdall" Source="Email.cshtml.cs" Description="No need to convert"></Event>
+	<Event ErrorLevel="3" Project="ValhallaHeimdall" Source="EnableAuthenticator.cshtml" Description="No need to convert"></Event>
+	<Event ErrorLevel="3" Project="ValhallaHeimdall" Source="EnableAuthenticator.cshtml.cs"
+	       Description="No need to convert">
+	</Event>
+	<Event ErrorLevel="3" Project="ValhallaHeimdall" Source="ExternalLogins.cshtml" Description="No need to convert"></Event>
+	<Event ErrorLevel="3" Project="ValhallaHeimdall" Source="ExternalLogins.cshtml.cs" Description="No need to convert"></Event>
+	<Event ErrorLevel="3" Project="ValhallaHeimdall" Source="GenerateRecoveryCodes.cshtml"
+	       Description="No need to convert">
+	</Event>
+	<Event ErrorLevel="3" Project="ValhallaHeimdall" Source="GenerateRecoveryCodes.cshtml.cs"
+	       Description="No need to convert">
+	</Event>
+	<Event ErrorLevel="3" Project="ValhallaHeimdall" Source="Index.cshtml" Description="No need to convert"></Event>
+	<Event ErrorLevel="3" Project="ValhallaHeimdall" Source="Index.cshtml.cs" Description="No need to convert"></Event>
+	<Event ErrorLevel="3" Project="ValhallaHeimdall" Source="ManageNavPages.cs" Description="No need to convert"></Event>
+	<Event ErrorLevel="3" Project="ValhallaHeimdall" Source="PersonalData.cshtml" Description="No need to convert"></Event>
+	<Event ErrorLevel="3" Project="ValhallaHeimdall" Source="PersonalData.cshtml.cs" Description="No need to convert"></Event>
+	<Event ErrorLevel="3" Project="ValhallaHeimdall" Source="ResetAuthenticator.cshtml" Description="No need to convert"></Event>
+	<Event ErrorLevel="3" Project="ValhallaHeimdall" Source="ResetAuthenticator.cshtml.cs"
+	       Description="No need to convert">
+	</Event>
+	<Event ErrorLevel="3" Project="ValhallaHeimdall" Source="SetPassword.cshtml" Description="No need to convert"></Event>
+	<Event ErrorLevel="3" Project="ValhallaHeimdall" Source="SetPassword.cshtml.cs" Description="No need to convert"></Event>
+	<Event ErrorLevel="3" Project="ValhallaHeimdall" Source="ShowRecoveryCodes.cshtml" Description="No need to convert"></Event>
+	<Event ErrorLevel="3" Project="ValhallaHeimdall" Source="ShowRecoveryCodes.cshtml.cs" Description="No need to convert"></Event>
+	<Event ErrorLevel="3" Project="ValhallaHeimdall" Source="TwoFactorAuthentication.cshtml"
+	       Description="No need to convert">
+	</Event>
+	<Event ErrorLevel="3" Project="ValhallaHeimdall" Source="TwoFactorAuthentication.cshtml.cs"
+	       Description="No need to convert">
+	</Event>
+	<Event ErrorLevel="3" Project="ValhallaHeimdall" Source="_StatusMessage.cshtml" Description="No need to convert"></Event>
+	<Event ErrorLevel="3" Project="ValhallaHeimdall" Source="_ViewImports.cshtml" Description="No need to convert"></Event>
+	<Event ErrorLevel="3" Project="ValhallaHeimdall" Source="AccessDenied.cshtml" Description="No need to convert"></Event>
+	<Event ErrorLevel="3" Project="ValhallaHeimdall" Source="AccessDenied.cshtml.cs" Description="No need to convert"></Event>
+	<Event ErrorLevel="3" Project="ValhallaHeimdall" Source="ConfirmEmail.cshtml" Description="No need to convert"></Event>
+	<Event ErrorLevel="3" Project="ValhallaHeimdall" Source="ConfirmEmail.cshtml.cs" Description="No need to convert"></Event>
+	<Event ErrorLevel="3" Project="ValhallaHeimdall" Source="ConfirmEmailChange.cshtml" Description="No need to convert"></Event>
+	<Event ErrorLevel="3" Project="ValhallaHeimdall" Source="ConfirmEmailChange.cshtml.cs"
+	       Description="No need to convert">
+	</Event>
+	<Event ErrorLevel="3" Project="ValhallaHeimdall" Source="ExternalLogin.cshtml" Description="No need to convert"></Event>
+	<Event ErrorLevel="3" Project="ValhallaHeimdall" Source="ExternalLogin.cshtml.cs" Description="No need to convert"></Event>
+	<Event ErrorLevel="3" Project="ValhallaHeimdall" Source="ForgotPassword.cshtml" Description="No need to convert"></Event>
+	<Event ErrorLevel="3" Project="ValhallaHeimdall" Source="ForgotPassword.cshtml.cs" Description="No need to convert"></Event>
+	<Event ErrorLevel="3" Project="ValhallaHeimdall" Source="ForgotPasswordConfirmation.cshtml"
+	       Description="No need to convert">
+	</Event>
+	<Event ErrorLevel="3" Project="ValhallaHeimdall" Source="ForgotPasswordConfirmation.cshtml.cs"
+	       Description="No need to convert">
+	</Event>
+	<Event ErrorLevel="3" Project="ValhallaHeimdall" Source="Lockout.cshtml" Description="No need to convert"></Event>
+	<Event ErrorLevel="3" Project="ValhallaHeimdall" Source="Lockout.cshtml.cs" Description="No need to convert"></Event>
+	<Event ErrorLevel="3" Project="ValhallaHeimdall" Source="Login.cshtml" Description="No need to convert"></Event>
+	<Event ErrorLevel="3" Project="ValhallaHeimdall" Source="Login.cshtml.cs" Description="No need to convert"></Event>
+	<Event ErrorLevel="3" Project="ValhallaHeimdall" Source="LoginWith2fa.cshtml" Description="No need to convert"></Event>
+	<Event ErrorLevel="3" Project="ValhallaHeimdall" Source="LoginWith2fa.cshtml.cs" Description="No need to convert"></Event>
+	<Event ErrorLevel="3" Project="ValhallaHeimdall" Source="LoginWithRecoveryCode.cshtml"
+	       Description="No need to convert">
+	</Event>
+	<Event ErrorLevel="3" Project="ValhallaHeimdall" Source="LoginWithRecoveryCode.cshtml.cs"
+	       Description="No need to convert">
+	</Event>
+	<Event ErrorLevel="3" Project="ValhallaHeimdall" Source="Logout.cshtml" Description="No need to convert"></Event>
+	<Event ErrorLevel="3" Project="ValhallaHeimdall" Source="Logout.cshtml.cs" Description="No need to convert"></Event>
+	<Event ErrorLevel="3" Project="ValhallaHeimdall" Source="Register.cshtml" Description="No need to convert"></Event>
+	<Event ErrorLevel="3" Project="ValhallaHeimdall" Source="Register.cshtml.cs" Description="No need to convert"></Event>
+	<Event ErrorLevel="3" Project="ValhallaHeimdall" Source="RegisterConfirmation.cshtml" Description="No need to convert"></Event>
+	<Event ErrorLevel="3" Project="ValhallaHeimdall" Source="RegisterConfirmation.cshtml.cs"
+	       Description="No need to convert">
+	</Event>
+	<Event ErrorLevel="3" Project="ValhallaHeimdall" Source="ResetPassword.cshtml" Description="No need to convert"></Event>
+	<Event ErrorLevel="3" Project="ValhallaHeimdall" Source="ResetPassword.cshtml.cs" Description="No need to convert"></Event>
+	<Event ErrorLevel="3" Project="ValhallaHeimdall" Source="ResetPasswordConfirmation.cshtml"
+	       Description="No need to convert">
+	</Event>
+	<Event ErrorLevel="3" Project="ValhallaHeimdall" Source="ResetPasswordConfirmation.cshtml.cs"
+	       Description="No need to convert">
+	</Event>
+	<Event ErrorLevel="3" Project="ValhallaHeimdall" Source="_ValidationScriptsPartial.cshtml"
+	       Description="No need to convert">
+	</Event>
+	<Event ErrorLevel="3" Project="ValhallaHeimdall" Source="_ViewImports.cshtml" Description="No need to convert"></Event>
+	<Event ErrorLevel="3" Project="ValhallaHeimdall" Source="_ViewStart.cshtml" Description="No need to convert"></Event>
+	<Event ErrorLevel="3" Project="ValhallaHeimdall" Source="Error.cshtml" Description="No need to convert"></Event>
+	<Event ErrorLevel="3" Project="ValhallaHeimdall" Source="Error.cshtml.cs" Description="No need to convert"></Event>
+	<Event ErrorLevel="3" Project="ValhallaHeimdall" Source="IdentityHostingStartup.cs" Description="No need to convert"></Event>
+	<Event ErrorLevel="3" Project="ValhallaHeimdall" Source="Controllers" Description="No need to convert"></Event>
+	<Event ErrorLevel="3" Project="ValhallaHeimdall" Source="HomeController.cs" Description="No need to convert"></Event>
+	<Event ErrorLevel="3" Project="ValhallaHeimdall" Source="NotificationsController.cs" Description="No need to convert"></Event>
+	<Event ErrorLevel="3" Project="ValhallaHeimdall" Source="ProjectsController.cs" Description="No need to convert"></Event>
+	<Event ErrorLevel="3" Project="ValhallaHeimdall" Source="TicketAttachmentsController.cs"
+	       Description="No need to convert">
+	</Event>
+	<Event ErrorLevel="3" Project="ValhallaHeimdall" Source="TicketCommentsController.cs" Description="No need to convert"></Event>
+	<Event ErrorLevel="3" Project="ValhallaHeimdall" Source="TicketHistoriesController.cs"
+	       Description="No need to convert">
+	</Event>
+	<Event ErrorLevel="3" Project="ValhallaHeimdall" Source="TicketPrioritiesController.cs"
+	       Description="No need to convert">
+	</Event>
+	<Event ErrorLevel="3" Project="ValhallaHeimdall" Source="TicketsController.cs" Description="No need to convert"></Event>
+	<Event ErrorLevel="3" Project="ValhallaHeimdall" Source="TicketStatusController.cs" Description="No need to convert"></Event>
+	<Event ErrorLevel="3" Project="ValhallaHeimdall" Source="TicketTypesController.cs" Description="No need to convert"></Event>
+	<Event ErrorLevel="3" Project="ValhallaHeimdall" Source="UserRolesController.cs" Description="No need to convert"></Event>
+	<Event ErrorLevel="3" Project="ValhallaHeimdall" Source="Data" Description="No need to convert"></Event>
+	<Event ErrorLevel="3" Project="ValhallaHeimdall" Source="Migrations" Description="No need to convert"></Event>
+	<Event ErrorLevel="3" Project="ValhallaHeimdall" Source="00000000000000_CreateIdentitySchema.cs"
+	       Description="No need to convert">
+	</Event>
+	<Event ErrorLevel="3" Project="ValhallaHeimdall" Source="00000000000000_CreateIdentitySchema.Designer.cs"
+	       Description="No need to convert">
+	</Event>
+	<Event ErrorLevel="3" Project="ValhallaHeimdall" Source="20201103163408_Init01.cs" Description="No need to convert"></Event>
+	<Event ErrorLevel="3" Project="ValhallaHeimdall" Source="20201103163408_Init01.Designer.cs"
+	       Description="No need to convert">
+	</Event>
+	<Event ErrorLevel="3" Project="ValhallaHeimdall" Source="ApplicationDbContextModelSnapshot.cs"
+	       Description="No need to convert">
+	</Event>
+	<Event ErrorLevel="3" Project="ValhallaHeimdall" Source="ApplicationDbContext.cs" Description="No need to convert"></Event>
+	<Event ErrorLevel="3" Project="ValhallaHeimdall" Source="ContextSeed.cs" Description="No need to convert"></Event>
+	<Event ErrorLevel="3" Project="ValhallaHeimdall" Source="Models" Description="No need to convert"></Event>
+	<Event ErrorLevel="3" Project="ValhallaHeimdall" Source="ViewModels" Description="No need to convert"></Event>
+	<Event ErrorLevel="3" Project="ValhallaHeimdall" Source="ManageProjectUsersViewModel.cs"
+	       Description="No need to convert">
+	</Event>
+	<Event ErrorLevel="3" Project="ValhallaHeimdall" Source="ManageUserRolesViewModel.cs" Description="No need to convert"></Event>
+	<Event ErrorLevel="3" Project="ValhallaHeimdall" Source="ErrorViewModel.cs" Description="No need to convert"></Event>
+	<Event ErrorLevel="3" Project="ValhallaHeimdall" Source="HeimdallUser.cs" Description="No need to convert"></Event>
+	<Event ErrorLevel="3" Project="ValhallaHeimdall" Source="Notification.cs" Description="No need to convert"></Event>
+	<Event ErrorLevel="3" Project="ValhallaHeimdall" Source="Project.cs" Description="No need to convert"></Event>
+	<Event ErrorLevel="3" Project="ValhallaHeimdall" Source="ProjectUser.cs" Description="No need to convert"></Event>
+	<Event ErrorLevel="3" Project="ValhallaHeimdall" Source="Ticket.cs" Description="No need to convert"></Event>
+	<Event ErrorLevel="3" Project="ValhallaHeimdall" Source="TicketAttachment.cs" Description="No need to convert"></Event>
+	<Event ErrorLevel="3" Project="ValhallaHeimdall" Source="TicketComment.cs" Description="No need to convert"></Event>
+	<Event ErrorLevel="3" Project="ValhallaHeimdall" Source="TicketHistory.cs" Description="No need to convert"></Event>
+	<Event ErrorLevel="3" Project="ValhallaHeimdall" Source="TicketPriority.cs" Description="No need to convert"></Event>
+	<Event ErrorLevel="3" Project="ValhallaHeimdall" Source="TicketStatus.cs" Description="No need to convert"></Event>
+	<Event ErrorLevel="3" Project="ValhallaHeimdall" Source="TicketType.cs" Description="No need to convert"></Event>
+	<Event ErrorLevel="3" Project="ValhallaHeimdall" Source="Services" Description="No need to convert"></Event>
+	<Event ErrorLevel="3" Project="ValhallaHeimdall" Source="HeimdallProjectService.cs" Description="No need to convert"></Event>
+	<Event ErrorLevel="3" Project="ValhallaHeimdall" Source="HeimdallRolesService.cs" Description="No need to convert"></Event>
+	<Event ErrorLevel="3" Project="ValhallaHeimdall" Source="IHeimdallProjectService.cs" Description="No need to convert"></Event>
+	<Event ErrorLevel="3" Project="ValhallaHeimdall" Source="IHeimdallRolesService.cs" Description="No need to convert"></Event>
+	<Event ErrorLevel="3" Project="ValhallaHeimdall" Source="Views" Description="No need to convert"></Event>
+	<Event ErrorLevel="3" Project="ValhallaHeimdall" Source="Home" Description="No need to convert"></Event>
+	<Event ErrorLevel="3" Project="ValhallaHeimdall" Source="Index.cshtml" Description="No need to convert"></Event>
+	<Event ErrorLevel="3" Project="ValhallaHeimdall" Source="Privacy.cshtml" Description="No need to convert"></Event>
+	<Event ErrorLevel="3" Project="ValhallaHeimdall" Source="Notifications" Description="No need to convert"></Event>
+	<Event ErrorLevel="3" Project="ValhallaHeimdall" Source="Create.cshtml" Description="No need to convert"></Event>
+	<Event ErrorLevel="3" Project="ValhallaHeimdall" Source="Delete.cshtml" Description="No need to convert"></Event>
+	<Event ErrorLevel="3" Project="ValhallaHeimdall" Source="Details.cshtml" Description="No need to convert"></Event>
+	<Event ErrorLevel="3" Project="ValhallaHeimdall" Source="Edit.cshtml" Description="No need to convert"></Event>
+	<Event ErrorLevel="3" Project="ValhallaHeimdall" Source="Index.cshtml" Description="No need to convert"></Event>
+	<Event ErrorLevel="3" Project="ValhallaHeimdall" Source="Projects" Description="No need to convert"></Event>
+	<Event ErrorLevel="3" Project="ValhallaHeimdall" Source="AssignUsers.cshtml" Description="No need to convert"></Event>
+	<Event ErrorLevel="3" Project="ValhallaHeimdall" Source="Create.cshtml" Description="No need to convert"></Event>
+	<Event ErrorLevel="3" Project="ValhallaHeimdall" Source="Delete.cshtml" Description="No need to convert"></Event>
+	<Event ErrorLevel="3" Project="ValhallaHeimdall" Source="Details.cshtml" Description="No need to convert"></Event>
+	<Event ErrorLevel="3" Project="ValhallaHeimdall" Source="Edit.cshtml" Description="No need to convert"></Event>
+	<Event ErrorLevel="3" Project="ValhallaHeimdall" Source="Index.cshtml" Description="No need to convert"></Event>
+	<Event ErrorLevel="3" Project="ValhallaHeimdall" Source="Shared" Description="No need to convert"></Event>
+	<Event ErrorLevel="3" Project="ValhallaHeimdall" Source="_Layout.cshtml" Description="No need to convert"></Event>
+	<Event ErrorLevel="3" Project="ValhallaHeimdall" Source="_LoginPartial.cshtml" Description="No need to convert"></Event>
+	<Event ErrorLevel="3" Project="ValhallaHeimdall" Source="_ValidationScriptsPartial.cshtml"
+	       Description="No need to convert">
+	</Event>
+	<Event ErrorLevel="3" Project="ValhallaHeimdall" Source="Error.cshtml" Description="No need to convert"></Event>
+	<Event ErrorLevel="3" Project="ValhallaHeimdall" Source="TicketAttachments" Description="No need to convert"></Event>
+	<Event ErrorLevel="3" Project="ValhallaHeimdall" Source="Create.cshtml" Description="No need to convert"></Event>
+	<Event ErrorLevel="3" Project="ValhallaHeimdall" Source="Delete.cshtml" Description="No need to convert"></Event>
+	<Event ErrorLevel="3" Project="ValhallaHeimdall" Source="Details.cshtml" Description="No need to convert"></Event>
+	<Event ErrorLevel="3" Project="ValhallaHeimdall" Source="Edit.cshtml" Description="No need to convert"></Event>
+	<Event ErrorLevel="3" Project="ValhallaHeimdall" Source="Index.cshtml" Description="No need to convert"></Event>
+	<Event ErrorLevel="3" Project="ValhallaHeimdall" Source="TicketComments" Description="No need to convert"></Event>
+	<Event ErrorLevel="3" Project="ValhallaHeimdall" Source="Create.cshtml" Description="No need to convert"></Event>
+	<Event ErrorLevel="3" Project="ValhallaHeimdall" Source="Delete.cshtml" Description="No need to convert"></Event>
+	<Event ErrorLevel="3" Project="ValhallaHeimdall" Source="Details.cshtml" Description="No need to convert"></Event>
+	<Event ErrorLevel="3" Project="ValhallaHeimdall" Source="Edit.cshtml" Description="No need to convert"></Event>
+	<Event ErrorLevel="3" Project="ValhallaHeimdall" Source="Index.cshtml" Description="No need to convert"></Event>
+	<Event ErrorLevel="3" Project="ValhallaHeimdall" Source="TicketHistories" Description="No need to convert"></Event>
+	<Event ErrorLevel="3" Project="ValhallaHeimdall" Source="Create.cshtml" Description="No need to convert"></Event>
+	<Event ErrorLevel="3" Project="ValhallaHeimdall" Source="Delete.cshtml" Description="No need to convert"></Event>
+	<Event ErrorLevel="3" Project="ValhallaHeimdall" Source="Details.cshtml" Description="No need to convert"></Event>
+	<Event ErrorLevel="3" Project="ValhallaHeimdall" Source="Edit.cshtml" Description="No need to convert"></Event>
+	<Event ErrorLevel="3" Project="ValhallaHeimdall" Source="Index.cshtml" Description="No need to convert"></Event>
+	<Event ErrorLevel="3" Project="ValhallaHeimdall" Source="TicketPriorities" Description="No need to convert"></Event>
+	<Event ErrorLevel="3" Project="ValhallaHeimdall" Source="Create.cshtml" Description="No need to convert"></Event>
+	<Event ErrorLevel="3" Project="ValhallaHeimdall" Source="Delete.cshtml" Description="No need to convert"></Event>
+	<Event ErrorLevel="3" Project="ValhallaHeimdall" Source="Details.cshtml" Description="No need to convert"></Event>
+	<Event ErrorLevel="3" Project="ValhallaHeimdall" Source="Edit.cshtml" Description="No need to convert"></Event>
+	<Event ErrorLevel="3" Project="ValhallaHeimdall" Source="Index.cshtml" Description="No need to convert"></Event>
+	<Event ErrorLevel="3" Project="ValhallaHeimdall" Source="Tickets" Description="No need to convert"></Event>
+	<Event ErrorLevel="3" Project="ValhallaHeimdall" Source="Create.cshtml" Description="No need to convert"></Event>
+	<Event ErrorLevel="3" Project="ValhallaHeimdall" Source="Delete.cshtml" Description="No need to convert"></Event>
+	<Event ErrorLevel="3" Project="ValhallaHeimdall" Source="Details.cshtml" Description="No need to convert"></Event>
+	<Event ErrorLevel="3" Project="ValhallaHeimdall" Source="Edit.cshtml" Description="No need to convert"></Event>
+	<Event ErrorLevel="3" Project="ValhallaHeimdall" Source="Index.cshtml" Description="No need to convert"></Event>
+	<Event ErrorLevel="3" Project="ValhallaHeimdall" Source="TicketStatus" Description="No need to convert"></Event>
+	<Event ErrorLevel="3" Project="ValhallaHeimdall" Source="Create.cshtml" Description="No need to convert"></Event>
+	<Event ErrorLevel="3" Project="ValhallaHeimdall" Source="Delete.cshtml" Description="No need to convert"></Event>
+	<Event ErrorLevel="3" Project="ValhallaHeimdall" Source="Details.cshtml" Description="No need to convert"></Event>
+	<Event ErrorLevel="3" Project="ValhallaHeimdall" Source="Edit.cshtml" Description="No need to convert"></Event>
+	<Event ErrorLevel="3" Project="ValhallaHeimdall" Source="Index.cshtml" Description="No need to convert"></Event>
+	<Event ErrorLevel="3" Project="ValhallaHeimdall" Source="TicketTypes" Description="No need to convert"></Event>
+	<Event ErrorLevel="3" Project="ValhallaHeimdall" Source="Create.cshtml" Description="No need to convert"></Event>
+	<Event ErrorLevel="3" Project="ValhallaHeimdall" Source="Delete.cshtml" Description="No need to convert"></Event>
+	<Event ErrorLevel="3" Project="ValhallaHeimdall" Source="Details.cshtml" Description="No need to convert"></Event>
+	<Event ErrorLevel="3" Project="ValhallaHeimdall" Source="Edit.cshtml" Description="No need to convert"></Event>
+	<Event ErrorLevel="3" Project="ValhallaHeimdall" Source="Index.cshtml" Description="No need to convert"></Event>
+	<Event ErrorLevel="3" Project="ValhallaHeimdall" Source="UserRoles" Description="No need to convert"></Event>
+	<Event ErrorLevel="3" Project="ValhallaHeimdall" Source="ManageUserRoles.cshtml" Description="No need to convert"></Event>
+	<Event ErrorLevel="3" Project="ValhallaHeimdall" Source="_ViewImports.cshtml" Description="No need to convert"></Event>
+	<Event ErrorLevel="3" Project="ValhallaHeimdall" Source="_ViewStart.cshtml" Description="No need to convert"></Event>
+	<Event ErrorLevel="3" Project="ValhallaHeimdall" Source=".pnp.js" Description="No need to convert"></Event>
+	<Event ErrorLevel="3" Project="ValhallaHeimdall" Source="appsettings.json" Description="No need to convert"></Event>
+	<Event ErrorLevel="3" Project="ValhallaHeimdall" Source="appsettings.Development.json"
+	       Description="No need to convert">
+	</Event>
+	<Event ErrorLevel="3" Project="ValhallaHeimdall" Source="DataContext1.Diagram1.view" Description="No need to convert"></Event>
+	<Event ErrorLevel="3" Project="ValhallaHeimdall" Source="DataContext1.edps" Description="No need to convert"></Event>
+	<Event ErrorLevel="3" Project="ValhallaHeimdall" Source="DataContext1.lqml" Description="No need to convert"></Event>
+	<Event ErrorLevel="3" Project="ValhallaHeimdall" Source="Dockerfile" Description="No need to convert"></Event>
+	<Event ErrorLevel="3" Project="ValhallaHeimdall" Source=".dockerignore" Description="No need to convert"></Event>
+	<Event ErrorLevel="3" Project="ValhallaHeimdall" Source="package.json" Description="No need to convert"></Event>
+	<Event ErrorLevel="3" Project="ValhallaHeimdall" Source=".yarnclean" Description="No need to convert"></Event>
+	<Event ErrorLevel="3" Project="ValhallaHeimdall" Source=".yarnrc" Description="No need to convert"></Event>
+	<Event ErrorLevel="3" Project="ValhallaHeimdall" Source=".yarnrc.yml" Description="No need to convert"></Event>
+	<Event ErrorLevel="3" Project="ValhallaHeimdall" Source="package-lock.json" Description="No need to convert"></Event>
+	<Event ErrorLevel="3" Project="ValhallaHeimdall" Source="yarn.lock" Description="No need to convert"></Event>
+	<Event ErrorLevel="3" Project="ValhallaHeimdall" Source="Program.cs" Description="No need to convert"></Event>
+	<Event ErrorLevel="3" Project="ValhallaHeimdall" Source="ScaffoldingReadMe.txt" Description="No need to convert"></Event>
+	<Event ErrorLevel="3" Project="ValhallaHeimdall" Source="Startup.cs" Description="No need to convert"></Event>
+	<Event ErrorLevel="3" Project="Miscellaneous Files" Source="UserManager.cs" Description="No need to convert"></Event>
+
+</LinqUpgradeLog>

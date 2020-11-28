@@ -1,0 +1,66 @@
+﻿@model ValhallaHeimdall.BLL.Models.ViewModels.ManageProjectUsersViewModel;
+
+<div class = "container" >
+
+    <h2>Assign Users</h2>
+
+    <div class = "cold-md-4" ></div>
+
+    <div class = "margin-bottom-40 panel panel-green" ></div>
+
+    <p>
+
+        Project Name:
+
+        <span>@Model.Project.Name</span>
+
+    </p>
+
+    <form asp-action = "AssignUsers"
+          asp-controller = "Projects"
+          method = "post" >
+
+        <div asp-validation-summary = "ModelOnly"
+             class = "text-danger" >
+        </div>
+
+        <input asp-for = "@Model.Project.Id"
+               type = "hidden" >
+        <input asp-for = "@Model.Project.Name"
+               type = "hidden" > @*These are required when creating project class*@
+        <div class = "col-12" >
+
+            <div class = "form-group" >
+
+                <label asp-for = "@Model.Users"
+                       class = "control-label" >
+                    Assign team member to Project: @Model.Project.Name
+                </label>
+
+                <select asp-for = "@Model.SelectedUsers"
+                        asp-items = "@Model.Users"
+                        class = "form-control"
+                        multiple = "multiple" >
+                </select>
+
+            </div>
+
+        </div>
+
+        <hr />
+
+        <div class = "form-group" >
+
+            <div class = "col-lg-10 col-lg-offset-2" >
+
+                <input class = "btn btn-success"
+                       type = "submit"
+                       value = "Assign Users" />
+
+            </div>
+
+        </div>
+
+    </form>
+
+</div>

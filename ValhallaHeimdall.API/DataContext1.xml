@@ -1,0 +1,166 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+
+<Database Name="ValhallaHeimdall"
+          Provider="Devart.Data.SqlServer.Linq.Provider.SqlDataProvider, Devart.Data.SqlServer.Linq"
+          xmlns="http://schemas.devart.com/linqconnect/mapping">
+	<Table Name="dbo.[__EFMigrationsHistory]" Member="EFMigrationsHistories">
+		<Type Name="ValhallaHeimdall.Models.EFMigrationsHistory">
+			<Column Name="MigrationId" Member="MigrationId" Storage="_MigrationId" DbType="NVARCHAR(150) NOT NULL"
+			        IsPrimaryKey="true" CanBeNull="false" UpdateCheck="Always" />
+			<Column Name="ProductVersion" Member="ProductVersion" Storage="_ProductVersion" DbType="NVARCHAR(32) NOT NULL"
+			        CanBeNull="false" UpdateCheck="Never" />
+		</Type>
+	</Table>
+	<Table Name="dbo.AspNetRoleClaims" Member="AspNetRoleClaims">
+		<Type Name="ValhallaHeimdall.Models.AspNetRoleClaim">
+			<Column Name="Id" Member="Id" Storage="_Id" AutoSync="OnInsert" DbType="INT NOT NULL IDENTITY" IsPrimaryKey="true"
+			        IsDbGenerated="true" CanBeNull="false" UpdateCheck="Always" />
+			<Column Name="RoleId" Member="RoleId" Storage="_RoleId" DbType="NVARCHAR(450) NOT NULL" CanBeNull="false"
+			        UpdateCheck="Never" />
+			<Column Name="ClaimType" Member="ClaimType" Storage="_ClaimType" DbType="NVARCHAR(MAX)" CanBeNull="true"
+			        UpdateCheck="Never" />
+			<Column Name="ClaimValue" Member="ClaimValue" Storage="_ClaimValue" DbType="NVARCHAR(MAX)" CanBeNull="true"
+			        UpdateCheck="Never" />
+			<Association Name="AspNetRole_AspNetRoleClaim" Member="AspNetRole" Storage="_AspNetRole" ThisKey="RoleId"
+			             OtherKey="Id" DeleteRule="CASCADE" IsForeignKey="true" />
+		</Type>
+	</Table>
+	<Table Name="dbo.AspNetRoles" Member="AspNetRoles">
+		<Type Name="ValhallaHeimdall.Models.AspNetRole">
+			<Column Name="Id" Member="Id" Storage="_Id" DbType="NVARCHAR(450) NOT NULL" IsPrimaryKey="true" CanBeNull="false"
+			        UpdateCheck="Always" />
+			<Column Name="Name" Member="Name" Storage="_Name" DbType="NVARCHAR(256)" CanBeNull="true" UpdateCheck="Never" />
+			<Column Name="NormalizedName" Member="NormalizedName" Storage="_NormalizedName" DbType="NVARCHAR(256)"
+			        CanBeNull="true" UpdateCheck="Never" />
+			<Column Name="ConcurrencyStamp" Member="ConcurrencyStamp" Storage="_ConcurrencyStamp" DbType="NVARCHAR(MAX)"
+			        CanBeNull="true" UpdateCheck="Never" />
+			<Association Name="AspNetRole_AspNetRoleClaim" Member="AspNetRoleClaims" Storage="_AspNetRoleClaims" ThisKey="Id"
+			             OtherKey="RoleId" />
+			<Association Name="AspNetRole_AspNetUser" Member="AspNetUsers" ThisKey="Id" OtherKey="Id"
+			             LinkTableName="dbo.AspNetUserRoles" LinkThisKey="RoleId" LinkOtherKey="UserId" />
+		</Type>
+	</Table>
+	<Table Name="dbo.AspNetUserClaims" Member="AspNetUserClaims">
+		<Type Name="ValhallaHeimdall.Models.AspNetUserClaim">
+			<Column Name="Id" Member="Id" Storage="_Id" AutoSync="OnInsert" DbType="INT NOT NULL IDENTITY" IsPrimaryKey="true"
+			        IsDbGenerated="true" CanBeNull="false" UpdateCheck="Always" />
+			<Column Name="UserId" Member="UserId" Storage="_UserId" DbType="NVARCHAR(450) NOT NULL" CanBeNull="false"
+			        UpdateCheck="Never" />
+			<Column Name="ClaimType" Member="ClaimType" Storage="_ClaimType" DbType="NVARCHAR(MAX)" CanBeNull="true"
+			        UpdateCheck="Never" />
+			<Column Name="ClaimValue" Member="ClaimValue" Storage="_ClaimValue" DbType="NVARCHAR(MAX)" CanBeNull="true"
+			        UpdateCheck="Never" />
+			<Association Name="AspNetUser_AspNetUserClaim" Member="AspNetUser" Storage="_AspNetUser" ThisKey="UserId"
+			             OtherKey="Id" DeleteRule="CASCADE" IsForeignKey="true" />
+		</Type>
+	</Table>
+	<Table Name="dbo.AspNetUserLogins" Member="AspNetUserLogins">
+		<Type Name="ValhallaHeimdall.Models.AspNetUserLogin">
+			<Column Name="LoginProvider" Member="LoginProvider" Storage="_LoginProvider" DbType="NVARCHAR(450) NOT NULL"
+			        IsPrimaryKey="true" CanBeNull="false" UpdateCheck="Always" />
+			<Column Name="ProviderKey" Member="ProviderKey" Storage="_ProviderKey" DbType="NVARCHAR(450) NOT NULL"
+			        IsPrimaryKey="true" CanBeNull="false" UpdateCheck="Always" />
+			<Column Name="ProviderDisplayName" Member="ProviderDisplayName" Storage="_ProviderDisplayName"
+			        DbType="NVARCHAR(MAX)" CanBeNull="true" UpdateCheck="Never" />
+			<Column Name="UserId" Member="UserId" Storage="_UserId" DbType="NVARCHAR(450) NOT NULL" CanBeNull="false"
+			        UpdateCheck="Never" />
+			<Association Name="AspNetUser_AspNetUserLogin" Member="AspNetUser" Storage="_AspNetUser" ThisKey="UserId"
+			             OtherKey="Id" DeleteRule="CASCADE" IsForeignKey="true" />
+		</Type>
+	</Table>
+	<Table Name="dbo.AspNetUsers" Member="AspNetUsers">
+		<Type Name="ValhallaHeimdall.Models.AspNetUser">
+			<Column Name="Id" Member="Id" Storage="_Id" DbType="NVARCHAR(450) NOT NULL" IsPrimaryKey="true" CanBeNull="false"
+			        UpdateCheck="Always" />
+			<Column Name="UserName" Member="UserName" Storage="_UserName" DbType="NVARCHAR(256)" CanBeNull="true"
+			        UpdateCheck="Never" />
+			<Column Name="NormalizedUserName" Member="NormalizedUserName" Storage="_NormalizedUserName" DbType="NVARCHAR(256)"
+			        CanBeNull="true" UpdateCheck="Never" />
+			<Column Name="Email" Member="Email" Storage="_Email" DbType="NVARCHAR(256)" CanBeNull="true" UpdateCheck="Never" />
+			<Column Name="NormalizedEmail" Member="NormalizedEmail" Storage="_NormalizedEmail" DbType="NVARCHAR(256)"
+			        CanBeNull="true" UpdateCheck="Never" />
+			<Column Name="EmailConfirmed" Member="EmailConfirmed" Storage="_EmailConfirmed" DbType="BIT NOT NULL"
+			        CanBeNull="false" UpdateCheck="Never" />
+			<Column Name="PasswordHash" Member="PasswordHash" Storage="_PasswordHash" DbType="NVARCHAR(MAX)" CanBeNull="true"
+			        UpdateCheck="Never" />
+			<Column Name="SecurityStamp" Member="SecurityStamp" Storage="_SecurityStamp" DbType="NVARCHAR(MAX)" CanBeNull="true"
+			        UpdateCheck="Never" />
+			<Column Name="ConcurrencyStamp" Member="ConcurrencyStamp" Storage="_ConcurrencyStamp" DbType="NVARCHAR(MAX)"
+			        CanBeNull="true" UpdateCheck="Never" />
+			<Column Name="PhoneNumber" Member="PhoneNumber" Storage="_PhoneNumber" DbType="NVARCHAR(MAX)" CanBeNull="true"
+			        UpdateCheck="Never" />
+			<Column Name="PhoneNumberConfirmed" Member="PhoneNumberConfirmed" Storage="_PhoneNumberConfirmed"
+			        DbType="BIT NOT NULL" CanBeNull="false" UpdateCheck="Never" />
+			<Column Name="TwoFactorEnabled" Member="TwoFactorEnabled" Storage="_TwoFactorEnabled" DbType="BIT NOT NULL"
+			        CanBeNull="false" UpdateCheck="Never" />
+			<Column Name="LockoutEnd" Member="LockoutEnd" Storage="_LockoutEnd" DbType="DATETIMEOFFSET" CanBeNull="true"
+			        UpdateCheck="Never" />
+			<Column Name="LockoutEnabled" Member="LockoutEnabled" Storage="_LockoutEnabled" DbType="BIT NOT NULL"
+			        CanBeNull="false" UpdateCheck="Never" />
+			<Column Name="AccessFailedCount" Member="AccessFailedCount" Storage="_AccessFailedCount" DbType="INT NOT NULL"
+			        CanBeNull="false" UpdateCheck="Never" />
+			<Column Name="FirstName" Member="FirstName" Storage="_FirstName" DbType="NVARCHAR(50) NOT NULL" CanBeNull="false"
+			        UpdateCheck="Never" />
+			<Column Name="ImageData" Member="ImageData" Storage="_ImageData" DbType="VARBINARY(MAX)" CanBeNull="true"
+			        UpdateCheck="Never" />
+			<Column Name="ImagePath" Member="ImagePath" Storage="_ImagePath" DbType="NVARCHAR(MAX)" CanBeNull="true"
+			        UpdateCheck="Never" />
+			<Column Name="LastName" Member="LastName" Storage="_LastName" DbType="NVARCHAR(50) NOT NULL" CanBeNull="false"
+			        UpdateCheck="Never" />
+			<Association Name="AspNetRole_AspNetUser" Member="AspNetRoles" ThisKey="Id" OtherKey="Id"
+			             LinkTableName="dbo.AspNetUserRoles" LinkThisKey="UserId" LinkOtherKey="RoleId" />
+			<Association Name="AspNetUser_AspNetUserClaim" Member="AspNetUserClaims" Storage="_AspNetUserClaims" ThisKey="Id"
+			             OtherKey="UserId" />
+			<Association Name="AspNetUser_AspNetUserLogin" Member="AspNetUserLogins" Storage="_AspNetUserLogins" ThisKey="Id"
+			             OtherKey="UserId" />
+			<Association Name="AspNetUser_AspNetUserToken" Member="AspNetUserTokens" Storage="_AspNetUserTokens" ThisKey="Id"
+			             OtherKey="UserId" />
+			<Association Name="AspNetUser_Notification" Member="Notifications" Storage="_Notifications" ThisKey="Id"
+			             OtherKey="UserId" />
+			<Association Name="Project_AspNetUser" Member="Projects" ThisKey="Id" OtherKey="Id" LinkTableName="dbo.ProjectUsers"
+			             LinkThisKey="UserId" LinkOtherKey="ProjectId" />
+		</Type>
+	</Table>
+	<Table Name="dbo.AspNetUserTokens" Member="AspNetUserTokens">
+		<Type Name="ValhallaHeimdall.Models.AspNetUserToken">
+			<Column Name="UserId" Member="UserId" Storage="_UserId" DbType="NVARCHAR(450) NOT NULL" IsPrimaryKey="true"
+			        CanBeNull="false" UpdateCheck="Always" />
+			<Column Name="LoginProvider" Member="LoginProvider" Storage="_LoginProvider" DbType="NVARCHAR(450) NOT NULL"
+			        IsPrimaryKey="true" CanBeNull="false" UpdateCheck="Always" />
+			<Column Name="Name" Member="Name" Storage="_Name" DbType="NVARCHAR(450) NOT NULL" IsPrimaryKey="true"
+			        CanBeNull="false" UpdateCheck="Always" />
+			<Column Name="Value" Member="Value" Storage="_Value" DbType="NVARCHAR(MAX)" CanBeNull="true" UpdateCheck="Never" />
+			<Association Name="AspNetUser_AspNetUserToken" Member="AspNetUser" Storage="_AspNetUser" ThisKey="UserId"
+			             OtherKey="Id" DeleteRule="CASCADE" IsForeignKey="true" />
+		</Type>
+	</Table>
+	<Table Name="dbo.Notifications" Member="Notifications">
+		<Type Name="ValhallaHeimdall.Models.Notification">
+			<Column Name="Id" Member="Id" Storage="_Id" AutoSync="OnInsert" DbType="INT NOT NULL IDENTITY" IsPrimaryKey="true"
+			        IsDbGenerated="true" CanBeNull="false" UpdateCheck="Always" />
+			<Column Name="TicketId" Member="TicketId" Storage="_TicketId" DbType="INT NOT NULL" CanBeNull="false"
+			        UpdateCheck="Never" />
+			<Column Name="Description" Member="Description" Storage="_Description" DbType="NVARCHAR(MAX)" CanBeNull="false"
+			        UpdateCheck="Never" />
+			<Column Name="Created" Member="Created" Storage="_Created" DbType="DATETIMEOFFSET NOT NULL" CanBeNull="false"
+			        UpdateCheck="Never" />
+			<Column Name="UserId" Member="UserId" Storage="_UserId" DbType="NVARCHAR(450)" CanBeNull="true" UpdateCheck="Never" />
+			<Association Name="AspNetUser_Notification" Member="AspNetUser" Storage="_AspNetUser" ThisKey="UserId" OtherKey="Id"
+			             DeleteRule="NO ACTION" IsForeignKey="true" />
+		</Type>
+	</Table>
+	<Table Name="dbo.Projects" Member="Projects">
+		<Type Name="ValhallaHeimdall.Models.Project">
+			<Column Name="Id" Member="Id" Storage="_Id" AutoSync="OnInsert" DbType="INT NOT NULL IDENTITY" IsPrimaryKey="true"
+			        IsDbGenerated="true" CanBeNull="false" UpdateCheck="Always" />
+			<Column Name="Name" Member="Name" Storage="_Name" DbType="NVARCHAR(50) NOT NULL" CanBeNull="false"
+			        UpdateCheck="Never" />
+			<Column Name="ImagePath" Member="ImagePath" Storage="_ImagePath" DbType="NVARCHAR(MAX)" CanBeNull="true"
+			        UpdateCheck="Never" />
+			<Column Name="ImageData" Member="ImageData" Storage="_ImageData" DbType="VARBINARY(MAX)" CanBeNull="true"
+			        UpdateCheck="Never" />
+			<Association Name="Project_AspNetUser" Member="AspNetUsers" ThisKey="Id" OtherKey="Id"
+			             LinkTableName="dbo.ProjectUsers" LinkThisKey="ProjectId" LinkOtherKey="UserId" />
+		</Type>
+	</Table>
+</Database>

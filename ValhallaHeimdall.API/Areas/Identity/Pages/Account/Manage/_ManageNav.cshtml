@@ -1,0 +1,55 @@
+﻿@using ValhallaHeimdall.API.Areas.Identity.Pages.Account.Manage
+@inject SignInManager<HeimdallUser> SignInManager
+@{
+    bool hasExternalLogins = (await SignInManager.GetExternalAuthenticationSchemesAsync().ConfigureAwait(false)).Any();
+
+
+}
+<ul class = "flex-column nav nav-pills" >
+    <li class = "nav-item" >
+        <a asp-page = "./Index"
+           class = "nav-link @ManageNavPages.IndexNavClass(ViewContext)"
+           id = "profile" >
+            Profile
+        </a>
+    </li>
+    <li class = "nav-item" >
+        <a asp-page = "./Email"
+           class = "nav-link @ManageNavPages.EmailNavClass(ViewContext)"
+           id = "email" >
+            Email
+        </a>
+    </li>
+    <li class = "nav-item" >
+        <a asp-page = "./ChangePassword"
+           class = "nav-link @ManageNavPages.ChangePasswordNavClass(ViewContext)"
+           id = "change-password" >
+            Password
+        </a>
+    </li>
+    @if (hasExternalLogins)
+    {
+        <li class = "nav-item"
+            id = "external-logins" >
+            <a asp-page = "./ExternalLogins"
+               class = "nav-link @ManageNavPages.ExternalLoginsNavClass(ViewContext)"
+               id = "external-login" >
+                External logins
+            </a>
+        </li>
+    }
+    <li class = "nav-item" >
+        <a asp-page = "./TwoFactorAuthentication"
+           class = "nav-link @ManageNavPages.TwoFactorAuthenticationNavClass(ViewContext)"
+           id = "two-factor" >
+            Two-factor authentication
+        </a>
+    </li>
+    <li class = "nav-item" >
+        <a asp-page = "./PersonalData"
+           class = "nav-link @ManageNavPages.PersonalDataNavClass(ViewContext)"
+           id = "personal-data" >
+            Personal data
+        </a>
+    </li>
+</ul>

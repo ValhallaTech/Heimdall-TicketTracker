@@ -1,0 +1,125 @@
+﻿<!DOCTYPE html>
+<html lang = "en" >
+<head>
+    <meta charset = "utf-8" />
+    <meta content = "width=device-width, initial-scale=1.0"
+          name = "viewport" />
+    <title>@ViewData["Title"] Heimdall Bug Tracker</title>
+    <link href = "~/lib/bootstrap/dist/css/bootstrap.min.css"
+          rel = "stylesheet" />
+    <link href = "~/css/site.css"
+          rel = "stylesheet" />
+    <!--DataTables CSS-->
+    <link href = "https://cdn.datatables.net/1.10.22/css/jquery.dataTables.css"
+          rel = "stylesheet" >
+</head>
+<body>
+<header>
+    <nav class = "bg-white border-bottom box-shadow mb-3 navbar navbar-expand-sm navbar-light navbar-toggleable-sm" >
+        <div class = "container" >
+            <a asp-action = "Index"
+               asp-area = ""
+               asp-controller = "Home"
+               class = "navbar-brand" >
+                Heimdall Bug Tracker
+            </a>
+            <button aria-controls = "navbarSupportedContent"
+                    aria-expanded = "false"
+                    aria-label = "Toggle navigation"
+                    class = "navbar-toggler"
+                    data-target = ".navbar-collapse"
+                    data-toggle = "collapse"
+                    type = "button" >
+                <span class = "navbar-toggler-icon" ></span>
+            </button>
+            <div class = "collapse d-sm-inline-flex flex-sm-row-reverse navbar-collapse" >
+                <partial name = "_LoginPartial" />
+                <ul class = "flex-grow-1 navbar-nav" >
+
+                    <li class = "nav-item" >
+                        <a asp-action = "Index"
+                           asp-controller = "Projects"
+                           class = "nav-link text-dark" >
+                            Projects
+                        </a>
+                    </li>
+                    <li class = "nav-item" >
+                        <a asp-action = "Index"
+                           asp-area = ""
+                           asp-controller = "Tickets"
+                           class = "nav-link text-dark" >
+                            Tickets
+                        </a>
+                    </li>
+
+                    <!--Admin Quick Links-->
+                    @if (User.IsInRole("Admin"))
+                    {
+                        <li class = "dropdown nav-item px-1" >
+                            <a aria-expanded = "false"
+                               aria-haspopup = "true"
+                               class = "dropdown-toggle nav-link"
+                               data-toggle = "dropdown"
+                               href = "#"
+                               id = "navbarDropdownMenuLink" >
+                                Admin
+                            </a>
+                            <div aria-labelledby = "navbarDropdownMenuLink"
+                                 class = "dropdown-menu text-center text-lg-left" >
+                                <a asp-action = "ManageUserRoles"
+                                   asp-area = ""
+                                   asp-controller = "UserRoles"
+                                   class = "nav-link text-dark" >
+                                    User Roles
+                                </a>
+                                <a asp-action = "Index"
+                                   asp-area = ""
+                                   asp-controller = "Projects"
+                                   class = "nav-link text-dark" >
+                                    All Projects
+                                </a>
+
+                                <!--<a class="dropdown-item" href="post.html">Post</a>-->
+                            </div>
+                        </li>
+                    }
+
+                </ul>
+            </div>
+        </div>
+    </nav>
+</header>
+<div class = "container" >
+    <main class = "pb-3"
+          role = "main" >
+        @RenderBody()
+    </main>
+</div>
+
+<footer class = "border-top footer text-muted" >
+    <div class = "container" >
+        &copy; 2020 - Valhalla Tech -
+        <a asp-action = "Privacy"
+           asp-area = ""
+           asp-controller = "Home" >
+            Privacy
+        </a>
+    </div>
+</footer>
+<script src = "~/lib/jquery/dist/jquery.min.js" ></script>
+<script src = "~/lib/bootstrap/dist/js/bootstrap.bundle.min.js" ></script>
+<script asp-append-version = "true"
+        src = "~/js/site.js" ></script>
+
+@*DataTables*@
+<!--<script src = "//cdn.datatables.net/1.10.22/js/jquery.dataTables.min.js" ></script>
+<script>
+    $ ( document ).ready ( function ()
+    {
+        $ ( '#myTable' ).DataTable ();
+    } );
+</script>-->
+
+@RenderSection("Scripts", required: false)
+</body>
+</html>
