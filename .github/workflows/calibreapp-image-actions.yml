@@ -51,6 +51,7 @@ jobs:
         uses: peter-evans/create-pull-request@master
         with:
           title: Auto Compress Images
+          labels: AutoCompressImages
           branch-suffix: timestamp
           commit-message: Compress Images
           body: ${{ steps.calibre.outputs.markdown }}
