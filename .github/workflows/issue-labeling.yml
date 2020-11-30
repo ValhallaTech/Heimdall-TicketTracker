@@ -1,0 +1,22 @@
+name: "Set Issue Label and Assignee"
+on:
+  workflow_dispatch:
+  issues:
+    types: [opened]
+  pull_request:
+    typed: [opened]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: Naturalclar/issue-action@v2.0.2
+        with:
+          title-or-body: "title"
+          parameters: '[ {"keywords": ["bug", "error"], "labels": ["bug"], "assignees": ["username"]}, {"keywords": ["feature", "implement", "enhance", "enhancement"], "labels": ["enhancement"], "assignees": ["username"]}, {"keywords": ["basic functionality"], "labels": ["basic-functionality"], "assignees": ["username"]}, {"keywords": ["performance", "speed"], "labels": ["performance"], "assignees": ["username"]}, {"keywords": ["document", "documentation"], "labels": ["documentation"], "assignees": ["username"]}]'
+          github-token: "${{ secrets.GITHUB_TOKEN }}"
+          
+          
+          
+          
+          
