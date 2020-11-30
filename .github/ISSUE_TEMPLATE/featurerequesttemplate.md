@@ -1,7 +1,7 @@
 ---
 name: FeatureRequestTemplate
 about: General feature request and bug tracker template
-title: xxx
+title: [LABEL]XXX
 labels: ''
 assignees: ''
 
