@@ -15,18 +15,15 @@ namespace ValhallaHeimdall.API
     {
         public static async Task Main( string[] args )
         {
-            //// Implement Autofac container service
-            //// Container Configuration is in Utilities folder
-            // IContainer container = ContainerConfig.Configure( );
-
-            // await using ( ILifetimeScope scope = container.BeginLifetimeScope( ) )
-            // {
-            // }
-
-            // CreateHostBuilder(args).Build().Run();
             IHost host = CreateHostBuilder( args ).Build( );
-            await PostgresSwapper.ManageDataAsync( host ).ConfigureAwait( false );
-            await host.RunAsync( ).ConfigureAwait( false );
+
+            //await PostgresSwapper
+            //      .ManageDataAsync( host )
+            //      .ConfigureAwait( false );
+
+            //await host
+            //      .RunAsync( )
+            //      .ConfigureAwait( false );
 
             using ( IServiceScope scope = host.Services.CreateScope( ) )
             {
@@ -38,8 +35,7 @@ namespace ValhallaHeimdall.API
                     ApplicationDbContext      context     = services.GetRequiredService<ApplicationDbContext>( );
                     UserManager<HeimdallUser> userManager = services.GetRequiredService<UserManager<HeimdallUser>>( );
                     RoleManager<IdentityRole> roleManager = services.GetRequiredService<RoleManager<IdentityRole>>( );
-                    await ContextSeed.SeedRolesAsync( roleManager ).ConfigureAwait( false );
-                    await ContextSeed.SeedDefaultUsersAsync( userManager ).ConfigureAwait( false );
+                    await ContextSeed.RunSeedMethodsAsync( context, roleManager, userManager ).ConfigureAwait( false );
                 }
                 catch ( Exception ex )
                 {

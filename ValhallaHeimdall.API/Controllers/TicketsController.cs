@@ -1,6 +1,7 @@
 ﻿using System.Collections.Generic;
 using System.Linq;
 using System.Threading.Tasks;
+using JM.LinqFaster;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Mvc;
@@ -10,6 +11,7 @@ using Microsoft.EntityFrameworkCore.Query;
 using ValhallaHeimdall.API.Services;
 using ValhallaHeimdall.BLL.Models;
 using ValhallaHeimdall.DAL.Data;
+using Z.EntityFramework.Plus;
 
 namespace ValhallaHeimdall.API.Controllers
 {
@@ -65,12 +67,10 @@ namespace ValhallaHeimdall.API.Controllers
                                                              .Include( pu => pu.Project )
                                                              .ToListAsync( )
                                                              .ConfigureAwait( false );
-            List<Project> projects = new List<Project>( );
 
-            foreach ( ProjectUser projectUserRecord in projectUserRecords )
-            {
-                projects.Add( projectUserRecord.Project );
-            }
+            List<Project> projects = projectUserRecords
+                                     .SelectF( projectUserRecord => projectUserRecord.Project )
+                                     .ToList( );
 
             return this.View( projects );
         }
@@ -79,22 +79,21 @@ namespace ValhallaHeimdall.API.Controllers
         public async Task<IActionResult> ProjectTickets( )
         {
             string userId = this.userManager.GetUserId( this.User );
-            List<ProjectUser> projectUsers = await this.context.ProjectUsers.Where( p => p.UserId == userId )
+            List<ProjectUser> projectUsers = await this.context.ProjectUsers
+                                                       .Where( p => p.UserId == userId )
                                                        .ToListAsync( )
                                                        .ConfigureAwait( false );
-            List<int> projectIds = new List<int>( );
-
-            foreach ( ProjectUser projectUser in projectUsers )
-            {
-                projectIds.Add( projectUser.ProjectId );
-            }
+            List<int> projectIds = projectUsers
+                                   .SelectF( projectUser => projectUser.ProjectId )
+                                   .ToList( );
 
             List<Project> projects = new List<Project>( );
 
             foreach ( int id in projectIds )
             {
                 projects.Add(
-                             await this.context.Projects.Include( p => p.Tickets )
+                             await this.context.Projects
+                                       .Include( p => p.Tickets )
                                        .ThenInclude( t => t.TicketType )
                                        .Include( p => p.Tickets )
                                        .ThenInclude( t => t.TicketPriority )
@@ -164,15 +163,15 @@ namespace ValhallaHeimdall.API.Controllers
             // var userId   = this.userManager.GetUserId( User );
             // var roleName = await this.userManager.GetRolesAsync( await this.userManager.GetUserAsync( User ) );
             Ticket ticket = await this.context.Tickets.Include( t => t.DeveloperUser )
-                                      .Include( t => t.OwnerUser )
-                                      .Include( t => t.Project )
-                                      .Include( t => t.TicketPriority )
-                                      .Include( t => t.TicketStatus )
-                                      .Include( t => t.TicketType )
+                                      .IncludeOptimized( t => t.OwnerUser )
+                                      .IncludeOptimized( t => t.Project )
+                                      .IncludeOptimized( t => t.TicketPriority )
+                                      .IncludeOptimized( t => t.TicketStatus )
+                                      .IncludeOptimized( t => t.TicketType )
                                       .Include( t => t.Comments )
                                       .ThenInclude( tc => tc.User )
-                                      .Include( t => t.Attachments )
-                                      .Include( t => t.Histories )
+                                      .IncludeOptimized( t => t.Attachments )
+                                      .IncludeOptimized( t => t.Histories )
                                       .FirstOrDefaultAsync( m => m.Id == id )
                                       .ConfigureAwait( false );
 
@@ -191,15 +190,16 @@ namespace ValhallaHeimdall.API.Controllers
                 return this.NotFound( );
             }
 
-            Ticket ticket = await this.context.Tickets.Include( t => t.DeveloperUser )
-                                      .Include( t => t.OwnerUser )
-                                      .Include( t => t.Project )
-                                      .Include( t => t.TicketPriority )
-                                      .Include( t => t.TicketStatus )
-                                      .Include( t => t.TicketType )
+            Ticket ticket = await this.context.Tickets
+                                      .IncludeOptimized( t => t.DeveloperUser )
+                                      .IncludeOptimized( t => t.OwnerUser )
+                                      .IncludeOptimized( t => t.Project )
+                                      .IncludeOptimized( t => t.TicketPriority )
+                                      .IncludeOptimized( t => t.TicketStatus )
+                                      .IncludeOptimized( t => t.TicketType )
                                       .Include( t => t.Comments )
                                       .ThenInclude( tc => tc.User )
-                                      .Include( t => t.Attachments )
+                                      .IncludeOptimized( t => t.Attachments )
                                       .FirstOrDefaultAsync( m => m.Id == id )
                                       .ConfigureAwait( false );
 
@@ -270,7 +270,7 @@ namespace ValhallaHeimdall.API.Controllers
         }
 
         // GET: Tickets/Edit/5
-        [Authorize( Roles = "Admin,ProjectManager,Developer" )]
+        [Authorize( Roles = "Administrator,ProjectManager,Developer" )]
         public async Task<IActionResult> Edit( int? id )
         {
             if ( id == null )
