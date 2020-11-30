@@ -8,15 +8,17 @@ namespace ValhallaHeimdall.BLL.Models
 {
     public class TicketAttachment
     {
-        //public int Id { get; set; }
-        //public string FilePath { get; set; }
+        // public int Id { get; set; }
+        // public string FilePath { get; set; }
         public int Id { get; set; }
 
-        [Display( Name = "Select Image" )]
+        public string FilePath { get; set; }
+
+        [Display( Name = "Select File" )]
         [NotMapped]
         [DataType( DataType.Upload )]
         [MaxFileSize( 2 * 1024 * 1024 )]
-        [AllowedExtensions( new string[] { ".jpg", ".png", ".doc", ".docx", ".xls", ".xlsx", ".pdf" } )]
+        [AllowedExtensions( new[] { ".jpg", ".png", ".doc", ".docx", ".xls", ".xlsx", ".pdf" } )]
         public IFormFile FormFile { get; set; }
 
         public string FileName { get; set; }

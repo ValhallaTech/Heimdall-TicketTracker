@@ -17,31 +17,30 @@ namespace ValhallaHeimdall.API
         {
             IHost host = CreateHostBuilder( args ).Build( );
 
-            //await PostgresSwapper
-            //      .ManageDataAsync( host )
-            //      .ConfigureAwait( false );
+            await PostgresSwapper
+                  .ManageDataAsync( host )
+                  .ConfigureAwait( false );
 
-            //await host
-            //      .RunAsync( )
-            //      .ConfigureAwait( false );
+            await host
+                  .RunAsync( )
+                  .ConfigureAwait( false );
 
-            using ( IServiceScope scope = host.Services.CreateScope( ) )
+            using IServiceScope scope = host.Services.CreateScope( );
+
+            IServiceProvider services      = scope.ServiceProvider;
+            ILoggerFactory   loggerFactory = services.GetRequiredService<ILoggerFactory>( );
+
+            try
             {
-                IServiceProvider services      = scope.ServiceProvider;
-                ILoggerFactory   loggerFactory = services.GetRequiredService<ILoggerFactory>( );
-
-                try
-                {
-                    ApplicationDbContext      context     = services.GetRequiredService<ApplicationDbContext>( );
-                    UserManager<HeimdallUser> userManager = services.GetRequiredService<UserManager<HeimdallUser>>( );
-                    RoleManager<IdentityRole> roleManager = services.GetRequiredService<RoleManager<IdentityRole>>( );
-                    await ContextSeed.RunSeedMethodsAsync( context, roleManager, userManager ).ConfigureAwait( false );
-                }
-                catch ( Exception ex )
-                {
-                    ILogger<Program> logger = loggerFactory.CreateLogger<Program>( );
-                    logger.LogError( ex, "An error occurred seeding the DB." );
-                }
+                ApplicationDbContext      context     = services.GetRequiredService<ApplicationDbContext>( );
+                UserManager<HeimdallUser> userManager = services.GetRequiredService<UserManager<HeimdallUser>>( );
+                RoleManager<IdentityRole> roleManager = services.GetRequiredService<RoleManager<IdentityRole>>( );
+                await ContextSeed.RunSeedMethodsAsync( context, roleManager, userManager ).ConfigureAwait( false );
+            }
+            catch ( Exception ex )
+            {
+                ILogger<Program> logger = loggerFactory.CreateLogger<Program>( );
+                logger.LogError( ex, "An error occurred seeding the DB." );
             }
 
             await host.RunAsync( ).ConfigureAwait( false );

@@ -1,0 +1,133 @@
+﻿@using Microsoft.AspNetCore.Identity
+@using ValhallaHeimdall.API.Services
+@model IEnumerable<ValhallaHeimdall.BLL.Models.Ticket>
+@inject UserManager<HeimdallUser> UserManager
+@inject IHeimdallAccessService AccessService
+
+@{
+    ViewData["Title"] = "My Tickets";
+    var userId = UserManager.GetUserId(User);
+    var roleName = (await UserManager.GetRolesAsync(await UserManager
+                                                              .GetUserAsync(User)
+                                                              .ConfigureAwait(false)).ConfigureAwait(false)).FirstOrDefault();
+    //var user = await UserManager.GetUserAsync(User);
+    //var roleName2 = (await UserManager.GetRolesAsync(user)).FirstOrDefault();
+    //string userId2 = user.Id;
+}
+<div class="pt-3 px-3">
+    <h1 class="text-center border-bottom-light rounded text-gray-200">My Tickets</h1>
+    <div class="table-responsive-xxl">
+        @if (TempData["Nah"] != null)
+        {
+            <h3>@TempData["Nah"]</h3>
+        }
+
+        <p>
+            <a asp-action="Create" class="btn btn-dark border mt-2">Create New</a>
+        </p>
+        <table class="table table-fixed table-dark table-bordered rounded">
+            <thead class="bg-gradient-dark text-gray-200">
+            <tr>
+                <th>
+                    @Html.DisplayNameFor(model => model.Title)
+                </th>
+                <th>
+                    @Html.DisplayNameFor(model => model.Description)
+                </th>
+                <th>
+                    @Html.DisplayNameFor(model => model.Created)
+                </th>
+                <th>
+                    @Html.DisplayNameFor(model => model.Updated)
+                </th>
+                <th>
+                    Parent Project
+                </th>
+                <th>
+                    Ticket Type
+                </th>
+                <th>
+                    Ticket Priority
+                </th>
+                <th>
+                    Ticket Status
+                </th>
+                <th>
+                    Submitted By
+                </th>
+                <th>
+                    Assigned Developer
+                </th>
+                <th>
+                    Actions
+                </th>
+            </tr>
+            </thead>
+            <tbody>
+            @if (Model.Any() == false)
+            {
+                <tr>
+                    <td>No Tickets Assigned</td>
+                    <td></td>
+                    <td></td>
+                    <td></td>
+                    <td></td>
+                    <td></td>
+                    <td></td>
+                    <td></td>
+                    <td></td>
+                    <td></td>
+                    <td></td>
+                </tr>
+            }
+            else
+            {
+                @foreach (var item in Model)
+                {
+                    <tr>
+                        <td>
+                            @Html.DisplayFor(modelItem => item.Title)
+                        </td>
+                        <td>
+                            @Html.DisplayFor(modelItem => item.Description)
+                        </td>
+                        <td>
+                            @Html.DisplayFor(modelItem => item.Created)
+                        </td>
+                        <td>
+                            @Html.DisplayFor(modelItem => item.Updated)
+                        </td>
+                        <td>
+                            @Html.DisplayFor(modelItem => item.Project.Name)
+                        </td>
+                        <td>
+                            @Html.DisplayFor(modelItem => item.TicketType.Name)
+                        </td>
+                        <td>
+                            @Html.DisplayFor(modelItem => item.TicketPriority.Name)
+                        </td>
+                        <td>
+                            @Html.DisplayFor(modelItem => item.TicketStatus.Name)
+                        </td>
+                        <td>
+                            @Html.DisplayFor(modelItem => item.OwnerUser.FullName)
+                        </td>
+                        <td>
+                            @Html.DisplayFor(modelItem => item.DeveloperUser.FullName)
+                        </td>
+                        <td>
+                            @if (await AccessService.CanInteractTicketAsync(userId, item.Id, roleName).ConfigureAwait(false))
+                            {
+                                <a asp-action="Edit" asp-route-id="@item.Id" class="btn btn-dark border">Edit</a>
+                                <a asp-action="Details" asp-route-id="@item.Id" class="btn btn-dark border">Details</a>
+                                <a asp-action="Delete" asp-route-id="@item.Id" class="btn btn-dark border">Delete</a>
+                            }
+                        </td>
+                    </tr>
+                }
+            }
+            </tbody>
+        </table>
+        <a asp-action="Index" class="btn btn-dark border">Back to All Tickets</a>
+    </div>
+</div>

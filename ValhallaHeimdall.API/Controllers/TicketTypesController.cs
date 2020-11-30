@@ -96,16 +96,9 @@ namespace ValhallaHeimdall.API.Controllers
                     this.context.Update( ticketType );
                     await this.context.SaveChangesAsync( ).ConfigureAwait( false );
                 }
-                catch ( DbUpdateConcurrencyException )
+                catch ( DbUpdateConcurrencyException ) when ( !this.TicketTypeExists( ticketType.Id ) )
                 {
-                    if ( !this.TicketTypeExists( ticketType.Id ) )
-                    {
-                        return this.NotFound( );
-                    }
-                    else
-                    {
-                        throw;
-                    }
+                    return this.NotFound( );
                 }
 
                 return this.RedirectToAction( nameof( this.Index ) );

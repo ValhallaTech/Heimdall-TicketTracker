@@ -102,20 +102,12 @@ namespace ValhallaHeimdall.API.Controllers
                           .SaveChangesAsync( )
                           .ConfigureAwait( false );
             }
-            catch ( DbUpdateConcurrencyException )
+            catch ( DbUpdateConcurrencyException ) when ( !this.TicketPriorityExists( ticketPriority.Id ) )
             {
-                if ( !this.TicketPriorityExists( ticketPriority.Id ) )
-                {
-                    return this.NotFound( );
-                }
-                else
-                {
-                    throw;
-                }
+                return this.NotFound( );
             }
 
             return this.RedirectToAction( nameof( this.Index ) );
-
         }
 
         // GET: TicketPriorities/Delete/5

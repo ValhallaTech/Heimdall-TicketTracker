@@ -187,16 +187,9 @@ namespace ValhallaHeimdall.API.Controllers
                         this.context.Update( project );
                         await this.context.SaveChangesAsync( ).ConfigureAwait( false );
                     }
-                    catch ( DbUpdateConcurrencyException )
+                    catch ( DbUpdateConcurrencyException ) when ( !this.ProjectExists( project.Id ) )
                     {
-                        if ( !this.ProjectExists( project.Id ) )
-                        {
-                            return this.NotFound( );
-                        }
-                        else
-                        {
-                            throw;
-                        }
+                        return this.NotFound( );
                     }
 
                     return this.RedirectToAction( nameof( this.Index ) );

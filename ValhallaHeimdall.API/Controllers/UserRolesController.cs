@@ -46,7 +46,8 @@ namespace ValhallaHeimdall.API.Controllers
                 IEnumerable<string> selected =
                     await this.RolesService.ListUserRolesAsync( user ).ConfigureAwait( false );
 
-                vm.Roles = new MultiSelectList( this.context.Roles, "Name", "Name", selected );
+                vm.Roles    = new MultiSelectList( this.context.Roles, "Name", "Name", selected );
+                vm.UserRole = await this.RolesService.ListUserRolesAsync( user ).ConfigureAwait( false );
                 model.Add( vm );
             }
 

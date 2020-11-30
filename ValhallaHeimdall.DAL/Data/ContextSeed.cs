@@ -119,8 +119,6 @@ namespace ValhallaHeimdall.DAL.Data
                 throw;
             }
 
-
-
             defaultUser = new HeimdallUser
                           {
                               UserName       = "testmail02@mailinator.com",
@@ -151,10 +149,6 @@ namespace ValhallaHeimdall.DAL.Data
                 throw;
             }
 
-
-
-            #region Developer Seed
-
             defaultUser = new HeimdallUser
                           {
                               UserName       = "testmail03@mailinator.com",
@@ -183,8 +177,6 @@ namespace ValhallaHeimdall.DAL.Data
 
                 throw;
             }
-
-            #endregion
 
             #region Submitter Seed
 
@@ -252,7 +244,7 @@ namespace ValhallaHeimdall.DAL.Data
 
             #endregion
 
-            string demoPassword = "Xyz%987$";
+            const string demoPassword = "Xyz%987$";
 
             // These are my seeded demo users for showing off the software
             // Each user occupies a "main" role and the new Demo role
@@ -455,8 +447,6 @@ namespace ValhallaHeimdall.DAL.Data
                 Debug.WriteLine( ex.Message );
                 Debug.WriteLine( "*********************************" );
             }
-
-            ;
         }
 
         private static async Task SeedTicketStatusesAsync( ApplicationDbContext context )
@@ -484,8 +474,6 @@ namespace ValhallaHeimdall.DAL.Data
                 Debug.WriteLine( ex.Message );
                 Debug.WriteLine( "*********************************" );
             }
-
-            ;
         }
 
         private static async Task SeedTicketPrioritiesAsync( ApplicationDbContext context )
@@ -513,8 +501,6 @@ namespace ValhallaHeimdall.DAL.Data
                 Debug.WriteLine( ex.Message );
                 Debug.WriteLine( "*********************************" );
             }
-
-            ;
         }
 
         private static async Task SeedProjectsAsync( ApplicationDbContext context )
@@ -540,8 +526,6 @@ namespace ValhallaHeimdall.DAL.Data
                 Debug.WriteLine( "*********************************" );
             }
 
-            ;
-
             Project seedProject2 = new Project { Name = "Bug Tracker Project" };
 
             try
@@ -562,8 +546,6 @@ namespace ValhallaHeimdall.DAL.Data
                 Debug.WriteLine( ex.Message );
                 Debug.WriteLine( "*********************************" );
             }
-
-            ;
 
             Project seedProject3 = new Project { Name = "Financial Portal Project" };
 
@@ -586,8 +568,6 @@ namespace ValhallaHeimdall.DAL.Data
                 Debug.WriteLine( ex.Message );
                 Debug.WriteLine( "*********************************" );
             }
-
-            ;
         }
 
         private static async Task SeedProjectUsersAsync(
@@ -632,7 +612,6 @@ namespace ValhallaHeimdall.DAL.Data
                 Debug.WriteLine( "*********************************" );
             }
 
-            ;
             projectUser = new ProjectUser { UserId = administratorId, ProjectId = project2Id };
 
             try
@@ -657,7 +636,6 @@ namespace ValhallaHeimdall.DAL.Data
                 Debug.WriteLine( "*********************************" );
             }
 
-            ;
             projectUser = new ProjectUser { UserId = administratorId, ProjectId = project3Id };
 
             try
@@ -682,7 +660,6 @@ namespace ValhallaHeimdall.DAL.Data
                 Debug.WriteLine( "*********************************" );
             }
 
-            ;
             projectUser = new ProjectUser { UserId = projectManagerId, ProjectId = project1Id };
 
             try
@@ -707,7 +684,6 @@ namespace ValhallaHeimdall.DAL.Data
                 Debug.WriteLine( "*********************************" );
             }
 
-            ;
             projectUser = new ProjectUser { UserId = projectManagerId, ProjectId = project2Id };
 
             try
@@ -732,7 +708,6 @@ namespace ValhallaHeimdall.DAL.Data
                 Debug.WriteLine( "*********************************" );
             }
 
-            ;
             projectUser = new ProjectUser { UserId = projectManagerId, ProjectId = project3Id };
 
             try
@@ -756,8 +731,6 @@ namespace ValhallaHeimdall.DAL.Data
                 Debug.WriteLine( ex.Message );
                 Debug.WriteLine( "*********************************" );
             }
-
-            ;
         }
 
         private static async Task SeedTicketsAsync(
@@ -814,8 +787,6 @@ namespace ValhallaHeimdall.DAL.Data
                 Debug.WriteLine( ex.Message );
                 Debug.WriteLine( "*********************************" );
             }
-
-            ;
         }
     }
 }

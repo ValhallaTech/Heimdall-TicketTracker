@@ -121,16 +121,9 @@ namespace ValhallaHeimdall.API.Controllers
                     this.context.Update( notification );
                     await this.context.SaveChangesAsync( ).ConfigureAwait( false );
                 }
-                catch ( DbUpdateConcurrencyException )
+                catch ( DbUpdateConcurrencyException ) when ( !this.NotificationExists( notification.Id ) )
                 {
-                    if ( !this.NotificationExists( notification.Id ) )
-                    {
-                        return this.NotFound( );
-                    }
-                    else
-                    {
-                        throw;
-                    }
+                    return this.NotFound( );
                 }
 
                 return this.RedirectToAction( nameof( this.Index ) );

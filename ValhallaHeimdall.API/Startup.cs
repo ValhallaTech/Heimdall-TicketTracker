@@ -73,9 +73,13 @@ namespace ValhallaHeimdall.API
 
             app.UseHttpsRedirection( );
             app.UseStaticFiles( );
+            app.UseCookiePolicy( );
             app.UseRouting( );
             app.UseAuthentication( );
             app.UseAuthorization( );
+            app.UseSession( );
+            app.UseResponseCaching( );
+
             app.UseEndpoints(
                              endpoints =>
                              {

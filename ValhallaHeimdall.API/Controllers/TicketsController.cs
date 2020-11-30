@@ -1,15 +1,20 @@
-﻿using System.Collections.Generic;
+﻿using System;
+using System.Collections.Generic;
 using System.Linq;
+using System.Linq.Dynamic.Core;
 using System.Threading.Tasks;
 using JM.LinqFaster;
 using Microsoft.AspNetCore.Authorization;
+using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Mvc.Rendering;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Query;
 using ValhallaHeimdall.API.Services;
+using ValhallaHeimdall.API.Utilities;
 using ValhallaHeimdall.BLL.Models;
+using ValhallaHeimdall.BLL.Models.ViewModels;
 using ValhallaHeimdall.DAL.Data;
 using Z.EntityFramework.Plus;
 
@@ -49,107 +54,100 @@ namespace ValhallaHeimdall.API.Controllers
         // GET: Tickets
         public async Task<IActionResult> Index( )
         {
-            IIncludableQueryable<Ticket, TicketType> applicationDbContext = this.context.Tickets.Include( t => t.DeveloperUser )
-                                                                                .Include( t => t.OwnerUser )
-                                                                                .Include( t => t.Project )
-                                                                                .Include( t => t.TicketPriority )
-                                                                                .Include( t => t.TicketStatus )
-                                                                                .Include( t => t.TicketType );
+            IIncludableQueryable<Ticket, TicketType> applicationDbContext = this.context.Tickets
+                .Include( t => t.DeveloperUser )
+                .Include( t => t.OwnerUser )
+                .Include( t => t.Project )
+                .Include( t => t.TicketPriority )
+                .Include( t => t.TicketStatus )
+                .Include( t => t.TicketType );
 
             return this.View( await applicationDbContext.ToListAsync( ).ConfigureAwait( false ) );
         }
 
-        [Authorize( Roles = "ProjectManager" )]
-        public async Task<IActionResult> MyProjects( )
-        {
-            string userId = this.userManager.GetUserId( this.User );
-            List<ProjectUser> projectUserRecords = await this.context.ProjectUsers.Where( p => p.UserId == userId )
-                                                             .Include( pu => pu.Project )
-                                                             .ToListAsync( )
-                                                             .ConfigureAwait( false );
-
-            List<Project> projects = projectUserRecords
-                                     .SelectF( projectUserRecord => projectUserRecord.Project )
-                                     .ToList( );
-
-            return this.View( projects );
-        }
-
-        [Authorize( Roles = "ProjectManager,Developer" )]
-        public async Task<IActionResult> ProjectTickets( )
-        {
-            string userId = this.userManager.GetUserId( this.User );
-            List<ProjectUser> projectUsers = await this.context.ProjectUsers
-                                                       .Where( p => p.UserId == userId )
-                                                       .ToListAsync( )
-                                                       .ConfigureAwait( false );
-            List<int> projectIds = projectUsers
-                                   .SelectF( projectUser => projectUser.ProjectId )
-                                   .ToList( );
-
-            List<Project> projects = new List<Project>( );
-
-            foreach ( int id in projectIds )
-            {
-                projects.Add(
-                             await this.context.Projects
-                                       .Include( p => p.Tickets )
-                                       .ThenInclude( t => t.TicketType )
-                                       .Include( p => p.Tickets )
-                                       .ThenInclude( t => t.TicketPriority )
-                                       .Include( p => p.Tickets )
-                                       .ThenInclude( t => t.TicketStatus )
-                                       .Include( p => p.Tickets )
-                                       .ThenInclude( t => t.TicketType )
-                                       .Include( p => p.Tickets )
-                                       .ThenInclude( t => t.DeveloperUser )
-                                       .Include( p => p.Tickets )
-                                       .ThenInclude( t => t.OwnerUser )
-                                       .FirstOrDefaultAsync( p => p.Id == id )
-                                       .ConfigureAwait( false ) );
-            }
-
-            return this.View( projects );
-        }
-
-        [Authorize( Roles = "Developer" )]
+        // GET My Tickets
         public async Task<IActionResult> MyTickets( )
         {
             string userId = this.userManager.GetUserId( this.User );
-            List<Ticket> tickets = await this.context.Tickets.Where( t => t.DeveloperUserId == userId )
-                                             .Include( t => t.DeveloperUser )
-                                             .Include( t => t.OwnerUser )
-                                             .Include( t => t.Project )
-                                             .Include( t => t.TicketPriority )
-                                             .Include( t => t.TicketStatus )
-                                             .Include( t => t.TicketType )
-                                             .Include( t => t.Comments )
-                                             .ThenInclude( tc => tc.User )
-                                             .Include( t => t.Attachments )
-                                             .ToListAsync( )
-                                             .ConfigureAwait( false );
+            IEnumerable<string> roleList = await this.rolesService
+                                                     .ListUserRolesAsync(
+                                                                         await this.context.Users.FindAsync( userId )
+                                                                             .ConfigureAwait( false ) )
+                                                     .ConfigureAwait( false );
+            string       role = roleList.FirstOrDefault( );
+            List<Ticket> model;
 
-            return View( tickets );
-        }
+            switch ( role )
+            {
+                case "Administrator":
+                    model = await this.context.Tickets.Include( t => t.OwnerUser )
+                                      .Include( t => t.TicketPriority )
+                                      .Include( t => t.TicketStatus )
+                                      .Include( t => t.TicketType )
+                                      .Include( t => t.Project )
+                                      .ToListAsync( )
+                                      .ConfigureAwait( false );
 
-        [Authorize( Roles = "Submitter" )]
-        public async Task<IActionResult> CreatedTickets( )
-        {
-            string userId = this.userManager.GetUserId( this.User );
-            List<Ticket> tickets = await this.context.Tickets.Where( t => t.OwnerUserId == userId )
-                                             .Include( t => t.DeveloperUser )
-                                             .Include( t => t.OwnerUser )
-                                             .Include( t => t.Project )
-                                             .Include( t => t.TicketPriority )
-                                             .Include( t => t.TicketStatus )
-                                             .Include( t => t.TicketType )
-                                             .Include( t => t.Comments )
-                                             .ThenInclude( tc => tc.User )
-                                             .Include( t => t.Attachments )
-                                             .ToListAsync( )
-                                             .ConfigureAwait( false );
+                    break;
 
-            return View( tickets );
+                // Snippet to get ticket for project manager - special case for roles
+                case "ProjectManager":
+
+                    model = new List<Ticket>( );
+
+                    List<ProjectUser> userProjects = await this.context.ProjectUsers.Where( pu => pu.UserId == userId )
+                                                               .ToListAsync( )
+                                                               .ConfigureAwait( false );
+
+                    List<int> projectIds = userProjects
+                                           .Select( record => this.context.Projects.Find( record.ProjectId ).Id )
+                                           .ToList( );
+
+                    foreach ( List<Ticket> tickets in
+                        from int id in projectIds
+                        let tickets = this.context.Tickets.Where( t => t.ProjectId == id )
+                                          .Include( t => t.OwnerUser )
+                                          .Include( t => t.TicketPriority )
+                                          .Include( t => t.TicketStatus )
+                                          .Include( t => t.TicketType )
+                                          .Include( t => t.Project )
+                                          .ToList( )
+                        select tickets )
+                    {
+                        model.AddRange( tickets );
+                    }
+
+                    break;
+
+                case "Developer":
+                    model = this.context.Tickets.Where( t => t.DeveloperUserId == userId )
+                                .Include( t => t.OwnerUser )
+                                .Include( t => t.TicketPriority )
+                                .Include( t => t.TicketStatus )
+                                .Include( t => t.TicketType )
+                                .Include( t => t.Project )
+                                .ToList( );
+
+                    break;
+
+                case "Submitter":
+
+                case "NewUser":
+                    model = this.context.Tickets.Where( t => t.OwnerUserId == userId )
+                                .Include( t => t.OwnerUser )
+                                .Include( t => t.TicketPriority )
+                                .Include( t => t.TicketStatus )
+                                .Include( t => t.TicketType )
+                                .Include( t => t.Project )
+                                .ToList( );
+
+                    break;
+
+                default:
+                    return this.RedirectToAction( "Index" );
+            }
+
+            return this.View( model );
         }
 
         // GET: Tickets/Details/5
@@ -160,18 +158,15 @@ namespace ValhallaHeimdall.API.Controllers
                 return this.NotFound( );
             }
 
-            // var userId   = this.userManager.GetUserId( User );
-            // var roleName = await this.userManager.GetRolesAsync( await this.userManager.GetUserAsync( User ) );
-            Ticket ticket = await this.context.Tickets.Include( t => t.DeveloperUser )
+            TicketDetailsViewModel vm = new TicketDetailsViewModel( );
+            Ticket ticket = await this.context.Tickets.IncludeOptimized( t => t.DeveloperUser )
                                       .IncludeOptimized( t => t.OwnerUser )
                                       .IncludeOptimized( t => t.Project )
                                       .IncludeOptimized( t => t.TicketPriority )
                                       .IncludeOptimized( t => t.TicketStatus )
                                       .IncludeOptimized( t => t.TicketType )
-                                      .Include( t => t.Comments )
-                                      .ThenInclude( tc => tc.User )
                                       .IncludeOptimized( t => t.Attachments )
-                                      .IncludeOptimized( t => t.Histories )
+                                      .IncludeOptimized( t => t.Comments )
                                       .FirstOrDefaultAsync( m => m.Id == id )
                                       .ConfigureAwait( false );
 
@@ -180,46 +175,21 @@ namespace ValhallaHeimdall.API.Controllers
                 return this.NotFound( );
             }
 
-            return this.View( ticket );
-        }
+            vm.Ticket = ticket;
 
-        public async Task<IActionResult> ProjectTicketDetails( int? id )
-        {
-            if ( id == null )
-            {
-                return this.NotFound( );
-            }
-
-            Ticket ticket = await this.context.Tickets
-                                      .IncludeOptimized( t => t.DeveloperUser )
-                                      .IncludeOptimized( t => t.OwnerUser )
-                                      .IncludeOptimized( t => t.Project )
-                                      .IncludeOptimized( t => t.TicketPriority )
-                                      .IncludeOptimized( t => t.TicketStatus )
-                                      .IncludeOptimized( t => t.TicketType )
-                                      .Include( t => t.Comments )
-                                      .ThenInclude( tc => tc.User )
-                                      .IncludeOptimized( t => t.Attachments )
-                                      .FirstOrDefaultAsync( m => m.Id == id )
-                                      .ConfigureAwait( false );
-
-            if ( ticket == null )
-            {
-                return this.NotFound( );
-            }
-
-            return this.View( ticket );
+            return this.View( vm );
         }
 
         // GET: Tickets/Create
         public IActionResult Create( )
         {
-            this.ViewData["DeveloperUserId"]  = new SelectList( this.context.Users,            "Id", "Id" );
-            this.ViewData["OwnerUserId"]      = new SelectList( this.context.Users,            "Id", "Id" );
+            this.ViewData["DeveloperUserId"] = new SelectList( this.context.Users, "Id", "FullName" );
+            this.ViewData["OwnerUserId"]     = new SelectList( this.context.Users, "Id", "FullName" );
+
             this.ViewData["ProjectId"]        = new SelectList( this.context.Projects,         "Id", "Name" );
-            this.ViewData["TicketPriorityId"] = new SelectList( this.context.TicketPriorities, "Id", "Id" );
-            this.ViewData["TicketStatusId"]   = new SelectList( this.context.TicketStatuses,   "Id", "Id" );
-            this.ViewData["TicketTypeId"]     = new SelectList( this.context.TicketTypes,      "Id", "Id" );
+            this.ViewData["TicketPriorityId"] = new SelectList( this.context.TicketPriorities, "Id", "Name" );
+            this.ViewData["TicketStatusId"]   = new SelectList( this.context.TicketStatuses,   "Id", "Name" );
+            this.ViewData["TicketTypeId"]     = new SelectList( this.context.TicketTypes,      "Id", "Name" );
 
             return this.View( );
         }
@@ -232,75 +202,117 @@ namespace ValhallaHeimdall.API.Controllers
         public async Task<IActionResult> Create(
             [Bind(
                      "Id,Title,Description,Created,Updated,ProjectId,TicketTypeId,TicketPriorityId,TicketStatusId,OwnerUserId,DeveloperUserId" )]
-            Ticket ticket )
+            Ticket ticket,
+            List<IFormFile> attachments )
         {
-            // ticket.OwnerUserId = await this.userManager.GetUserIdAsync( User ).ConfigureAwait( false );
+            if ( this.ModelState.IsValid )
+            {
+                // IF not demo user
+                if ( !this.User.IsInRole( "DemoUser" ) )
+                {
+                    // Add file handler
+                    ticket.OwnerUserId = this.userManager.GetUserId( User );
+                    ticket.Created     = DateTime.Now;
 
-            // if ( this.ModelState.IsValid )
-            // {
-            // if ( attachment != null )
-            // {
-            // AttachmentHandler attachmentHandler = new AttachmentHandler( );
-            // ticket.Attachments.Add( attachmentHandler.Attach( attachment ) );
-            // }
-            // else
-            // {
-            // this.context.Add( ticket );
-            // await this.context.SaveChangesAsync( ).ConfigureAwait( false );
+                    if ( attachments != null )
+                    {
+                        foreach ( IFormFile attachment in attachments )
+                        {
+                            AttachmentHandler attachmentHandler = new AttachmentHandler( );
+                            ticket.Attachments.Add( attachmentHandler.Attach( attachment, ticket.Id ) );
+                        }
+                    }
 
-            // return this.RedirectToAction( nameof( this.Index ) );
-            // }
-            // }
-            this.ViewData["DeveloperUserId"] = new SelectList( this.context.Users, "Id", "Id", ticket.DeveloperUserId );
-            this.ViewData["OwnerUserId"]     = new SelectList( this.context.Users, "Id", "Id", ticket.OwnerUserId );
-            this.ViewData["ProjectId"]       = new SelectList( this.context.Projects, "Id", "Name", ticket.ProjectId );
+                    this.context.Add( ticket );
+                    await this.context.SaveChangesAsync( ).ConfigureAwait( false );
+
+                    return this.RedirectToAction( nameof( Index ) );
+                }
+                else
+                {
+                    // Handle tempdata["DemoLockout"]
+                    this.TempData["DemoLockout"] =
+                        "Your changes have not been saved. You must be logged in as a full user.";
+
+                    // Handle redirect to index
+                    return this.RedirectToAction( nameof( this.Index ) );
+                }
+            }
+
+            this.ViewData["DeveloperUserId"] =
+                new SelectList( this.context.Users, "Id", "FullName", ticket.DeveloperUserId );
+            this.ViewData["OwnerUserId"] = new SelectList( this.context.Users,    "Id", "Id",   ticket.OwnerUserId );
+            this.ViewData["ProjectId"]   = new SelectList( this.context.Projects, "Id", "Name", ticket.ProjectId );
             this.ViewData["TicketPriorityId"] = new SelectList(
                                                                this.context.TicketPriorities,
                                                                "Id",
-                                                               "Id",
+                                                               "Name",
                                                                ticket.TicketPriorityId );
             this.ViewData["TicketStatusId"] = new SelectList(
                                                              this.context.TicketStatuses,
                                                              "Id",
-                                                             "Id",
+                                                             "Name",
                                                              ticket.TicketStatusId );
-            this.ViewData["TicketTypeId"] = new SelectList( this.context.TicketTypes, "Id", "Id", ticket.TicketTypeId );
+            this.ViewData["TicketTypeId"] =
+                new SelectList( this.context.TicketTypes, "Id", "Name", ticket.TicketTypeId );
 
             return this.View( ticket );
         }
 
         // GET: Tickets/Edit/5
-        [Authorize( Roles = "Administrator,ProjectManager,Developer" )]
         public async Task<IActionResult> Edit( int? id )
         {
             if ( id == null )
             {
-                return this.NotFound( );
+                return NotFound( );
             }
 
-            Ticket ticket = await this.context.Tickets.FindAsync( id ).ConfigureAwait( false );
+            string userId = this.userManager.GetUserId( User );
+            string roleName =
+                ( await this.userManager
+                            .GetRolesAsync( await this.userManager.GetUserAsync( User ).ConfigureAwait( false ) )
+                            .ConfigureAwait( false ) ).FirstOrDefault( );
 
-            if ( ticket == null )
+            // If you have access to a ticket
+            if ( await this.accessService.CanInteractTicketAsync( userId, ( int )id, roleName )
+                           .ConfigureAwait( false ) )
             {
-                return this.NotFound( );
+                Ticket ticket = await this.context.Tickets.FindAsync( id ).ConfigureAwait( false );
+
+                if ( ticket == null )
+                {
+                    return this.NotFound( );
+                }
+
+                ViewData["DeveloperUserId"] = new SelectList(
+                                                             this.context.Users,
+                                                             "Id",
+                                                             "FullName",
+                                                             ticket.DeveloperUserId );
+                ViewData["OwnerUserId"] = new SelectList( this.context.Users,    "Id", "Id",   ticket.OwnerUserId );
+                ViewData["ProjectId"]   = new SelectList( this.context.Projects, "Id", "Name", ticket.ProjectId );
+                ViewData["TicketPriorityId"] = new SelectList(
+                                                              this.context.TicketPriorities,
+                                                              "Id",
+                                                              "Name",
+                                                              ticket.TicketPriorityId );
+                ViewData["TicketStatusId"] = new SelectList(
+                                                            this.context.TicketStatuses,
+                                                            "Id",
+                                                            "Name",
+                                                            ticket.TicketStatusId );
+                ViewData["TicketTypeId"] = new SelectList(
+                                                          this.context.TicketTypes,
+                                                          "Id",
+                                                          "Name",
+                                                          ticket.TicketTypeId );
+
+                return this.View( ticket );
             }
 
-            this.ViewData["DeveloperUserId"] = new SelectList( this.context.Users, "Id", "Id", ticket.DeveloperUserId );
-            this.ViewData["OwnerUserId"]     = new SelectList( this.context.Users, "Id", "Id", ticket.OwnerUserId );
-            this.ViewData["ProjectId"]       = new SelectList( this.context.Projects, "Id", "Name", ticket.ProjectId );
-            this.ViewData["TicketPriorityId"] = new SelectList(
-                                                               this.context.TicketPriorities,
-                                                               "Id",
-                                                               "Id",
-                                                               ticket.TicketPriorityId );
-            this.ViewData["TicketStatusId"] = new SelectList(
-                                                             this.context.TicketStatuses,
-                                                             "Id",
-                                                             "Id",
-                                                             ticket.TicketStatusId );
-            this.ViewData["TicketTypeId"] = new SelectList( this.context.TicketTypes, "Id", "Id", ticket.TicketTypeId );
+            this.TempData["Nah"] = "Nah bruh...";
 
-            return this.View( ticket );
+            return RedirectToAction( "Index" );
         }
 
         // POST: Tickets/Edit/5
@@ -325,28 +337,16 @@ namespace ValhallaHeimdall.API.Controllers
 
             if ( this.ModelState.IsValid )
             {
-                // try
-                // {
-                // if ( attachment != null )
-                // {
-                // AttachmentHandler attachmentHandler = new AttachmentHandler( );
-                // ticket.Attachments.Add( attachmentHandler.Attach( attachment ) );
-                // }
-
-                // this.context.Update( ticket );
-                // await this.context.SaveChangesAsync( ).ConfigureAwait( false );
-                // }
-                // catch ( DbUpdateConcurrencyException )
-                // {
-                // if ( !this.TicketExists( ticket.Id ) )
-                // {
-                // return this.NotFound( );
-                // }
-                // else
-                // {
-                // throw;
-                // }
-                // }
+                try
+                {
+                    ticket.Updated = DateTime.Now;
+                    this.context.Update( ticket );
+                    await this.context.SaveChangesAsync( ).ConfigureAwait( false );
+                }
+                catch ( DbUpdateConcurrencyException ) when ( !this.TicketExists( ticket.Id ) )
+                {
+                    return this.NotFound( );
+                }
 
                 // Add History
                 string userId = this.userManager.GetUserId( this.User );
@@ -407,13 +407,12 @@ namespace ValhallaHeimdall.API.Controllers
         }
 
         // POST: Tickets/Delete/5
-        [HttpPost]
-        [ActionName( "Delete" )]
-        [ValidateAntiForgeryToken]
+        [HttpPost] [ActionName( "Delete" )] [ValidateAntiForgeryToken]
         public async Task<IActionResult> DeleteConfirmed( int id )
         {
             Ticket ticket = await this.context.Tickets.FindAsync( id ).ConfigureAwait( false );
             this.context.Tickets.Remove( ticket );
+
             await this.context.SaveChangesAsync( ).ConfigureAwait( false );
 
             return this.RedirectToAction( nameof( this.Index ) );
