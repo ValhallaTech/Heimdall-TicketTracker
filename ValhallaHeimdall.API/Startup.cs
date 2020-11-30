@@ -23,15 +23,18 @@ namespace ValhallaHeimdall.API
         // This method gets called by the runtime. Use this method to add services to the container.
         public void ConfigureServices( IServiceCollection services )
         {
+            // Adds the controllers to the DI container
+            services.AddControllers( ).AddControllersAsServices( );
+
             services.AddDbContext<ApplicationDbContext>(
                                                         options => options.UseSqlServer(
                                                          this.Configuration.GetConnectionString(
                                                           "DefaultConnection" ) ) );
 
-            services.AddDbContext<ApplicationDbContext>(
-                                                        options => options.UseNpgsql(
-                                                         PostgresSwapper
-                                                             .GetConnectionString( this.Configuration ) ) );
+            //services.AddDbContext<ApplicationDbContext>(
+            //                                            options => options.UseNpgsql(
+            //                                             PostgresSwapper
+            //                                                 .GetConnectionString( this.Configuration ) ) );
 
             services.AddIdentity<HeimdallUser, IdentityRole>( options => options.SignIn.RequireConfirmedAccount = true )
                     .AddEntityFrameworkStores<ApplicationDbContext>( )
@@ -43,9 +46,10 @@ namespace ValhallaHeimdall.API
             services.AddScoped<IHeimdallHistoryService, HeimdallHistoryService>( );
             services.AddScoped<IHeimdallAccessService, HeimdallAccessService>( );
             services.AddScoped<IHeimdallFileService, HeimdallFileService>( );
+            services.AddScoped<IHeimdallNotificationService, HeimdallNotificationService>( );
 
             services.Configure<MailSettings>( this.Configuration.GetSection( "MailSettings" ) );
-            services.AddTransient<IMailService, MailService>( );
+            services.AddTransient<IEmailSender, HeimdallEmailService>( );
 
             services.AddControllersWithViews( );
             services.AddRazorPages( );

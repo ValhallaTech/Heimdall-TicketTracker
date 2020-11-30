@@ -24,24 +24,35 @@ namespace ValhallaHeimdall.API.Services
             Notification notification = new Notification
                                         {
                                             TicketId = ticket.Id,
-                                            Description =
-                                                $"The {change.Property} was updated from {change.OldValue} to {change.NewValue}.",
+                                            Description = $"The {change.Property} was updated from {change.OldValue} to {change.NewValue}.",
                                             Created     = DateTime.Now,
                                             SenderId    = userId,
                                             RecipientId = ticket.DeveloperUserId
                                         };
-            await this.context.Notifications.AddAsync( notification ).ConfigureAwait( false );
-            await this.context.SaveChangesAsync( ).ConfigureAwait( false );
+            await this.context.Notifications
+                      .AddAsync( notification )
+                      .ConfigureAwait( false );
+
+            await this.context
+                      .SaveChangesAsync( )
+                      .ConfigureAwait( false );
+
             string to = ticket.DeveloperUser.Email;
             string subject =
                 $"For project: {ticket.Project.Name}, ticket: {ticket.Title}, priority: {ticket.TicketPriority.Name}";
-            await this.emailService.SendEmailAsync( to, subject, notification.Description ).ConfigureAwait( false );
+
+            await this.emailService
+                      .SendEmailAsync( to, subject, notification.Description )
+                      .ConfigureAwait( false );
         }
 
         public async Task NotifyOfCommentAsync( string userId, Ticket ticket, TicketComment comment )
         {
             HeimdallUser user =
-                await this.context.Users.FirstOrDefaultAsync( u => u.Id == userId ).ConfigureAwait( false );
+                await this.context.Users
+                          .FirstOrDefaultAsync( u => u.Id == userId )
+                          .ConfigureAwait( false );
+
             Notification notification = new Notification
                                         {
                                             TicketId = ticket.Id,
@@ -51,18 +62,31 @@ namespace ValhallaHeimdall.API.Services
                                             SenderId    = userId,
                                             RecipientId = ticket.DeveloperUserId
                                         };
-            await this.context.Notifications.AddAsync( notification ).ConfigureAwait( false );
-            await this.context.SaveChangesAsync( ).ConfigureAwait( false );
+
+            await this.context.Notifications
+                      .AddAsync( notification )
+                      .ConfigureAwait( false );
+
+            await this.context
+                      .SaveChangesAsync( )
+                      .ConfigureAwait( false );
+
             string to = ticket.DeveloperUser.Email;
             string subject =
                 $"For project: {ticket.Project.Name}, ticket: {ticket.Title}, priority: {ticket.TicketPriority.Name}";
-            await this.emailService.SendEmailAsync( to, subject, notification.Description ).ConfigureAwait( false );
+
+            await this.emailService
+                      .SendEmailAsync( to, subject, notification.Description )
+                      .ConfigureAwait( false );
         }
 
         public async Task NotifyOfAttachmentAsync( string userId, Ticket ticket, TicketAttachment attachment )
         {
             HeimdallUser user =
-                await this.context.Users.FirstOrDefaultAsync( u => u.Id == userId ).ConfigureAwait( false );
+                await this.context.Users
+                          .FirstOrDefaultAsync( u => u.Id == userId )
+                          .ConfigureAwait( false );
+
             Notification notification = new Notification
                                         {
                                             TicketId = ticket.Id,
@@ -72,12 +96,22 @@ namespace ValhallaHeimdall.API.Services
                                             SenderId    = userId,
                                             RecipientId = ticket.DeveloperUserId
                                         };
-            await this.context.Notifications.AddAsync( notification ).ConfigureAwait( false );
-            await this.context.SaveChangesAsync( ).ConfigureAwait( false );
+            await this.context.Notifications
+                      .AddAsync( notification )
+                      .ConfigureAwait( false );
+
+            await this.context
+                      .SaveChangesAsync( )
+                      .ConfigureAwait( false );
+
             string to = ticket.DeveloperUser.Email;
+
             string subject =
                 $"For project: {ticket.Project.Name}, ticket: {ticket.Title}, priority: {ticket.TicketPriority.Name}";
-            await this.emailService.SendEmailAsync( to, subject, notification.Description ).ConfigureAwait( false );
+
+            await this.emailService
+                      .SendEmailAsync( to, subject, notification.Description )
+                      .ConfigureAwait( false );
         }
     }
 }
