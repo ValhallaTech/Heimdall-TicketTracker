@@ -50,7 +50,7 @@ namespace ValhallaHeimdall.API.Controllers
                 return this.View( ticketPriority );
             }
 
-            this.context.Add( ticketPriority );
+            await context.AddAsync( ticketPriority ).ConfigureAwait( false );
             await this.context
                       .SaveChangesAsync( )
                       .ConfigureAwait( false );

@@ -79,7 +79,7 @@ namespace ValhallaHeimdall.API.Controllers
                 ticketComment.Created = DateTimeOffset.Now;
                 ticketComment.UserId  = this.userManager.GetUserId( this.User );
 
-                this.context.Add( ticketComment );
+                await context.AddAsync( ticketComment ).ConfigureAwait( false );
                 await this.context.SaveChangesAsync( ).ConfigureAwait( false );
 
                 return this.RedirectToAction( "Details", "Tickets", new { id = ticketComment.TicketId } );

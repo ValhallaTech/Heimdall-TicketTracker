@@ -75,7 +75,7 @@ namespace ValhallaHeimdall.API.Controllers
         {
             if ( this.ModelState.IsValid )
             {
-                this.context.Add( ticketAttachment );
+                await context.AddAsync( ticketAttachment ).ConfigureAwait( false );
 
                 try
                 {

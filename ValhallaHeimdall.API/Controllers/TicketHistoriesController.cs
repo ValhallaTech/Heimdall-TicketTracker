@@ -68,7 +68,7 @@ namespace ValhallaHeimdall.API.Controllers
         {
             if ( this.ModelState.IsValid )
             {
-                this.context.Add( ticketHistory );
+                await context.AddAsync( ticketHistory ).ConfigureAwait( false );
                 await this.context
                           .SaveChangesAsync( )
                           .ConfigureAwait( false );

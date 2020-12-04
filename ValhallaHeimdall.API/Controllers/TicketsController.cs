@@ -223,7 +223,7 @@ namespace ValhallaHeimdall.API.Controllers
                         }
                     }
 
-                    this.context.Add( ticket );
+                    await context.AddAsync( ticket ).ConfigureAwait( false );
                     await this.context.SaveChangesAsync( ).ConfigureAwait( false );
 
                     return this.RedirectToAction( nameof( Index ) );

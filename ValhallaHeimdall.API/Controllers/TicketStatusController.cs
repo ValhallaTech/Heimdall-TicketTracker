@@ -50,7 +50,7 @@ namespace ValhallaHeimdall.API.Controllers
         {
             if ( this.ModelState.IsValid )
             {
-                this.context.Add( ticketStatus );
+                await context.AddAsync( ticketStatus ).ConfigureAwait( false );
                 await this.context.SaveChangesAsync( ).ConfigureAwait( false );
 
                 return this.RedirectToAction( nameof( this.Index ) );

@@ -2,7 +2,7 @@
 using System.ComponentModel.DataAnnotations;
 using System.ComponentModel.DataAnnotations.Schema;
 using Microsoft.AspNetCore.Http;
-using ValhallaHeimdall.API.Extensions;
+using ValhallaHeimdall.BLL.Extensions;
 
 namespace ValhallaHeimdall.BLL.Models
 {
