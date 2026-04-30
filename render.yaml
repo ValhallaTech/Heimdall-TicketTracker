@@ -1,0 +1,40 @@
+# Render blueprint for Heimdall TicketTracker.
+# Docs: https://render.com/docs/blueprint-spec
+services:
+  - type: web
+    name: heimdall-ticket-tracker-web
+    runtime: docker
+    plan: free
+    region: ohio
+    dockerfilePath: ./Dockerfile
+    dockerContext: .
+    healthCheckPath: /
+    envVars:
+      - key: ASPNETCORE_ENVIRONMENT
+        value: Production
+      - key: DATABASE_URL
+        fromDatabase:
+          name: heimdall-ticket-tracker-postgres
+          property: connectionString
+      - key: REDIS_URL
+        fromService:
+          type: keyvalue
+          name: heimdall-ticket-tracker-redis
+          property: connectionString
+
+  - type: keyvalue
+    name: heimdall-ticket-tracker-redis
+    plan: free
+    region: ohio
+    ipAllowList: []
+
+databases:
+  - name: heimdall-ticket-tracker-postgres
+    plan: free
+    region: ohio
+    databaseName: heimdall
+    user: heimdall
+    postgresMajorVersion: "18"
+    ipAllowList:
+      - source: 0.0.0.0/0
+        description: everywhere

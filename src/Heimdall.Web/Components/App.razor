@@ -1,0 +1,66 @@
+<!DOCTYPE html>
+<html lang="en" data-bs-theme="light">
+
+<head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <base href="/" />
+    <ResourcePreloader />
+    <link rel="stylesheet" href="@Assets["css/bootstrap.min.css"]" />
+    <link rel="stylesheet" href="@Assets["css/fontawesome.all.min.css"]" />
+    <link rel="stylesheet" href="@Assets["app.css"]" />
+    <link rel="stylesheet" href="@Assets["Heimdall.Web.styles.css"]" />
+    <ImportMap />
+    <HeadOutlet @rendermode="InteractiveServer" />
+    <!-- No-flash theme init: runs before CSS paints, prevents FOUC in dark mode -->
+    <script>
+        (function () {
+            var saved = null;
+            // localStorage can throw in private browsing, sandboxed iframes, or when storage is disabled
+            try { saved = localStorage.getItem('htt-theme'); } catch (e) { saved = null; }
+            // Validate to prevent an injected value from being applied as an attribute
+            if (saved !== 'dark' && saved !== 'light') { saved = null; }
+            var preferred = 'light';
+            try {
+                preferred = window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+            } catch (e) { /* matchMedia unavailable — fall back to 'light' */ }
+            document.documentElement.setAttribute('data-bs-theme', saved || preferred);
+        })();
+    </script>
+</head>
+
+<body>
+    <Routes @rendermode="InteractiveServer" />
+    <ReconnectModal />
+    <script src="@Assets["_framework/blazor.web.js"]"></script>
+    <script src="@Assets["js/bootstrap.bundle.min.js"]"></script>
+    <script>
+        window.HttTheme = {
+            toggle: function () {
+                var html = document.documentElement;
+                var next = html.getAttribute('data-bs-theme') === 'dark' ? 'light' : 'dark';
+                html.setAttribute('data-bs-theme', next);
+                // localStorage can throw (private browsing, sandboxed iframes, quota) — toggle still works in-memory
+                try { localStorage.setItem('htt-theme', next); } catch (e) { /* persistence unavailable */ }
+                HttTheme.syncAriaLabel();
+            },
+            get: function () {
+                return document.documentElement.getAttribute('data-bs-theme');
+            },
+            syncAriaLabel: function () {
+                var btn = document.querySelector('.theme-toggle');
+                if (btn) {
+                    var current = document.documentElement.getAttribute('data-bs-theme');
+                    btn.setAttribute('aria-label',
+                        current === 'dark'
+                            ? 'Toggle dark mode. Currently dark mode.'
+                            : 'Toggle dark mode. Currently light mode.');
+                }
+            }
+        };
+        // Sync the button label with the theme that was applied by the no-flash head script
+        HttTheme.syncAriaLabel();
+    </script>
+</body>
+
+</html>
