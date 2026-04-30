@@ -15,10 +15,15 @@
     <!-- No-flash theme init: runs before CSS paints, prevents FOUC in dark mode -->
     <script>
         (function () {
-            var saved = localStorage.getItem('htt-theme');
+            var saved = null;
+            // localStorage can throw in private browsing, sandboxed iframes, or when storage is disabled
+            try { saved = localStorage.getItem('htt-theme'); } catch (e) { saved = null; }
             // Validate to prevent an injected value from being applied as an attribute
             if (saved !== 'dark' && saved !== 'light') { saved = null; }
-            var preferred = window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+            var preferred = 'light';
+            try {
+                preferred = window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+            } catch (e) { /* matchMedia unavailable — fall back to 'light' */ }
             document.documentElement.setAttribute('data-bs-theme', saved || preferred);
         })();
     </script>
@@ -35,7 +40,8 @@
                 var html = document.documentElement;
                 var next = html.getAttribute('data-bs-theme') === 'dark' ? 'light' : 'dark';
                 html.setAttribute('data-bs-theme', next);
-                localStorage.setItem('htt-theme', next);
+                // localStorage can throw (private browsing, sandboxed iframes, quota) — toggle still works in-memory
+                try { localStorage.setItem('htt-theme', next); } catch (e) { /* persistence unavailable */ }
                 HttTheme.syncAriaLabel();
             },
             get: function () {
