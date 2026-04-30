@@ -31,7 +31,7 @@ tests/
 ├── Heimdall.Web.Tests/            # xUnit + bUnit
 └── pgtap/
     ├── 00_sanity.sql
-    ├── docker-compose.pgtap.yml   # theory/pgtap image, host port 55432
+    ├── docker-compose.pgtap.yml   # builds postgres:17 + pgtap, host port 55432
     └── run-tests.sh
 
 src/Heimdall.Web/

@@ -35,15 +35,15 @@ Example: `10_tickets_schema.sql`, `20_rls_tenant_isolation.sql`.
 
 ### Option 1 — Docker (recommended)
 
-The bundled compose file uses the [`theory/pgtap`](https://hub.docker.com/r/theory/pgtap) image, which has the pgtap extension preinstalled. The container is mapped to host port **55432** to avoid clashing with the primary `docker-compose.yml` at the repo root.
+The bundled compose file builds a small image extending the official `postgres:17` with the `postgresql-17-pgtap` extension package (see [`Dockerfile`](./Dockerfile)). The container is mapped to host port **55432** to avoid clashing with the primary `docker-compose.yml` at the repo root.
 
 ```bash
-docker compose -f tests/pgtap/docker-compose.pgtap.yml up -d
+docker compose -f tests/pgtap/docker-compose.pgtap.yml up -d --build
 PGPORT=55432 ./tests/pgtap/run-tests.sh
 docker compose -f tests/pgtap/docker-compose.pgtap.yml down
 ```
 
-> **Note on image choice:** `theory/pgtap:latest` is used because it ships with pgtap baked in. If you prefer the official `postgres:17` image, you must install pgtap separately (e.g. via an init script or `apt install postgresql-17-pgtap`) — `run-tests.sh` will still issue `CREATE EXTENSION IF NOT EXISTS pgtap;` but the underlying extension files must be present on disk.
+> **Note on image choice:** the local Dockerfile installs `postgresql-17-pgtap` on top of the official `postgres:17` image. CI uses the same approach via `docker exec` against a `postgres:17` service container — see `.github/workflows/ci.yml`. `run-tests.sh` issues `CREATE EXTENSION IF NOT EXISTS pgtap;` and relies on the extension files being present on disk.
 
 ### Option 2 — Existing Postgres + `pg_prove`
 

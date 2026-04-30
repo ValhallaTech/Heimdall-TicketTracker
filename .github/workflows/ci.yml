@@ -42,7 +42,7 @@ jobs:
           --collect:"XPlat Code Coverage"
 
       - name: Code Coverage Summary (enforce >=80%)
-        uses: irongut/CodeCoverageSummary@v1
+        uses: irongut/CodeCoverageSummary@v1.3.0
         with:
           filename: TestResults/**/coverage.cobertura.xml
           badge: true
@@ -105,7 +105,7 @@ jobs:
     runs-on: ubuntu-latest
     services:
       postgres:
-        image: theory/pgtap:latest
+        image: postgres:17
         env:
           POSTGRES_USER: postgres
           POSTGRES_PASSWORD: postgres
@@ -121,7 +121,14 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Install pg_prove and psql client
+      - name: Install pgTAP extension into Postgres service container
+        run: |
+          docker exec ${{ job.services.postgres.id }} bash -c "
+            apt-get update && \
+            apt-get install -y --no-install-recommends postgresql-17-pgtap
+          "
+
+      - name: Install pg_prove and psql client on runner
         run: |
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends \
