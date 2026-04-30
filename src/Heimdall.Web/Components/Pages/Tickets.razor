@@ -20,7 +20,7 @@
 <div class="row g-2 mb-3 align-items-center">
     <div class="col-12 col-sm">
         <div class="input-group">
-            <button class="input-group-text btn"
+            <button class="btn btn-outline-secondary"
                     type="button"
                     aria-label="Search"
                     @onclick="ExecuteSearchAsync">
@@ -39,8 +39,7 @@
         <div class="d-flex align-items-center gap-2">
             <label for="pageSizeSelect" class="form-label mb-0 text-body-secondary small text-nowrap">Per page</label>
             <select id="pageSizeSelect"
-                    class="form-select form-select-sm"
-                    style="width: auto;"
+                    class="form-select form-select-sm w-auto"
                     @bind="pageSize"
                     @bind:after="OnPageSizeChangedAsync">
                 <option value="10">10</option>
