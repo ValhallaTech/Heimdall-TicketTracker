@@ -23,16 +23,16 @@ public class M202604300001_CreateTickets : Migration
             .AsString(200)
             .NotNullable()
             .WithColumn("description")
-            .AsString(4000)
+            .AsCustom("text")
             .NotNullable()
             .WithColumn("status")
-            .AsInt32()
+            .AsInt16()
             .NotNullable()
-            .WithDefaultValue(0)
+            .WithDefaultValue((short)0)
             .WithColumn("priority")
-            .AsInt32()
+            .AsInt16()
             .NotNullable()
-            .WithDefaultValue(1)
+            .WithDefaultValue((short)1)
             .WithColumn("reporter")
             .AsString(100)
             .NotNullable()
@@ -46,6 +46,19 @@ public class M202604300001_CreateTickets : Migration
             .AsCustom("timestamptz")
             .NotNullable();
 
+        // Domain CHECK constraints: status and priority are int-backed enums with values 0..3.
+        // Enforcing the range at the database layer prevents out-of-band values from being
+        // persisted by future ad-hoc SQL or buggy callers, and lets the planner exploit the
+        // narrow domain.
+        Execute.Sql(
+            "ALTER TABLE tickets ADD CONSTRAINT ck_tickets_status_range "
+                + "CHECK (status BETWEEN 0 AND 3);"
+        );
+        Execute.Sql(
+            "ALTER TABLE tickets ADD CONSTRAINT ck_tickets_priority_range "
+                + "CHECK (priority BETWEEN 0 AND 3);"
+        );
+
         // Composite index supports the default DateCreated DESC list ordering and
         // also speeds up status-filtered listings.
         Create
@@ -55,13 +68,6 @@ public class M202604300001_CreateTickets : Migration
             .Ascending()
             .OnColumn("date_created")
             .Descending();
-
-        // Index to support search/sort by priority.
-        Create
-            .Index("ix_tickets_priority")
-            .OnTable("tickets")
-            .OnColumn("priority")
-            .Ascending();
     }
 
     /// <inheritdoc />

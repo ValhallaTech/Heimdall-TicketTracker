@@ -54,8 +54,8 @@ public sealed class DatabaseSeeder
 
         var titles = new string[count];
         var descriptions = new string[count];
-        var statuses = new int[count];
-        var priorities = new int[count];
+        var statuses = new short[count];
+        var priorities = new short[count];
         var reporters = new string[count];
         var assignees = new string?[count];
         var datesCreated = new DateTimeOffset[count];
@@ -69,8 +69,8 @@ public sealed class DatabaseSeeder
         {
             titles[i] = $"Sample ticket #{i + 1}";
             descriptions[i] = $"This is the description for sample ticket number {i + 1}.";
-            statuses[i] = i % 4;             // cycles Open / InProgress / Resolved / Closed
-            priorities[i] = i % 4;           // cycles Low / Medium / High / Critical
+            statuses[i] = (short)(i % 4);    // cycles Open / InProgress / Resolved / Closed
+            priorities[i] = (short)(i % 4);  // cycles Low / Medium / High / Critical
             reporters[i] = $"reporter{i % 5}";
             assignees[i] = i % 3 == 0 ? null : $"assignee{i % 4}";
             datesCreated[i] = anchor.AddHours(-i);
@@ -82,9 +82,9 @@ public sealed class DatabaseSeeder
                 (title, description, status, priority, reporter, assignee, date_created, date_updated)
             SELECT * FROM unnest(
                 @Titles::varchar[],
-                @Descriptions::varchar[],
-                @Statuses::int[],
-                @Priorities::int[],
+                @Descriptions::text[],
+                @Statuses::int2[],
+                @Priorities::int2[],
                 @Reporters::varchar[],
                 @Assignees::varchar[],
                 @DatesCreated::timestamptz[],
