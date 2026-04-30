@@ -9,10 +9,29 @@
   },
   "scripts": {
     "build": "node ./build-assets.mjs",
-    "clean": "node -e \"const fs=require('fs');for(const f of ['wwwroot/css/bootstrap.min.css','wwwroot/css/bootstrap.min.css.map','wwwroot/js/bootstrap.bundle.min.js','wwwroot/js/bootstrap.bundle.min.js.map']){try{fs.unlinkSync(f)}catch{}}\""
+    "clean": "node -e \"const fs=require('fs');for(const f of ['wwwroot/css/bootstrap.min.css','wwwroot/css/bootstrap.min.css.map','wwwroot/js/bootstrap.bundle.min.js','wwwroot/js/bootstrap.bundle.min.js.map']){try{fs.unlinkSync(f)}catch{}}\"",
+    "test": "jest",
+    "test:coverage": "jest --coverage",
+    "lint": "eslint . --ext .ts,.tsx,.js,.mjs,.cjs",
+    "lint:fix": "eslint . --ext .ts,.tsx,.js,.mjs,.cjs --fix",
+    "format": "prettier --write .",
+    "format:check": "prettier --check ."
   },
   "devDependencies": {
+    "@eslint/js": "^10.0.1",
     "@fortawesome/fontawesome-free": "7.2.0",
-    "bootstrap": "5.3.8"
+    "@types/jest": "^30.0.0",
+    "@typescript-eslint/eslint-plugin": "^8.59.1",
+    "@typescript-eslint/parser": "^8.59.1",
+    "bootstrap": "5.3.8",
+    "eslint": "^10.2.1",
+    "eslint-config-prettier": "^10.1.8",
+    "eslint-plugin-jest": "^29.15.2",
+    "globals": "^17.5.0",
+    "jest": "^30.3.0",
+    "prettier": "^3.8.3",
+    "ts-jest": "^29.4.9",
+    "typescript": "^6.0.3",
+    "typescript-eslint": "^8.59.1"
   }
 }
