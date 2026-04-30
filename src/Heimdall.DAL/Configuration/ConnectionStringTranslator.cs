@@ -83,9 +83,10 @@ public static class ConnectionStringTranslator
     /// <summary>
     /// Converts a <c>redis://</c> or <c>rediss://</c> URL into a StackExchange.Redis configuration string.
     /// If the input is already a host:port style config, it is returned unchanged.
+    /// Returns <c>null</c> if <paramref name="value"/> is null/empty or the URL is malformed.
     /// </summary>
     /// <param name="value">URL or StackExchange.Redis config string.</param>
-    /// <returns>A StackExchange.Redis compatible configuration string, or <c>null</c> if <paramref name="value"/> is null/empty.</returns>
+    /// <returns>A StackExchange.Redis compatible configuration string, or <c>null</c> if <paramref name="value"/> is null/empty/malformed.</returns>
     public static string? ToRedisConfiguration(string? value)
     {
         if (string.IsNullOrWhiteSpace(value))
@@ -101,7 +102,16 @@ public static class ConnectionStringTranslator
             return value;
         }
 
-        var uri = new Uri(value);
+        Uri uri;
+        try
+        {
+            uri = new Uri(value);
+        }
+        catch (Exception ex) when (ex is UriFormatException or ArgumentException)
+        {
+            return null;
+        }
+
         var host = uri.Host;
         var port = uri.IsDefaultPort ? 6379 : uri.Port;
         var config = $"{host}:{port}";

@@ -27,6 +27,13 @@ public class TicketService : ITicketService
     private readonly ILogger<TicketService> _logger;
 
     /// <summary>Initializes a new instance.</summary>
+    /// <param name="repository">Ticket persistence abstraction.</param>
+    /// <param name="cache">Distributed cache used for read-through list caching.</param>
+    /// <param name="mapper">AutoMapper instance used to project between entities and DTOs.</param>
+    /// <param name="logger">Logger.</param>
+    /// <exception cref="ArgumentNullException">
+    /// Thrown when any required dependency is <see langword="null"/>.
+    /// </exception>
     public TicketService(
         ITicketRepository repository,
         ICacheService cache,
@@ -34,10 +41,14 @@ public class TicketService : ITicketService
         ILogger<TicketService> logger
     )
     {
-        _repository = repository ?? throw new ArgumentNullException(nameof(repository));
-        _cache = cache ?? throw new ArgumentNullException(nameof(cache));
-        _mapper = mapper ?? throw new ArgumentNullException(nameof(mapper));
-        _logger = logger ?? throw new ArgumentNullException(nameof(logger));
+        ArgumentNullException.ThrowIfNull(repository);
+        ArgumentNullException.ThrowIfNull(cache);
+        ArgumentNullException.ThrowIfNull(mapper);
+        ArgumentNullException.ThrowIfNull(logger);
+        _repository = repository;
+        _cache = cache;
+        _mapper = mapper;
+        _logger = logger;
     }
 
     /// <inheritdoc />

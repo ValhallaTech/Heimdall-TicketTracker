@@ -23,10 +23,17 @@ public class RedisCacheService : ICacheService
     private readonly ILogger<RedisCacheService> _logger;
 
     /// <summary>Initializes a new instance.</summary>
+    /// <param name="multiplexer">Connected Redis multiplexer.</param>
+    /// <param name="logger">Logger used for graceful-degradation diagnostics.</param>
+    /// <exception cref="ArgumentNullException">
+    /// Thrown when <paramref name="multiplexer"/> or <paramref name="logger"/> is <see langword="null"/>.
+    /// </exception>
     public RedisCacheService(IConnectionMultiplexer multiplexer, ILogger<RedisCacheService> logger)
     {
-        _multiplexer = multiplexer ?? throw new ArgumentNullException(nameof(multiplexer));
-        _logger = logger ?? throw new ArgumentNullException(nameof(logger));
+        ArgumentNullException.ThrowIfNull(multiplexer);
+        ArgumentNullException.ThrowIfNull(logger);
+        _multiplexer = multiplexer;
+        _logger = logger;
     }
 
     private IDatabase GetDatabase() => _multiplexer.GetDatabase();

@@ -21,6 +21,11 @@ namespace Heimdall.DAL.Repositories;
 /// </summary>
 public class TicketRepository : ITicketRepository
 {
+    private const string SelectColumns =
+        "id AS Id, title AS Title, description AS Description, status AS Status, "
+        + "priority AS Priority, reporter AS Reporter, assignee AS Assignee, "
+        + "date_created AS DateCreated, date_updated AS DateUpdated";
+
     private readonly string _connectionString;
     private readonly IDapper? _dapper;
 
@@ -52,11 +57,6 @@ public class TicketRepository : ITicketRepository
     }
 
     private IDbConnection CreateConnection() => new NpgsqlConnection(_connectionString);
-
-    private const string SelectColumns =
-        "id AS Id, title AS Title, description AS Description, status AS Status, "
-        + "priority AS Priority, reporter AS Reporter, assignee AS Assignee, "
-        + "date_created AS DateCreated, date_updated AS DateUpdated";
 
     /// <inheritdoc />
     public async Task<IReadOnlyList<Ticket>> GetAllAsync(
