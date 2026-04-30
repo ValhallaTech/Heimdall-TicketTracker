@@ -59,15 +59,19 @@ public class M202604300001_CreateTickets : Migration
                 + "CHECK (priority BETWEEN 0 AND 3);"
         );
 
-        // Composite index supports the default DateCreated DESC list ordering and
-        // also speeds up status-filtered listings.
-        Create
-            .Index("ix_tickets_status_date_created")
-            .OnTable("tickets")
-            .OnColumn("status")
-            .Ascending()
-            .OnColumn("date_created")
-            .Descending();
+        // The actual production query workload is dominated by the paged list view, which
+        // ALWAYS orders by (date_created DESC, id DESC) and (today) never filters on status.
+        // A composite index on (status, date_created) was originally proposed but would not
+        // be used by the planner for a non-status-filtered query — it would just be dead
+        // weight on every INSERT / UPDATE. Index the columns that are actually sorted on
+        // instead. Including id in the index key matches the deterministic tie-breaker used
+        // in the ORDER BY, so the planner can satisfy the entire ORDER BY from the index
+        // and skip the sort step. FluentMigrator's fluent index API doesn't emit a DESC sort
+        // for PostgreSQL prior to 3.x, so we drop down to raw SQL to be unambiguous.
+        Execute.Sql(
+            "CREATE INDEX ix_tickets_date_created_id "
+                + "ON tickets (date_created DESC, id DESC);"
+        );
     }
 
     /// <inheritdoc />

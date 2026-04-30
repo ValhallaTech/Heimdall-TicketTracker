@@ -143,18 +143,17 @@ public class TicketService : ITicketService
     )
     {
         ArgumentNullException.ThrowIfNull(dto);
-        var existing = await _repository
-            .GetByIdAsync(dto.Id, cancellationToken)
-            .ConfigureAwait(false);
-        if (existing is null)
-        {
-            return false;
-        }
 
-        _mapper.Map(dto, existing);
-        existing.DateUpdated = DateTimeOffset.UtcNow;
+        // Single-round-trip update. The repository's UPDATE is keyed by Id and returns
+        // rowsAffected, so a separate get-by-id existence check is redundant — and worse,
+        // would open a TOCTOU window where the row could be deleted between the SELECT and
+        // the UPDATE. Map fresh: the TicketDto -> Ticket profile ignores DateCreated /
+        // DateUpdated, and the UPDATE statement neither reads nor writes DateCreated and
+        // sources DateUpdated from now() server-side, so we never overwrite the original
+        // creation timestamp.
+        var ticket = _mapper.Map<Ticket>(dto);
         var updated = await _repository
-            .UpdateAsync(existing, cancellationToken)
+            .UpdateAsync(ticket, cancellationToken)
             .ConfigureAwait(false);
         if (updated)
         {

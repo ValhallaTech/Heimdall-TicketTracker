@@ -69,6 +69,12 @@ public static class ConnectionStringTranslator
             Password = password,
             Database = database,
             SslMode = sslMode,
+            // Surface this app in pg_stat_activity / pg_stat_statements so DBAs can attribute
+            // load to the right service when multiple ValhallaTech apps share a Postgres host.
+            ApplicationName = "Heimdall.Web",
+            // Defaults: Timeout = 15s, CommandTimeout = 30s, Maximum Pool Size = 100,
+            // Trust Server Certificate = false. None of those are overridden here — never
+            // set TrustServerCertificate = true based on externally supplied URL params.
         };
 
         var sslRootCert = ParseQueryParam(uri.Query, "sslrootcert");

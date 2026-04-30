@@ -58,9 +58,18 @@ builder.Services.Configure<DataOptions>(options =>
 });
 
 // --- Redis multiplexer (singleton) ----------------------------------------
+// AbortOnConnectFail = false so a transient Redis outage at startup degrades gracefully
+// (the cache layer's catches turn cache misses into DB hits) instead of crashing the app.
+// SyncTimeout / ConnectTimeout are left at the StackExchange.Redis defaults (5s each)
+// — explicitly NOT 0 / infinite. ClientName surfaces this app in `CLIENT LIST` / Redis
+// monitoring, mirroring the Application Name we set on the Postgres side.
 builder.Services.AddSingleton<IConnectionMultiplexer>(_ =>
-    ConnectionMultiplexer.Connect(redisConnectionString)
-);
+{
+    var options = ConfigurationOptions.Parse(redisConnectionString);
+    options.AbortOnConnectFail = false;
+    options.ClientName = "Heimdall.Web";
+    return ConnectionMultiplexer.Connect(options);
+});
 
 // --- FluentMigrator -------------------------------------------------------
 builder.Services.AddHeimdallMigrations(postgresConnectionString);

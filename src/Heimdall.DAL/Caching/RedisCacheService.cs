@@ -15,6 +15,12 @@ namespace Heimdall.DAL.Caching;
 /// </summary>
 public class RedisCacheService : ICacheService
 {
+    // Newtonsoft.Json with default settings + camelCase resolver is what Midgard uses
+    // for the same key namespace, so payloads are interoperable. The default handling for
+    // enums is integer serialization, which round-trips losslessly for TicketStatus /
+    // TicketPriority (both int-backed). If a future contract change switches enums to
+    // string form via StringEnumConverter, BOTH the producer and consumer settings must be
+    // updated in lockstep — otherwise reads will throw JsonReaderException.
     private static readonly JsonSerializerSettings SerializerSettings = new()
     {
         ContractResolver = new CamelCasePropertyNamesContractResolver(),

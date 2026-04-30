@@ -21,10 +21,28 @@ namespace Heimdall.DAL.Repositories;
 /// </summary>
 public class TicketRepository : ITicketRepository
 {
+    // Full column projection — used when the consumer needs the long-form description
+    // (e.g. the edit page / GetByIdAsync). description is a TEXT column and may be
+    // TOAST-stored, so omitting it from list queries materially reduces row width and
+    // detoasting work.
     private const string SelectColumns =
         "id AS Id, title AS Title, description AS Description, status AS Status, "
         + "priority AS Priority, reporter AS Reporter, assignee AS Assignee, "
         + "date_created AS DateCreated, date_updated AS DateUpdated";
+
+    // List projection — excludes description because the Tickets list page does not
+    // render it. Description on the resulting Ticket entity defaults to string.Empty,
+    // which is correct for any list-only consumer (the cached list DTO never reads it).
+    private const string ListSelectColumns =
+        "id AS Id, title AS Title, status AS Status, priority AS Priority, "
+        + "reporter AS Reporter, assignee AS Assignee, "
+        + "date_created AS DateCreated, date_updated AS DateUpdated";
+
+    // Defensive upper bound on the unfiltered "list everything" query. The cached list
+    // is intentionally simple (single key, 5-min TTL) and is not designed to materialise
+    // arbitrarily large result sets in process memory — cap it at a sane ceiling so a
+    // run-away ticket count cannot OOM the app or thrash the cache payload size.
+    private const int GetAllRowCap = 500;
 
     private readonly string _connectionString;
     private readonly IDapper? _dapper;
@@ -65,7 +83,7 @@ public class TicketRepository : ITicketRepository
     {
         using var connection = CreateConnection();
         var command = new CommandDefinition(
-            $"SELECT {SelectColumns} FROM tickets ORDER BY date_created DESC, id DESC",
+            $"SELECT {ListSelectColumns} FROM tickets ORDER BY date_created DESC, id DESC LIMIT {GetAllRowCap}",
             cancellationToken: cancellationToken
         );
         var rows = await connection.QueryAsync<Ticket>(command).ConfigureAwait(false);
@@ -98,9 +116,11 @@ public class TicketRepository : ITicketRepository
 
         // ORDER BY always includes "id DESC" as a deterministic tie-breaker so paging is stable
         // across requests even when the sort column has duplicate values.
+        // Description is excluded from the list projection — the Tickets page does not render
+        // it, and TEXT is detoasted on read which is wasted work for the table view.
         string querySql =
             $"""
-            SELECT {SelectColumns}
+            SELECT {ListSelectColumns}
             FROM   tickets
             {whereClause}
             ORDER  BY {sortColumn} {sortDirection}, id DESC
@@ -172,12 +192,14 @@ public class TicketRepository : ITicketRepository
     {
         ArgumentNullException.ThrowIfNull(ticket);
         using var connection = CreateConnection();
+        // status / priority columns are SMALLINT; explicit ::smallint casts keep the parameter
+        // type the planner sees stable (Dapper binds the int-backed enums as int4 by default).
         const string sql =
             @"
 INSERT INTO tickets
     (title, description, status, priority, reporter, assignee, date_created, date_updated)
 VALUES
-    (@Title, @Description, @Status, @Priority, @Reporter, @Assignee, @DateCreated, @DateUpdated)
+    (@Title, @Description, @Status::smallint, @Priority::smallint, @Reporter, @Assignee, @DateCreated, @DateUpdated)
 RETURNING id;";
         var command = new CommandDefinition(sql, ticket, cancellationToken: cancellationToken);
         var id = await connection.ExecuteScalarAsync<int>(command).ConfigureAwait(false);
@@ -193,16 +215,22 @@ RETURNING id;";
     {
         ArgumentNullException.ThrowIfNull(ticket);
         using var connection = CreateConnection();
+        // date_created is intentionally not in the SET list — it is immutable after INSERT.
+        // date_updated is set to NOW() server-side so the timestamp is sourced from the
+        // database clock (consistent with the column's DEFAULT now()) rather than an
+        // arbitrary client clock — avoids skew between hosts and removes one
+        // round-trip-worth of "what time is it?" reasoning from the BLL.
+        // status / priority are SMALLINT; cast explicitly so the planner sees a stable type.
         const string sql =
             @"
 UPDATE tickets SET
     title        = @Title,
     description  = @Description,
-    status       = @Status,
-    priority     = @Priority,
+    status       = @Status::smallint,
+    priority     = @Priority::smallint,
     reporter     = @Reporter,
     assignee     = @Assignee,
-    date_updated = @DateUpdated
+    date_updated = now()
 WHERE id = @Id;";
         var command = new CommandDefinition(sql, ticket, cancellationToken: cancellationToken);
         var rows = await connection.ExecuteAsync(command).ConfigureAwait(false);
