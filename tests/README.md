@@ -11,4 +11,6 @@ This directory and its sibling locations contain every test type used by the pro
 | Frontend   | `src/Heimdall.Web/__tests__/`     | Jest              | JavaScript / TypeScript tests for web assets          |
 | Database   | `tests/pgtap/`                    | pgTAP + pg_prove  | Postgres schema, function, trigger, and RLS tests     |
 
-Run .NET suites with `dotnet test` from the repo root. Run the Jest suite with `npm test` from `src/Heimdall.Web/`. Run the pgTAP suite with `./tests/pgtap/run-tests.sh` (see `tests/pgtap/README.md` for Docker-based local setup).
+Run .NET suites with `dotnet test Heimdall.slnx --settings coverlet.runsettings` from the repo root. Run the Jest suite with `yarn test:coverage` from `src/Heimdall.Web/` (Yarn 4 via Corepack). Run the pgTAP suite with `bash tests/pgtap/run-tests.sh` (see `tests/pgtap/README.md` for Docker-based local setup).
+
+For the full testing guide — prerequisites, per-suite conventions, code templates, coverage reporting, and CI integration — see [`../docs/testing.md`](../docs/testing.md). Contribution standards are documented in [`../CONTRIBUTING.md`](../CONTRIBUTING.md).

@@ -1,5 +1,7 @@
 # Heimdall TicketTracker
 
+![CI](https://github.com/ValhallaTech/Heimdall-TicketTracker/actions/workflows/ci.yml/badge.svg)
+
 A small, modern ticket-tracking web application built on **.NET 10**, **Blazor (Interactive Server)**, **PostgreSQL**, and **Redis**. It is the watchful guardian of your work items.
 
 ## Stack
@@ -80,6 +82,18 @@ dotnet run --project src/Heimdall.Web
 
 The Web project auto-runs FluentMigrator migrations on startup and (by default) seeds 50 sample tickets when the `tickets` table is empty.
 
+## Testing
+
+Heimdall has four parallel test suites, all gated at **≥80% line and branch coverage** in CI. See [`docs/testing.md`](docs/testing.md) for the deep-dive guide and [`tests/README.md`](tests/README.md) for the suite index.
+
+| Suite                | Tooling                          | Quick start |
+| -------------------- | -------------------------------- | ----------- |
+| .NET (xUnit + bUnit) | xUnit, Moq, FluentAssertions, bUnit, Testcontainers (DAL) | `dotnet test Heimdall.slnx --settings coverlet.runsettings` |
+| Frontend (Jest)      | Jest, ESLint, Prettier (Yarn 4)  | `cd src/Heimdall.Web && yarn install && yarn test:coverage` |
+| Database (pgTAP)     | pgTAP + `pg_prove` in Docker     | `docker compose -f tests/pgtap/docker-compose.pgtap.yml up -d` then `bash tests/pgtap/run-tests.sh` |
+
+The pgTAP runner expects `PGHOST`, `PGPORT` (default `55432` for the Compose stack), `PGUSER`, `PGPASSWORD`, and `PGDATABASE` to be set. See [`tests/pgtap/README.md`](tests/pgtap/README.md) for full details.
+
 ## Deployment
 
 The project includes a Render Blueprint (`render.yaml`) that provisions:
@@ -93,6 +107,10 @@ Connect the repo as a Blueprint in the Render dashboard and Render will read `re
 ## Dependency updates
 
 [Renovate Bot](https://docs.renovatebot.com) is configured via `renovate.json` to keep NuGet, npm, GitHub Actions, and Docker base images up to date weekly. Renovate is the **single source of truth** for dependency versions — do not pin or recommend specific versions in code review.
+
+## Contributing
+
+PRs are welcome — please read [`CONTRIBUTING.md`](CONTRIBUTING.md) before opening one. File bugs and feature requests via [GitHub Issues](https://github.com/ValhallaTech/Heimdall-TicketTracker/issues).
 
 ## License
 
