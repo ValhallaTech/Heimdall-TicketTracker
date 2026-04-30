@@ -105,7 +105,7 @@ jobs:
     runs-on: ubuntu-latest
     services:
       postgres:
-        image: postgres:17
+        image: postgres:18.3
         env:
           POSTGRES_USER: postgres
           POSTGRES_PASSWORD: postgres
@@ -125,7 +125,7 @@ jobs:
         run: |
           docker exec ${{ job.services.postgres.id }} bash -c "
             apt-get update && \
-            apt-get install -y --no-install-recommends postgresql-17-pgtap
+            apt-get install -y --no-install-recommends postgresql-18-pgtap
           "
 
       - name: Install pg_prove and psql client on runner

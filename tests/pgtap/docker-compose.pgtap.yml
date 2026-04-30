@@ -1,7 +1,8 @@
 # docker-compose.pgtap.yml
 # Convenience compose file for running the pgTAP suite locally without
 # polluting the developer's primary Postgres instance. Builds a small
-# image extending postgres:17 with the postgresql-17-pgtap extension.
+# image extending postgres:18.3 with the postgresql-18-pgtap extension
+# (matching the production Postgres 18.3 version).
 #
 # Usage:
 #   docker compose -f tests/pgtap/docker-compose.pgtap.yml up -d --build
