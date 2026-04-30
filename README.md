@@ -84,7 +84,7 @@ The Web project auto-runs FluentMigrator migrations on startup and (by default) 
 
 ## Testing
 
-Heimdall has four parallel test suites, all gated at **≥80% line and branch coverage** in CI. See [`docs/testing.md`](docs/testing.md) for the deep-dive guide and [`tests/README.md`](tests/README.md) for the suite index.
+Heimdall has three parallel test suites, all gated at **≥80% line and branch coverage** in CI. See [`docs/testing.md`](docs/testing.md) for the deep-dive guide and [`tests/README.md`](tests/README.md) for the suite index.
 
 | Suite                | Tooling                          | Quick start |
 | -------------------- | -------------------------------- | ----------- |

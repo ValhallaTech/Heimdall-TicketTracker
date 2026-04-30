@@ -1,6 +1,6 @@
 # Testing Guide
 
-Heimdall TicketTracker is exercised by four parallel test suites that together cover the .NET back end, the Blazor UI, the front-end JavaScript/TypeScript, and the PostgreSQL schema. CI runs every suite on each push and pull request and fails the build if any suite drops below the **80% line and branch** coverage gate.
+Heimdall TicketTracker is exercised by six test projects grouped into three CI jobs that together cover the .NET back end, the Blazor UI, the front-end JavaScript/TypeScript, and the PostgreSQL schema. CI runs every job on each push and pull request and fails the build if any suite drops below the **80% line and branch** coverage gate.
 
 ## Overview
 
@@ -59,7 +59,7 @@ From the repository root:
 dotnet test Heimdall.slnx --settings coverlet.runsettings
 ```
 
-The `coverlet.runsettings` file emits Cobertura, excludes `[xunit*]*`, `[*.Tests]*`, and `[Heimdall.Web]*Migrations*`, and is the canonical way to run the .NET suites locally so the output matches CI.
+The `coverlet.runsettings` file emits Cobertura, excludes `[xunit*]*`, `[*.Tests]*`, and `[Heimdall.*]*Migrations*`, and is the canonical way to run the .NET suites locally so the output matches CI.
 
 To target a single project:
 
@@ -91,9 +91,9 @@ docker compose -f tests/pgtap/docker-compose.pgtap.yml up -d
 
 export PGHOST=localhost
 export PGPORT=55432
-export PGUSER=heimdall
-export PGPASSWORD=heimdall
-export PGDATABASE=heimdall
+export PGUSER=postgres
+export PGPASSWORD=postgres
+export PGDATABASE=heimdall_test
 
 bash tests/pgtap/run-tests.sh
 
