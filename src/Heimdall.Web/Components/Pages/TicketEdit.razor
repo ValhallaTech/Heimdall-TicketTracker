@@ -1,0 +1,139 @@
+@page "/tickets/new"
+@page "/tickets/{Id:int}"
+@rendermode InteractiveServer
+@inject ITicketService TicketService
+@inject NavigationManager Navigation
+
+<PageTitle>@(IsNew ? "New Ticket" : "Edit Ticket") — Heimdall TicketTracker</PageTitle>
+
+<div class="mb-4">
+    <a href="/tickets" class="btn btn-link ps-0 text-decoration-none"><i class="fa-solid fa-arrow-left me-1" aria-hidden="true"></i> Back to tickets</a>
+</div>
+
+<div class="card shadow-sm mx-auto" style="max-width: 720px;">
+    <div class="card-header bg-transparent py-3">
+        <h1 class="h4 mb-0 fw-semibold">@(IsNew ? "New Ticket" : "Edit Ticket")</h1>
+    </div>
+    <div class="card-body p-4">
+        <EditForm Model="Model" OnValidSubmit="SaveAsync" FormName="ticket-form">
+            <DataAnnotationsValidator />
+            <ValidationSummary class="text-danger small mb-3" />
+            <input type="hidden" name="Model.Id" value="@Model.Id" />
+
+            <fieldset class="row g-3">
+                <legend class="col-12 col-form-label fw-medium pb-0 pt-0">Details</legend>
+
+                <div class="col-12">
+                    <label for="title" class="form-label">Title</label>
+                    <input id="title" name="Model.Title" class="form-control" @bind="Model.Title" placeholder="Short summary of the issue" />
+                </div>
+
+                <div class="col-12">
+                    <label for="description" class="form-label">Description</label>
+                    <textarea id="description" name="Model.Description" class="form-control" rows="5" @bind="Model.Description" placeholder="Detailed description of the issue, steps to reproduce, expected behaviour, etc."></textarea>
+                </div>
+            </fieldset>
+
+            <hr class="my-3" />
+
+            <fieldset class="row g-3">
+                <legend class="col-12 col-form-label fw-medium pb-0 pt-0">Classification</legend>
+
+                <div class="col-md-6">
+                    <label for="status" class="form-label">Status</label>
+                    <InputSelect id="status" class="form-select" @bind-Value="Model.Status">
+                        @foreach (var s in Enum.GetValues<TicketStatus>())
+                        {
+                            <option value="@s">@s</option>
+                        }
+                    </InputSelect>
+                </div>
+                <div class="col-md-6">
+                    <label for="priority" class="form-label">Priority</label>
+                    <InputSelect id="priority" class="form-select" @bind-Value="Model.Priority">
+                        @foreach (var p in Enum.GetValues<TicketPriority>())
+                        {
+                            <option value="@p">@p</option>
+                        }
+                    </InputSelect>
+                </div>
+            </fieldset>
+
+            <hr class="my-3" />
+
+            <fieldset class="row g-3">
+                <legend class="col-12 col-form-label fw-medium pb-0 pt-0">People</legend>
+
+                <div class="col-md-6">
+                    <label for="reporter" class="form-label">Reporter</label>
+                    <input id="reporter" name="Model.Reporter" class="form-control" @bind="Model.Reporter" placeholder="Reporter name" />
+                </div>
+                <div class="col-md-6">
+                    <label for="assignee" class="form-label">
+                        Assignee
+                        <span class="text-body-secondary fw-normal">(optional)</span>
+                    </label>
+                    <input id="assignee" name="Model.Assignee" class="form-control" @bind="Model.Assignee" placeholder="Assignee name" />
+                </div>
+            </fieldset>
+
+            <div class="mt-4 d-flex gap-2">
+                <button type="submit" class="btn btn-primary px-4">
+                    <i class="fa-solid fa-floppy-disk me-1" aria-hidden="true"></i>@(IsNew ? "Create Ticket" : "Save Changes")
+                </button>
+                <a href="/tickets" class="btn btn-outline-secondary"><i class="fa-solid fa-xmark me-1" aria-hidden="true"></i> Cancel</a>
+            </div>
+        </EditForm>
+    </div>
+</div>
+
+@code {
+    /// <summary>Route parameter: ticket id. Null/0 means create.</summary>
+    [Parameter] public int? Id { get; set; }
+
+    /// <summary>
+    /// Form-backed model. Marked with <see cref="SupplyParameterFromFormAttribute"/>
+    /// so Blazor rehydrates the posted form values on submit when using enhanced
+    /// navigation in a .NET 8+ Blazor Web App.
+    /// </summary>
+    [SupplyParameterFromForm(FormName = "ticket-form")]
+    public TicketDto Model { get; set; } = default!;
+
+    private bool IsNew => Id is null or 0;
+
+    protected override void OnInitialized()
+    {
+        Model ??= new TicketDto();
+    }
+
+    protected override async Task OnParametersSetAsync()
+    {
+        if (IsNew)
+        {
+            if (Model.Id != 0)
+            {
+                Model = new TicketDto();
+            }
+            return;
+        }
+
+        if (Model.Id != Id!.Value)
+        {
+            Model = await TicketService.GetByIdAsync(Id!.Value) ?? new TicketDto { Id = Id!.Value };
+        }
+    }
+
+    private async Task SaveAsync()
+    {
+        if (IsNew)
+        {
+            await TicketService.CreateAsync(Model);
+        }
+        else
+        {
+            await TicketService.UpdateAsync(Model);
+        }
+
+        Navigation.NavigateTo("/tickets");
+    }
+}

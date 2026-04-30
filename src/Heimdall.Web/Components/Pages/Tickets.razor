@@ -1,0 +1,455 @@
+@page "/tickets"
+@rendermode InteractiveServer
+@implements IDisposable
+@inject ITicketService TicketService
+@inject NavigationManager Navigation
+
+<PageTitle>Tickets — Heimdall TicketTracker</PageTitle>
+
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <div>
+        <h1 class="h3 mb-0 fw-semibold">Tickets</h1>
+        <p class="text-body-secondary mb-0 small">All open and closed work items</p>
+    </div>
+    <a class="btn btn-primary" href="/tickets/new">
+        <i class="fa-solid fa-plus me-1" aria-hidden="true"></i> New Ticket
+    </a>
+</div>
+
+@* Search / filter toolbar *@
+<div class="row g-2 mb-3 align-items-center">
+    <div class="col-12 col-sm">
+        <div class="input-group">
+            <button class="btn btn-outline-secondary"
+                    type="button"
+                    aria-label="Search"
+                    @onclick="ExecuteSearchAsync">
+                <i class="fa-solid fa-magnifying-glass" aria-hidden="true"></i>
+            </button>
+            <input type="search"
+                   class="form-control"
+                   placeholder="Search tickets…"
+                   aria-label="Search tickets"
+                   value="@searchText"
+                   @oninput="OnSearchInput"
+                   @onkeydown="OnSearchKeyDown" />
+        </div>
+    </div>
+    <div class="col-auto">
+        <div class="d-flex align-items-center gap-2">
+            <label for="pageSizeSelect" class="form-label mb-0 text-body-secondary small text-nowrap">Per page</label>
+            <select id="pageSizeSelect"
+                    class="form-select form-select-sm w-auto"
+                    @bind="pageSize"
+                    @bind:after="OnPageSizeChangedAsync">
+                <option value="10">10</option>
+                <option value="25">25</option>
+                <option value="50">50</option>
+                <option value="100">100</option>
+            </select>
+        </div>
+    </div>
+</div>
+
+@if (pagedResult is null)
+{
+    <div class="card shadow-sm">
+        <div class="card-body text-center py-5">
+            <div class="spinner-border text-primary mb-3" role="status">
+                <span class="visually-hidden">Loading…</span>
+            </div>
+            <p class="text-body-secondary mb-0">Loading tickets…</p>
+        </div>
+    </div>
+}
+else if (pagedResult.TotalCount == 0)
+{
+    <div class="card shadow-sm">
+        <div class="card-body text-center py-5">
+            <div class="mb-3"><i class="fa-solid fa-ticket fa-3x text-body-secondary" aria-hidden="true"></i></div>
+            @if (!string.IsNullOrWhiteSpace(searchText))
+            {
+                <h2 class="h5 fw-semibold mb-1">No tickets found</h2>
+                <p class="text-body-secondary mb-4">No tickets match "<strong>@searchText</strong>". Try a different search.</p>
+                <button class="btn btn-outline-secondary" @onclick="ClearSearchAsync">Clear search</button>
+            }
+            else
+            {
+                <h2 class="h5 fw-semibold mb-1">No tickets yet</h2>
+                <p class="text-body-secondary mb-4">Open your first ticket to get started.</p>
+                <a class="btn btn-primary" href="/tickets/new">New Ticket</a>
+            }
+        </div>
+    </div>
+}
+else
+{
+    <div class="card shadow-sm">
+        <div class="card-header bg-transparent py-3">
+            <span class="text-body-secondary small">
+                <strong>@pagedResult.TotalCount</strong> ticket@(pagedResult.TotalCount == 1 ? "" : "s")
+            </span>
+        </div>
+        <div class="table-responsive">
+            <table class="table table-hover align-middle mb-0">
+                <thead class="table-group-divider">
+                    <tr>
+                        <th scope="col" aria-sort="@GetAriaSortValue("Title")">
+                            <button class="btn btn-link btn-sm p-0 text-body text-decoration-none fw-semibold"
+                                    @onclick='() => OnSortClick("Title")'>
+                                Title @SortIndicator("Title")
+                            </button>
+                        </th>
+                        <th scope="col" aria-sort="@GetAriaSortValue("Status")">
+                            <button class="btn btn-link btn-sm p-0 text-body text-decoration-none fw-semibold"
+                                    @onclick='() => OnSortClick("Status")'>
+                                Status @SortIndicator("Status")
+                            </button>
+                        </th>
+                        <th scope="col" aria-sort="@GetAriaSortValue("Priority")">
+                            <button class="btn btn-link btn-sm p-0 text-body text-decoration-none fw-semibold"
+                                    @onclick='() => OnSortClick("Priority")'>
+                                Priority @SortIndicator("Priority")
+                            </button>
+                        </th>
+                        <th scope="col" aria-sort="@GetAriaSortValue("Reporter")">
+                            <button class="btn btn-link btn-sm p-0 text-body text-decoration-none fw-semibold"
+                                    @onclick='() => OnSortClick("Reporter")'>
+                                Reporter @SortIndicator("Reporter")
+                            </button>
+                        </th>
+                        <th scope="col" aria-sort="@GetAriaSortValue("Assignee")">
+                            <button class="btn btn-link btn-sm p-0 text-body text-decoration-none fw-semibold"
+                                    @onclick='() => OnSortClick("Assignee")'>
+                                Assignee @SortIndicator("Assignee")
+                            </button>
+                        </th>
+                        <th scope="col" aria-sort="@GetAriaSortValue("DateCreated")">
+                            <button class="btn btn-link btn-sm p-0 text-body text-decoration-none fw-semibold"
+                                    @onclick='() => OnSortClick("DateCreated")'>
+                                Created @SortIndicator("DateCreated")
+                            </button>
+                        </th>
+                        <th scope="col" class="text-end">Actions</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach (var ticket in pagedResult.Items)
+                    {
+                        <tr @key="ticket.Id">
+                            <td class="fw-medium">@ticket.Title</td>
+                            <td><span class="badge @StatusBadgeClass(ticket.Status)">@ticket.Status</span></td>
+                            <td><span class="badge @PriorityBadgeClass(ticket.Priority)">@ticket.Priority</span></td>
+                            <td class="text-body-secondary">@ticket.Reporter</td>
+                            <td class="text-body-secondary">
+                                @(string.IsNullOrWhiteSpace(ticket.Assignee) ? "—" : ticket.Assignee)
+                            </td>
+                            <td class="text-body-secondary text-nowrap">
+                                @ticket.DateCreated.ToString("MMM d, yyyy")
+                            </td>
+                            <td class="text-end">
+                                <div class="d-inline-flex gap-1">
+                                    <a class="btn btn-sm btn-outline-primary"
+                                       href="@($"/tickets/{ticket.Id}")"
+                                       title="Edit ticket @ticket.Id">
+                                        <i class="fa-solid fa-pen me-1" aria-hidden="true"></i> Edit
+                                    </a>
+                                    <button class="btn btn-sm btn-outline-danger"
+                                            @onclick="() => DeleteAsync(ticket.Id)"
+                                            title="Delete ticket @ticket.Id">
+                                        <i class="fa-solid fa-trash me-1" aria-hidden="true"></i> Delete
+                                    </button>
+                                </div>
+                            </td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </div>
+    </div>
+
+    @* Pagination footer *@
+    <div class="d-flex flex-column flex-sm-row justify-content-between align-items-center mt-3 gap-2">
+        <p class="text-body-secondary small mb-0">
+            Showing <strong>@FirstItem–@LastItem</strong> of <strong>@pagedResult.TotalCount</strong>
+            ticket@(pagedResult.TotalCount == 1 ? "" : "s")
+        </p>
+
+        @if (pagedResult.TotalPages > 1)
+        {
+            <nav aria-label="Pagination">
+                <ul class="pagination pagination-sm mb-0">
+
+                    <li class="page-item @(currentPage <= 1 ? "disabled" : "")">
+                        <button class="page-link"
+                                @onclick="() => GoToPageAsync(currentPage - 1)"
+                                disabled="@(currentPage <= 1)"
+                                aria-label="Previous page">
+                            <i class="fa-solid fa-chevron-left" aria-hidden="true"></i>
+                        </button>
+                    </li>
+
+                    @foreach (var p in GetPageNumbers())
+                    {
+                        @if (p == Ellipsis)
+                        {
+                            <li class="page-item disabled" aria-hidden="true">
+                                <span class="page-link">…</span>
+                            </li>
+                        }
+                        else
+                        {
+                            <li class="page-item @(p == currentPage ? "active" : "")" @key="p">
+                                <button class="page-link"
+                                        @onclick="() => GoToPageAsync(p)"
+                                        aria-label="Page @p"
+                                        aria-current="@(p == currentPage ? "page" : null)">
+                                    @p
+                                </button>
+                            </li>
+                        }
+                    }
+
+                    <li class="page-item @(currentPage >= pagedResult.TotalPages ? "disabled" : "")">
+                        <button class="page-link"
+                                @onclick="() => GoToPageAsync(currentPage + 1)"
+                                disabled="@(currentPage >= pagedResult.TotalPages)"
+                                aria-label="Next page">
+                            <i class="fa-solid fa-chevron-right" aria-hidden="true"></i>
+                        </button>
+                    </li>
+
+                </ul>
+            </nav>
+        }
+    </div>
+}
+
+@code {
+    // Sentinel value used in GetPageNumbers() to represent an ellipsis gap.
+    private const int Ellipsis = -1;
+
+    private PagedResult<TicketDto>? pagedResult;
+    private int    currentPage   = 1;
+    private int    pageSize      = 25;
+    private string? searchText;
+    private string  sortField    = "DateCreated";
+    private SortDirection sortDirection = SortDirection.Descending;
+
+    // Debounce support for the search input.
+    private CancellationTokenSource? _searchDebounce;
+
+    // Cancellation token for the in-flight LoadPageAsync call.
+    private CancellationTokenSource? _loadCts;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadPageAsync();
+    }
+
+    private int FirstItem => pagedResult is null || pagedResult.TotalCount == 0
+        ? 0
+        : (currentPage - 1) * pageSize + 1;
+    private int LastItem  => pagedResult is null ? 0 : Math.Min(currentPage * pageSize, pagedResult.TotalCount);
+
+    private async Task LoadPageAsync()
+    {
+        var previousLoad = _loadCts;
+        _loadCts = new CancellationTokenSource();
+        var token = _loadCts.Token;
+        previousLoad?.Cancel();
+        previousLoad?.Dispose();
+
+        try
+        {
+            var result = await TicketService.GetPagedAsync(
+                new PagedQuery(
+                    page:          currentPage,
+                    pageSize:      pageSize,
+                    searchText:    searchText,
+                    sortField:     sortField,
+                    sortDirection: sortDirection),
+                token);
+
+            if (!token.IsCancellationRequested)
+            {
+                pagedResult = result;
+                StateHasChanged();
+            }
+        }
+        catch (OperationCanceledException)
+        {
+            // A newer load superseded this one — intentional, do nothing.
+        }
+    }
+
+    private async Task GoToPageAsync(int page)
+    {
+        if (pagedResult is null || page < 1 || page > pagedResult.TotalPages)
+            return;
+
+        currentPage = page;
+        await LoadPageAsync();
+    }
+
+    private async Task OnSortClick(string field)
+    {
+        if (sortField == field)
+        {
+            sortDirection = sortDirection == SortDirection.Ascending
+                ? SortDirection.Descending
+                : SortDirection.Ascending;
+        }
+        else
+        {
+            sortField     = field;
+            sortDirection = SortDirection.Ascending;
+        }
+
+        currentPage = 1;
+        await LoadPageAsync();
+    }
+
+    private async Task OnSearchInput(ChangeEventArgs e)
+    {
+        searchText = e.Value?.ToString();
+
+        var previousDebounce = _searchDebounce;
+        _searchDebounce = new CancellationTokenSource();
+        var token = _searchDebounce.Token;
+        previousDebounce?.Cancel();
+        previousDebounce?.Dispose();
+
+        try
+        {
+            await Task.Delay(300, token);
+            currentPage = 1;
+            await LoadPageAsync();
+        }
+        catch (TaskCanceledException)
+        {
+            // A newer keystroke cancelled this one — intentional, do nothing.
+        }
+    }
+
+    private async Task ClearSearchAsync()
+    {
+        searchText  = null;
+        currentPage = 1;
+        await LoadPageAsync();
+    }
+
+    private async Task OnSearchKeyDown(KeyboardEventArgs e)
+    {
+        if (e.Key != "Enter") { return; }
+        await ExecuteSearchAsync();
+    }
+
+    private async Task ExecuteSearchAsync()
+    {
+        _searchDebounce?.Cancel();
+        _searchDebounce?.Dispose();
+        _searchDebounce = null;
+        currentPage = 1;
+        await LoadPageAsync();
+    }
+
+    private async Task OnPageSizeChangedAsync()
+    {
+        currentPage = 1;
+        await LoadPageAsync();
+    }
+
+    private async Task DeleteAsync(int id)
+    {
+        await TicketService.DeleteAsync(id);
+
+        if (pagedResult?.Items.Count == 1 && currentPage > 1)
+            currentPage--;
+
+        await LoadPageAsync();
+    }
+
+    private string GetAriaSortValue(string field)
+    {
+        if (sortField != field) return "none";
+        return sortDirection == SortDirection.Ascending ? "ascending" : "descending";
+    }
+
+    private MarkupString SortIndicator(string field)
+    {
+        if (sortField != field)
+            return new MarkupString(
+                "<i class=\"fa-solid fa-sort text-body-tertiary ms-1\" aria-hidden=\"true\"></i>");
+
+        return sortDirection == SortDirection.Ascending
+            ? new MarkupString(
+                "<i class=\"fa-solid fa-sort-up text-primary ms-1\" aria-hidden=\"true\"></i>")
+            : new MarkupString(
+                "<i class=\"fa-solid fa-sort-down text-primary ms-1\" aria-hidden=\"true\"></i>");
+    }
+
+    private static string StatusBadgeClass(TicketStatus status) => status switch
+    {
+        TicketStatus.Open       => "text-bg-primary",
+        TicketStatus.InProgress => "text-bg-info",
+        TicketStatus.Resolved   => "text-bg-success",
+        TicketStatus.Closed     => "text-bg-secondary",
+        _                        => "text-bg-secondary",
+    };
+
+    private static string PriorityBadgeClass(TicketPriority priority) => priority switch
+    {
+        TicketPriority.Low      => "text-bg-secondary",
+        TicketPriority.Medium   => "text-bg-info",
+        TicketPriority.High     => "text-bg-warning",
+        TicketPriority.Critical => "text-bg-danger",
+        _                       => "text-bg-secondary",
+    };
+
+    /// <summary>
+    /// Returns up to 7 page numbers (or <see cref="Ellipsis"/> sentinels) so the
+    /// pagination control never renders more than 7 buttons.
+    /// </summary>
+    private IEnumerable<int> GetPageNumbers()
+    {
+        var total = pagedResult?.TotalPages ?? 0;
+
+        if (total <= 7)
+        {
+            for (var i = 1; i <= total; i++) yield return i;
+            yield break;
+        }
+
+        if (currentPage <= 4)
+        {
+            for (var i = 1; i <= 5; i++) yield return i;
+            yield return Ellipsis;
+            yield return total;
+        }
+        else if (currentPage >= total - 3)
+        {
+            yield return 1;
+            yield return Ellipsis;
+            for (var i = total - 4; i <= total; i++) yield return i;
+        }
+        else
+        {
+            yield return 1;
+            yield return Ellipsis;
+            yield return currentPage - 1;
+            yield return currentPage;
+            yield return currentPage + 1;
+            yield return Ellipsis;
+            yield return total;
+        }
+    }
+
+    public void Dispose()
+    {
+        _searchDebounce?.Cancel();
+        _searchDebounce?.Dispose();
+        _loadCts?.Cancel();
+        _loadCts?.Dispose();
+    }
+}

@@ -1,0 +1,8 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/Heimdall.BLL/Heimdall.BLL.csproj" />
+    <Project Path="src/Heimdall.Core/Heimdall.Core.csproj" />
+    <Project Path="src/Heimdall.DAL/Heimdall.DAL.csproj" />
+    <Project Path="src/Heimdall.Web/Heimdall.Web.csproj" />
+  </Folder>
+</Solution>

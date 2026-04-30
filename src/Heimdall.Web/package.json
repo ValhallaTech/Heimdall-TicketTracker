@@ -1,0 +1,18 @@
+{
+  "name": "heimdall-ticket-tracker-web",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Front-end assets (Bootstrap) for the Heimdall TicketTracker Blazor Web App.",
+  "packageManager": "yarn@4.14.1",
+  "engines": {
+    "node": "24.15.0"
+  },
+  "scripts": {
+    "build": "node ./build-assets.mjs",
+    "clean": "node -e \"const fs=require('fs');for(const f of ['wwwroot/css/bootstrap.min.css','wwwroot/css/bootstrap.min.css.map','wwwroot/js/bootstrap.bundle.min.js','wwwroot/js/bootstrap.bundle.min.js.map']){try{fs.unlinkSync(f)}catch{}}\""
+  },
+  "devDependencies": {
+    "@fortawesome/fontawesome-free": "7.2.0",
+    "bootstrap": "5.3.8"
+  }
+}
