@@ -1,0 +1,29 @@
+version: "3.9"
+
+# docker-compose.pgtap.yml
+# Convenience compose file for running the pgTAP suite locally without
+# polluting the developer's primary Postgres instance. Uses the
+# theory/pgtap image which has the pgtap extension preinstalled.
+#
+# Usage:
+#   docker compose -f tests/pgtap/docker-compose.pgtap.yml up -d
+#   PGPORT=55432 ./tests/pgtap/run-tests.sh
+#   docker compose -f tests/pgtap/docker-compose.pgtap.yml down
+
+services:
+  postgres:
+    image: theory/pgtap:latest
+    container_name: heimdall-pgtap
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: heimdall_test
+    ports:
+      # Mapped to a non-default host port to avoid colliding with the
+      # primary docker-compose.yml at the repo root.
+      - "55432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d heimdall_test"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
