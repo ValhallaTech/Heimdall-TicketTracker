@@ -134,8 +134,11 @@ public class TicketsPageTests : BunitContext
 
         var input = cut.Find("input[type='search']");
         await input.InputAsync(new Microsoft.AspNetCore.Components.ChangeEventArgs { Value = "zzz" });
-        await Task.Delay(400); // allow the 300ms debounce to fire
-        cut.WaitForAssertion(() => cut.Markup.Should().Contain("No tickets found"));
+        // The component debounces input by 300ms; rely on WaitForAssertion (default 1s
+        // timeout) to synchronize on the resulting render rather than a fixed sleep.
+        cut.WaitForAssertion(
+            () => cut.Markup.Should().Contain("No tickets found"),
+            timeout: TimeSpan.FromSeconds(2));
 
         // Click "Clear search"
         cut.Find("button.btn-outline-secondary:not([type='button'])").Click();
@@ -246,11 +249,13 @@ public class TicketsPageTests : BunitContext
 
         // Click "Previous page"
         cut.Find("button[aria-label='Previous page']").Click();
-        await Task.Delay(50);
+        cut.WaitForAssertion(() =>
+            cut.Find("button[aria-label='Page 1']").GetAttribute("aria-current").Should().Be("page"));
 
         // Click a numbered page (page 2)
         cut.Find("button[aria-label='Page 2']").Click();
-        cut.WaitForAssertion(() => cut.Markup.Should().Contain("Showing"));
+        cut.WaitForAssertion(() =>
+            cut.Find("button[aria-label='Page 2']").GetAttribute("aria-current").Should().Be("page"));
 
         // Delete the only row on page 2 (we have 20, page size 10 → 10 rows on page 2).
         // We'll just exercise delete on the first row.
@@ -272,18 +277,18 @@ public class TicketsPageTests : BunitContext
 
         // Navigate to a middle page via "Page N"
         cut.Find("button[aria-label='Page 4']").Click();
-        await Task.Delay(50);
-        cut.WaitForAssertion(() => cut.Markup.Should().Contain("aria-current=\"page\""));
+        cut.WaitForAssertion(() =>
+            cut.Find("button[aria-label='Page 4']").GetAttribute("aria-current").Should().Be("page"));
 
-        // Now jump to last page region.
-        cut.Find("button[aria-label='Next page']").Click();
-        await Task.Delay(50);
-        cut.Find("button[aria-label='Next page']").Click();
-        await Task.Delay(50);
-        cut.Find("button[aria-label='Next page']").Click();
-        await Task.Delay(50);
-        cut.Find("button[aria-label='Next page']").Click();
-        cut.WaitForAssertion(() => cut.Markup.Should().Contain("aria-current=\"page\""));
+        // Now jump to last page region by stepping forward four times.
+        for (var page = 5; page <= 8; page++)
+        {
+            cut.Find("button[aria-label='Next page']").Click();
+            var expectedPage = page;
+            cut.WaitForAssertion(() =>
+                cut.Find($"button[aria-label='Page {expectedPage}']")
+                    .GetAttribute("aria-current").Should().Be("page"));
+        }
     }
 
     [Fact]
