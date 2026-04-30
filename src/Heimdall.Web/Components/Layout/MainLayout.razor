@@ -1,0 +1,28 @@
+@inherits LayoutComponentBase
+
+<nav class="navbar navbar-expand-lg bg-body-tertiary border-bottom shadow-sm">
+    <div class="container">
+        <a class="navbar-brand fw-semibold" href="/tickets">
+            <i class="fa-solid fa-shield-halved me-1" aria-hidden="true"></i> Heimdall TicketTracker
+        </a>
+        <div class="d-flex align-items-center gap-2">
+            <button class="btn btn-outline-secondary btn-sm theme-toggle"
+                    onclick="HttTheme.toggle()"
+                    title="Toggle dark / light mode"
+                    aria-label="Toggle dark mode. Currently light mode.">
+                <i class="fa-solid fa-moon theme-icon-dark" aria-hidden="true"></i>
+                <i class="fa-solid fa-sun theme-icon-light" aria-hidden="true"></i>
+            </button>
+        </div>
+    </div>
+</nav>
+
+<main class="container py-4">
+    @Body
+</main>
+
+<div id="blazor-error-ui" data-nosnippet>
+    An unhandled error has occurred.
+    <a href="." class="reload">Reload</a>
+    <span class="dismiss"><i class="fa-solid fa-xmark" aria-hidden="true"></i></span>
+</div>

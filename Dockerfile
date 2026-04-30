@@ -1,95 +1,53 @@
-#FROM mcr.microsoft.com/dotnet/core/aspnet:3.1-buster-slim AS base
-#WORKDIR /app
-#
-#FROM mcr.microsoft.com/dotnet/core/sdk:3.1-buster AS build
-#WORKDIR /src
-##
-## copy csproj and restore as distinct layers
-#COPY *.sln .
-#COPY ValhallaHeimdall/*.csproj ./ValhallaHeimdall/
-#COPY ValhallaHeimdall.API/*.csproj ./ValhallaHeimdall.API/
-#COPY ValhallaHeimdall.DAL/*.csproj ./ValhallaHeimdall.DAL/
-#COPY ValhallaHeimdall.BLL/*.csproj ./ValhallaHeimdall.BLL/
-##
-#RUN dotnet restore
-##
-## copy everything else and build app
-#COPY ValhallaHeimdall/. ./ValhallaHeimdall/
-#COPY ValhallaHeimdall.DAL/. ./ValhallaHeimdall.DAL/
-#COPY ValhallaHeimdall.BLL/. ./ValhallaHeimdall.API/
-##
-#WORKDIR /app/ValhallaHeimdall
-#RUN dotnet publish -c Release -o out
-##
-#FROM mcr.microsoft.com/dotnet/core/aspnet:3.0 AS runtime
-#WORKDIR /app
-##
-#COPY --from=build /app/ValhallaHeimdall/out ./
-#ENTRYPOINT ["dotnet", "ValhallaHeimdall.dll"]
+# Multi-stage Dockerfile for Heimdall TicketTracker (Blazor Web App on .NET 10).
 
+# ------------------------------------------------------------------
+# Stage 1: Build front-end assets (Bootstrap) with Node.
+# ------------------------------------------------------------------
+FROM node:24.15.0-alpine AS assets
+WORKDIR /src/web
+RUN corepack enable && corepack prepare yarn@4.14.1 --activate
+COPY src/Heimdall.Web/package.json src/Heimdall.Web/yarn.lock src/Heimdall.Web/.yarnrc.yml ./
+RUN yarn install --immutable
+COPY src/Heimdall.Web/build-assets.mjs ./
+RUN yarn build
 
-FROM mcr.microsoft.com/dotnet/core/aspnet:3.1-buster-slim AS base
-WORKDIR /app
-
-FROM mcr.microsoft.com/dotnet/core/sdk:3.1-buster AS build
+# ------------------------------------------------------------------
+# Stage 2: Restore + build + publish the .NET solution.
+# ------------------------------------------------------------------
+FROM mcr.microsoft.com/dotnet/sdk:10.0 AS build
 WORKDIR /src
-COPY ./ValhallaHeimdal.API/ValhallaHeimdall.sln ./
-COPY ./ValhallaHeimdall.API/*.csproj ./ValhallaHeimdall.API/
-#RUN dotnet restore "./ValhallaHeimdall.API.csproj"
-COPY ./ValhallaHeimdal.DAL/*.csproj ./ValhallaHeimdall.DAL/
-#RUN dotnet restore "./ValhallaHeimdall.DAL.csproj"
-COPY ./ValhallaHeimdal.BLL/*.csproj ./ValhallaHeimdall.BLL/
-#RUN dotnet restore "./ValhallaHeimdall.BLL.csproj"
 
-RUN dotnet restore
-COPY . .
+# Copy csproj files first to maximize restore caching.
+COPY src/Heimdall.Core/Heimdall.Core.csproj src/Heimdall.Core/
+COPY src/Heimdall.DAL/Heimdall.DAL.csproj   src/Heimdall.DAL/
+COPY src/Heimdall.BLL/Heimdall.BLL.csproj   src/Heimdall.BLL/
+COPY src/Heimdall.Web/Heimdall.Web.csproj   src/Heimdall.Web/
+RUN dotnet restore src/Heimdall.Web/Heimdall.Web.csproj
 
-WORKDIR /src/ValhallaHeimdall.API
-RUN dotnet build -c Release -o /app/build
+# Copy the rest of the source.
+COPY src/ src/
 
-WORKDIR /src/ValhallaHeimdall.DAL
-RUN dotnet build -c Release -o /app/build
+# Bring in the prebuilt front-end assets from the assets stage.
+COPY --from=assets /src/web/wwwroot/css/      src/Heimdall.Web/wwwroot/css/
+COPY --from=assets /src/web/wwwroot/js/       src/Heimdall.Web/wwwroot/js/
+COPY --from=assets /src/web/wwwroot/webfonts/ src/Heimdall.Web/wwwroot/webfonts/
 
-WORKDIR /src/ValhallaHeimdall.DAL
-RUN dotnet build -c Release -o /app/build
+RUN dotnet publish src/Heimdall.Web/Heimdall.Web.csproj \
+    -c Release \
+    -o /app/publish \
+    /p:SkipYarnBuild=true
 
-FROM build AS publish
-RUN dotnet publish -c Release -o /app/publish
-
-FROM base AS final
+# ------------------------------------------------------------------
+# Stage 3: Runtime image.
+# ------------------------------------------------------------------
+FROM mcr.microsoft.com/dotnet/aspnet:10.0 AS runtime
 WORKDIR /app
-COPY --from=publish /app/publish .
-ENTRYPOINT ["dotnet", "ValhallaHeimdall.API.dll"]
+RUN apt-get update && apt-get install -y --no-install-recommends libgssapi-krb5-2 && rm -rf /var/lib/apt/lists/*
+COPY --from=build /app/publish ./
 
-#See https://aka.ms/containerfastmode to understand how Visual Studio uses this Dockerfile to build your images for faster debugging.
+# Render / PaaS injects $PORT; default to 8080 for local use.
+ENV ASPNETCORE_ENVIRONMENT=Production \
+    PORT=8080
+EXPOSE 8080
 
-# FROM mcr.microsoft.com/dotnet/core/aspnet:3.1-buster-slim AS base
-# WORKDIR /app
-
-# FROM mcr.microsoft.com/dotnet/core/sdk:3.1-buster AS build
-# WORKDIR /src
-# COPY ["ValhallaHeimdall.csproj", ""]
-# RUN dotnet restore "./ValhallaHeimdall.csproj"
-# COPY . .
-# WORKDIR "/src/."
-# RUN dotnet build "ValhallaHeimdall.csproj" -c Release -o /app/build
-
-# FROM build AS publish
-# RUN dotnet publish "ValhallaHeimdall.csproj" -c Release -o /app/publish
-
-# FROM base AS final
-# WORKDIR /app
-# COPY --from=publish /app/publish .
-# CMD ASPNETCORE_URLS = http://*:$PORT dotnet ValhallaHeimdall.API.dll
-
-# COPY . /app
-# WORKDIR /app/ValhallaHeimdall.API
-# RUN ["dotnet", "restore"]
-# WORKDIR /app/ValhallaHeimdall.BLL
-# RUN ["dotnet", "restore"]
-# WORKDIR /app/ValhallaHeimdall.DAL
-# RUN ["dotnet", "restore"]
-# WORKDIR /app/ValhallaHeimdall.API
-# RUN ["dotnet", "build"]
-# CMD ASPNETCORE_URLS=http://*:$PORT dotnet ValhallaHeimdall.API.dll
-
+ENTRYPOINT ["dotnet", "Heimdall.Web.dll"]
