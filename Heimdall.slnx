@@ -5,4 +5,10 @@
     <Project Path="src/Heimdall.DAL/Heimdall.DAL.csproj" />
     <Project Path="src/Heimdall.Web/Heimdall.Web.csproj" />
   </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/Heimdall.BLL.Tests/Heimdall.BLL.Tests.csproj" />
+    <Project Path="tests/Heimdall.Core.Tests/Heimdall.Core.Tests.csproj" />
+    <Project Path="tests/Heimdall.DAL.Tests/Heimdall.DAL.Tests.csproj" />
+    <Project Path="tests/Heimdall.Web.Tests/Heimdall.Web.Tests.csproj" />
+  </Folder>
 </Solution>

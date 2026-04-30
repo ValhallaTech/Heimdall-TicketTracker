@@ -1,0 +1,11 @@
+node_modules
+wwwroot
+coverage
+yarn.lock
+*.lock
+.yarn
+bin
+obj
+# Existing source files are out of scope for this scaffolding PR.
+build-assets.mjs
+Components
