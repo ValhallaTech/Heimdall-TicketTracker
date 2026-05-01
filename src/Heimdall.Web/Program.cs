@@ -13,6 +13,8 @@ using StackExchange.Redis;
 var builder = WebApplication.CreateBuilder(args);
 
 // --- Serilog ---------------------------------------------------------------
+// Clear default MEL providers (Console/Debug/EventSource/EventLog) so Serilog is the only sink.
+builder.Logging.ClearProviders();
 builder.Host.UseSerilog(
     (context, services, loggerConfig) =>
         loggerConfig

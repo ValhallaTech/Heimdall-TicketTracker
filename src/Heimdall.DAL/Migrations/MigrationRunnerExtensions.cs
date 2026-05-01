@@ -40,8 +40,7 @@ public static class MigrationRunnerExtensions
                     .WithGlobalConnectionString(postgresConnectionString)
                     .ScanIn(Assembly.GetExecutingAssembly())
                     .For.Migrations()
-            )
-            .AddLogging(lb => lb.AddFluentMigratorConsole());
+            );
 
         return services;
     }
