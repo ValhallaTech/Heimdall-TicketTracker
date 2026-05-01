@@ -1,4 +1,3 @@
-using AutoMapper;
 using FluentAssertions;
 using Heimdall.BLL.Mapping;
 using Heimdall.BLL.Services;
@@ -16,48 +15,56 @@ public class TicketServiceTests
 {
     private readonly Mock<ITicketRepository> _repository = new(MockBehavior.Strict);
     private readonly Mock<ICacheService> _cache = new(MockBehavior.Strict);
-    private readonly IMapper _mapper;
-
-    public TicketServiceTests()
-    {
-        var config = new MapperConfiguration(cfg => cfg.AddProfile<TicketProfile>(), loggerFactory: NullLoggerFactory.Instance);
-        _mapper = config.CreateMapper();
-    }
+    private readonly ITicketMapper _mapper = new TicketMapper();
 
     private TicketService CreateSut() =>
         new(_repository.Object, _cache.Object, _mapper, NullLogger<TicketService>.Instance);
 
-    private static Ticket SampleTicket(int id = 1) => new()
-    {
-        Id = id,
-        Title = $"Title {id}",
-        Description = $"Desc {id}",
-        Status = TicketStatus.Open,
-        Priority = TicketPriority.Medium,
-        Reporter = "Reporter",
-        Assignee = null,
-        DateCreated = DateTimeOffset.UtcNow,
-        DateUpdated = DateTimeOffset.UtcNow,
-    };
+    private static Ticket SampleTicket(int id = 1) =>
+        new()
+        {
+            Id = id,
+            Title = $"Title {id}",
+            Description = $"Desc {id}",
+            Status = TicketStatus.Open,
+            Priority = TicketPriority.Medium,
+            Reporter = "Reporter",
+            Assignee = null,
+            DateCreated = DateTimeOffset.UtcNow,
+            DateUpdated = DateTimeOffset.UtcNow,
+        };
 
     [Fact]
     public void Should_Throw_When_RepositoryIsNull()
     {
-        Action act = () => new TicketService(null!, _cache.Object, _mapper, NullLogger<TicketService>.Instance);
+        Action act = () =>
+            new TicketService(null!, _cache.Object, _mapper, NullLogger<TicketService>.Instance);
         act.Should().Throw<ArgumentNullException>();
     }
 
     [Fact]
     public void Should_Throw_When_CacheIsNull()
     {
-        Action act = () => new TicketService(_repository.Object, null!, _mapper, NullLogger<TicketService>.Instance);
+        Action act = () =>
+            new TicketService(
+                _repository.Object,
+                null!,
+                _mapper,
+                NullLogger<TicketService>.Instance
+            );
         act.Should().Throw<ArgumentNullException>();
     }
 
     [Fact]
     public void Should_Throw_When_MapperIsNull()
     {
-        Action act = () => new TicketService(_repository.Object, _cache.Object, null!, NullLogger<TicketService>.Instance);
+        Action act = () =>
+            new TicketService(
+                _repository.Object,
+                _cache.Object,
+                null!,
+                NullLogger<TicketService>.Instance
+            );
         act.Should().Throw<ArgumentNullException>();
     }
 
@@ -75,7 +82,12 @@ public class TicketServiceTests
         var cache = new RecordingCacheService();
         _repository.Setup(r => r.GetAllAsync(It.IsAny<CancellationToken>())).ReturnsAsync(tickets);
 
-        var sut = new TicketService(_repository.Object, cache, _mapper, NullLogger<TicketService>.Instance);
+        var sut = new TicketService(
+            _repository.Object,
+            cache,
+            _mapper,
+            NullLogger<TicketService>.Instance
+        );
 
         var result = await sut.GetAllAsync();
 
@@ -94,10 +106,16 @@ public class TicketServiceTests
         // Round-trip through the in-memory cache so the service's own private wrapper type
         // is what's stored — exercising the "cache hit" early-return branch.
         var cache = new RecordingCacheService();
-        _repository.Setup(r => r.GetAllAsync(It.IsAny<CancellationToken>()))
-                   .ReturnsAsync(new[] { SampleTicket(99) });
+        _repository
+            .Setup(r => r.GetAllAsync(It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new[] { SampleTicket(99) });
 
-        var sut = new TicketService(_repository.Object, cache, _mapper, NullLogger<TicketService>.Instance);
+        var sut = new TicketService(
+            _repository.Object,
+            cache,
+            _mapper,
+            NullLogger<TicketService>.Instance
+        );
 
         // First call: miss + set
         await sut.GetAllAsync();
@@ -135,7 +153,12 @@ public class TicketServiceTests
             return Task.FromResult(_store.TryGetValue(key, out var v) ? (T?)v : null);
         }
 
-        public Task SetAsync<T>(string key, T value, TimeSpan? ttl = null, CancellationToken cancellationToken = default)
+        public Task SetAsync<T>(
+            string key,
+            T value,
+            TimeSpan? ttl = null,
+            CancellationToken cancellationToken = default
+        )
             where T : class
         {
             SetCalls++;
@@ -183,7 +206,9 @@ public class TicketServiceTests
     [Fact]
     public async Task Should_ReturnNull_When_GetByIdAsyncMisses()
     {
-        _repository.Setup(r => r.GetByIdAsync(7, It.IsAny<CancellationToken>())).ReturnsAsync((Ticket?)null);
+        _repository
+            .Setup(r => r.GetByIdAsync(7, It.IsAny<CancellationToken>()))
+            .ReturnsAsync((Ticket?)null);
         var sut = CreateSut();
 
         var result = await sut.GetByIdAsync(7);
@@ -195,7 +220,9 @@ public class TicketServiceTests
     public async Task Should_ReturnDto_When_GetByIdAsyncHits()
     {
         var ticket = SampleTicket(7);
-        _repository.Setup(r => r.GetByIdAsync(7, It.IsAny<CancellationToken>())).ReturnsAsync(ticket);
+        _repository
+            .Setup(r => r.GetByIdAsync(7, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(ticket);
         var sut = CreateSut();
 
         var result = await sut.GetByIdAsync(7);
@@ -207,11 +234,22 @@ public class TicketServiceTests
     [Fact]
     public async Task Should_CreateAndInvalidateCache_When_CreateAsyncCalled()
     {
-        var dto = new TicketDto { Title = "T", Description = "D", Reporter = "r" };
+        var dto = new TicketDto
+        {
+            Title = "T",
+            Description = "D",
+            Reporter = "r",
+        };
         Ticket? saved = null;
         _repository
             .Setup(r => r.CreateAsync(It.IsAny<Ticket>(), It.IsAny<CancellationToken>()))
-            .Callback<Ticket, CancellationToken>((t, _) => { saved = t; t.Id = 11; })
+            .Callback<Ticket, CancellationToken>(
+                (t, _) =>
+                {
+                    saved = t;
+                    t.Id = 11;
+                }
+            )
             .ReturnsAsync(11);
         _cache
             .Setup(c => c.RemoveAsync(CacheKeys.TicketList, It.IsAny<CancellationToken>()))
@@ -225,7 +263,10 @@ public class TicketServiceTests
         saved.Should().NotBeNull();
         saved!.DateCreated.Should().BeCloseTo(DateTimeOffset.UtcNow, TimeSpan.FromSeconds(5));
         saved!.DateUpdated.Should().Be(saved.DateCreated);
-        _cache.Verify(c => c.RemoveAsync(CacheKeys.TicketList, It.IsAny<CancellationToken>()), Times.Once);
+        _cache.Verify(
+            c => c.RemoveAsync(CacheKeys.TicketList, It.IsAny<CancellationToken>()),
+            Times.Once
+        );
     }
 
     [Fact]
@@ -239,29 +280,52 @@ public class TicketServiceTests
     [Fact]
     public async Task Should_InvalidateCache_When_UpdateAsyncSucceeds()
     {
-        var dto = new TicketDto { Id = 1, Title = "T", Description = "D", Reporter = "r" };
-        _repository.Setup(r => r.UpdateAsync(It.IsAny<Ticket>(), It.IsAny<CancellationToken>())).ReturnsAsync(true);
-        _cache.Setup(c => c.RemoveAsync(CacheKeys.TicketList, It.IsAny<CancellationToken>()))
-              .Returns(Task.CompletedTask);
+        var dto = new TicketDto
+        {
+            Id = 1,
+            Title = "T",
+            Description = "D",
+            Reporter = "r",
+        };
+        _repository
+            .Setup(r => r.UpdateAsync(It.IsAny<Ticket>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(true);
+        _cache
+            .Setup(c => c.RemoveAsync(CacheKeys.TicketList, It.IsAny<CancellationToken>()))
+            .Returns(Task.CompletedTask);
 
         var sut = CreateSut();
         var result = await sut.UpdateAsync(dto);
 
         result.Should().BeTrue();
-        _cache.Verify(c => c.RemoveAsync(CacheKeys.TicketList, It.IsAny<CancellationToken>()), Times.Once);
+        _cache.Verify(
+            c => c.RemoveAsync(CacheKeys.TicketList, It.IsAny<CancellationToken>()),
+            Times.Once
+        );
     }
 
     [Fact]
     public async Task Should_NotInvalidateCache_When_UpdateAsyncReturnsFalse()
     {
-        var dto = new TicketDto { Id = 1, Title = "T", Description = "D", Reporter = "r" };
-        _repository.Setup(r => r.UpdateAsync(It.IsAny<Ticket>(), It.IsAny<CancellationToken>())).ReturnsAsync(false);
+        var dto = new TicketDto
+        {
+            Id = 1,
+            Title = "T",
+            Description = "D",
+            Reporter = "r",
+        };
+        _repository
+            .Setup(r => r.UpdateAsync(It.IsAny<Ticket>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(false);
 
         var sut = CreateSut();
         var result = await sut.UpdateAsync(dto);
 
         result.Should().BeFalse();
-        _cache.Verify(c => c.RemoveAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()), Times.Never);
+        _cache.Verify(
+            c => c.RemoveAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()),
+            Times.Never
+        );
     }
 
     [Fact]
@@ -276,14 +340,18 @@ public class TicketServiceTests
     public async Task Should_InvalidateCache_When_DeleteAsyncSucceeds()
     {
         _repository.Setup(r => r.DeleteAsync(1, It.IsAny<CancellationToken>())).ReturnsAsync(true);
-        _cache.Setup(c => c.RemoveAsync(CacheKeys.TicketList, It.IsAny<CancellationToken>()))
-              .Returns(Task.CompletedTask);
+        _cache
+            .Setup(c => c.RemoveAsync(CacheKeys.TicketList, It.IsAny<CancellationToken>()))
+            .Returns(Task.CompletedTask);
 
         var sut = CreateSut();
         var result = await sut.DeleteAsync(1);
 
         result.Should().BeTrue();
-        _cache.Verify(c => c.RemoveAsync(CacheKeys.TicketList, It.IsAny<CancellationToken>()), Times.Once);
+        _cache.Verify(
+            c => c.RemoveAsync(CacheKeys.TicketList, It.IsAny<CancellationToken>()),
+            Times.Once
+        );
     }
 
     [Fact]
@@ -295,6 +363,9 @@ public class TicketServiceTests
         var result = await sut.DeleteAsync(1);
 
         result.Should().BeFalse();
-        _cache.Verify(c => c.RemoveAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()), Times.Never);
+        _cache.Verify(
+            c => c.RemoveAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()),
+            Times.Never
+        );
     }
 }

@@ -8,7 +8,7 @@ A small, modern ticket-tracking web application built on **.NET 10**, **Blazor (
 
 - **Runtime:** .NET 10 (Blazor Server / Razor Components)
 - **DI:** Autofac (with `Autofac.Extensions.DependencyInjection`)
-- **Mapping:** AutoMapper (with the Autofac integration package)
+- **Mapping:** [Mapster](https://github.com/MapsterMapper/Mapster) with the `Mapster.Tool` source-generated `[Mapper]` interfaces (Autofac-wired via `ApplicationModule`)
 - **Data access:** Dapper + `Dapper.Extensions.PostgreSQL`
 - **Migrations:** FluentMigrator
 - **Database:** PostgreSQL
@@ -26,7 +26,7 @@ Heimdall-TicketTracker/
 ├── src/
 │   ├── Heimdall.Core/             # domain models, DTOs, interfaces, pagination
 │   ├── Heimdall.DAL/              # Dapper repositories, FluentMigrator, Redis cache
-│   ├── Heimdall.BLL/              # services + AutoMapper profile
+│   ├── Heimdall.BLL/              # services + Mapster mappings (source-generated)
 │   └── Heimdall.Web/              # Blazor app (Bootstrap via Yarn)
 ├── Heimdall.slnx                  # solution
 ├── Dockerfile                     # multi-stage (assets -> sdk -> aspnet)
@@ -103,6 +103,27 @@ The project includes a Render Blueprint (`render.yaml`) that provisions:
 3. A **Redis (key-value)** instance
 
 Connect the repo as a Blueprint in the Render dashboard and Render will read `render.yaml` to wire everything up.
+
+## Regenerating Mapster mappers
+
+The `Heimdall.BLL` project ships a source-generated mapper produced by
+[`Mapster.Tool`](https://github.com/MapsterMapper/Mapster). The interface lives at
+`src/Heimdall.BLL/Mapping/ITicketMapper.cs`, the configuration at
+`src/Heimdall.BLL/Mapping/TicketMappingRegister.cs`, and the generated implementation
+at `src/Heimdall.BLL/Mappers/TicketMapper.g.cs` (committed to the repo).
+
+Regenerate after changing either the interface or the register:
+
+```bash
+dotnet tool restore
+dotnet build src/Heimdall.BLL/Heimdall.BLL.csproj
+dotnet dotnet-mapster mapper \
+  -a src/Heimdall.BLL/bin/Debug/net10.0/Heimdall.BLL.dll \
+  -o src/Heimdall.BLL/Mappers \
+  -N true
+```
+
+Then commit `src/Heimdall.BLL/Mappers/TicketMapper.g.cs` alongside the source change.
 
 ## Dependency updates
 

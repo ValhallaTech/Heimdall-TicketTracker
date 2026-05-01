@@ -1,6 +1,6 @@
 # Proposal: Transition from AutoMapper to Mapster (with optional FastExpressionCompiler)
 
-**Status:** Draft / Investigation
+**Status:** **Implemented (2026-05-01)** — see decision log §9.
 **Author:** Orchestrator (Copilot)
 **Scope:** Heimdall.BLL, Heimdall.Web, Heimdall.BLL.Tests
 **Decision required:** Should we migrate object-to-object mapping from AutoMapper to Mapster, and should we adopt FastExpressionCompiler (FEC) alongside?
@@ -169,6 +169,13 @@ A small, throwaway BenchmarkDotNet project — kept out of the CI graph — that
 ## 9. Decision log
 
 - **2026-05-01 — Proposal drafted.** Recommends Mapster (source-generator mode) on a deferred timeline; recommends **against** FastExpressionCompiler. Awaiting maintainer review.
+- **2026-05-01 — Proposal approved; migration shipped.** Maintainer accepted the recommendation. Implementation followed the source-generator path (`Mapster.Tool`, not a Roslyn `ISourceGenerator` package — no such package exists for Mapster). FastExpressionCompiler was **not** adopted, as recommended. Implementation summary:
+  - Replaced `TicketProfile : Profile` with the `[Mapper]` interface `ITicketMapper` plus an `IRegister` (`TicketMappingRegister`) that carries the `DateCreated`/`DateUpdated` ignore semantics.
+  - Generated `src/Heimdall.BLL/Mappers/TicketMapper.g.cs` via `dotnet dotnet-mapster mapper` (`Mapster.Tool` 10.x, registered in `.config/dotnet-tools.json`); the generated file is committed.
+  - Removed `AutoMapper` and `AutoMapper.Contrib.Autofac.DependencyInjection` from both `Heimdall.BLL.csproj` and `Heimdall.Web.csproj`. Added a single `Mapster` (10.x) reference to `Heimdall.BLL.csproj`.
+  - Autofac `ApplicationModule` registers `TicketMapper` as `ITicketMapper` (`SingleInstance`); `TicketService` now injects `ITicketMapper` directly (no `MapsterMapper.IMapper` indirection — strongly typed, AOT-clean, no expression compilation at runtime).
+  - Tests ported: `TicketProfileTests` → `TicketMapperTests` (exercises the generated mapper directly), and `TicketServiceTests` was updated to construct `new TicketMapper()` instead of an AutoMapper `MapperConfiguration`.
+  - README "Tech stack" + a new "Regenerating Mapster mappers" section document the workflow.
 
 ## 10. References
 
