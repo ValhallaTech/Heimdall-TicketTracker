@@ -2,7 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Threading;
 using System.Threading.Tasks;
-using AutoMapper;
+using Heimdall.BLL.Mapping;
 using Heimdall.Core.Caching;
 using Heimdall.Core.Dtos;
 using Heimdall.Core.Interfaces;
@@ -23,13 +23,13 @@ public class TicketService : ITicketService
 
     private readonly ITicketRepository _repository;
     private readonly ICacheService _cache;
-    private readonly IMapper _mapper;
+    private readonly ITicketMapper _mapper;
     private readonly ILogger<TicketService> _logger;
 
     /// <summary>Initializes a new instance.</summary>
     /// <param name="repository">Ticket persistence abstraction.</param>
     /// <param name="cache">Distributed cache used for read-through list caching.</param>
-    /// <param name="mapper">AutoMapper instance used to project between entities and DTOs.</param>
+    /// <param name="mapper">Mapster-generated mapper used to project between entities and DTOs.</param>
     /// <param name="logger">Logger.</param>
     /// <exception cref="ArgumentNullException">
     /// Thrown when any required dependency is <see langword="null"/>.
@@ -37,7 +37,7 @@ public class TicketService : ITicketService
     public TicketService(
         ITicketRepository repository,
         ICacheService cache,
-        IMapper mapper,
+        ITicketMapper mapper,
         ILogger<TicketService> logger
     )
     {
@@ -61,15 +61,12 @@ public class TicketService : ITicketService
             .ConfigureAwait(false);
         if (cached is not null)
         {
-            _logger.LogDebug(
-                "Ticket list served from cache ({Count} rows).",
-                cached.Items.Count
-            );
+            _logger.LogDebug("Ticket list served from cache ({Count} rows).", cached.Items.Count);
             return cached.Items;
         }
 
         var entries = await _repository.GetAllAsync(cancellationToken).ConfigureAwait(false);
-        var dtos = _mapper.Map<IReadOnlyList<TicketDto>>(entries);
+        var dtos = _mapper.Map(entries);
         await _cache
             .SetAsync(ListCacheKey, new CachedList(dtos), ListCacheTtl, cancellationToken)
             .ConfigureAwait(false);
@@ -89,7 +86,7 @@ public class TicketService : ITicketService
             .GetPagedAsync(sanitized, cancellationToken)
             .ConfigureAwait(false);
 
-        var dtos = _mapper.Map<IReadOnlyList<TicketDto>>(items);
+        var dtos = _mapper.Map(items);
 
         PagedResult<TicketDto> result = new()
         {
@@ -117,7 +114,7 @@ public class TicketService : ITicketService
     )
     {
         var entry = await _repository.GetByIdAsync(id, cancellationToken).ConfigureAwait(false);
-        return entry is null ? null : _mapper.Map<TicketDto>(entry);
+        return entry is null ? null : _mapper.Map(entry);
     }
 
     /// <inheritdoc />
@@ -127,13 +124,13 @@ public class TicketService : ITicketService
     )
     {
         ArgumentNullException.ThrowIfNull(dto);
-        var ticket = _mapper.Map<Ticket>(dto);
+        var ticket = _mapper.Map(dto);
         var now = DateTimeOffset.UtcNow;
         ticket.DateCreated = now;
         ticket.DateUpdated = now;
         await _repository.CreateAsync(ticket, cancellationToken).ConfigureAwait(false);
         await _cache.RemoveAsync(ListCacheKey, cancellationToken).ConfigureAwait(false);
-        return _mapper.Map<TicketDto>(ticket);
+        return _mapper.Map(ticket);
     }
 
     /// <inheritdoc />
@@ -151,7 +148,7 @@ public class TicketService : ITicketService
         // DateUpdated, and the UPDATE statement neither reads nor writes DateCreated and
         // sources DateUpdated from now() server-side, so we never overwrite the original
         // creation timestamp.
-        var ticket = _mapper.Map<Ticket>(dto);
+        var ticket = _mapper.Map(dto);
         var updated = await _repository
             .UpdateAsync(ticket, cancellationToken)
             .ConfigureAwait(false);
