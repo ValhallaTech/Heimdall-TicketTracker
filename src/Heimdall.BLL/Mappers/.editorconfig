@@ -1,7 +1,0 @@
-# Mapster.Tool emits straight property assignments without nullable-reference annotations.
-# The generated `*.g.cs` files therefore trip CS8603 / CS8604 even though the runtime
-# behavior matches the source declarations. Suppress these in the generated folder only;
-# the rest of the project keeps full nullable analysis.
-[*.g.cs]
-dotnet_diagnostic.CS8603.severity = none
-dotnet_diagnostic.CS8604.severity = none

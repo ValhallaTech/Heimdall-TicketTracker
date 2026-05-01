@@ -9,9 +9,10 @@ namespace Heimdall.BLL.Mapping;
 /// entities and <see cref="TicketDto"/> view models.
 /// </summary>
 /// <remarks>
-/// Mapster's source generator (<c>Mapster.SourceGenerator</c>) reads
-/// <see cref="IRegister"/> implementations at compile time and emits the strongly-typed
-/// mapper code into <c>obj/</c>, so no expression trees are compiled at runtime.
+/// These registrations are consumed by the project's <c>Mapster.Tool</c> code-generation
+/// workflow to produce the strongly-typed mapper implementation that is committed to source
+/// control (see <c>Mappers/TicketMapper.cs</c>), so no expression trees are compiled at
+/// runtime.
 /// </remarks>
 public class TicketMappingRegister : IRegister
 {

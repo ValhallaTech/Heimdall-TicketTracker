@@ -8,7 +8,7 @@ namespace Heimdall.BLL.Tests.Mapping;
 
 /// <summary>
 /// Tests for the source-generated <see cref="TicketMapper"/>. The implementation
-/// (<c>src/Heimdall.BLL/Mappers/TicketMapper.g.cs</c>) is produced by Mapster.Tool from
+/// (<c>src/Heimdall.BLL/Mappers/TicketMapper.cs</c>) is produced by Mapster.Tool from
 /// <see cref="ITicketMapper"/> and <see cref="TicketMappingRegister"/>. These tests pin
 /// the generated behavior — including the <c>DateCreated</c>/<c>DateUpdated</c> ignore
 /// contract — so a stale regeneration is caught at CI time.

@@ -110,7 +110,10 @@ The `Heimdall.BLL` project ships a source-generated mapper produced by
 [`Mapster.Tool`](https://github.com/MapsterMapper/Mapster). The interface lives at
 `src/Heimdall.BLL/Mapping/ITicketMapper.cs`, the configuration at
 `src/Heimdall.BLL/Mapping/TicketMappingRegister.cs`, and the generated implementation
-at `src/Heimdall.BLL/Mappers/TicketMapper.g.cs` (committed to the repo).
+at `src/Heimdall.BLL/Mappers/TicketMapper.cs` (committed to the repo). The committed file
+is initially produced by `Mapster.Tool` and then **lightly hand-tuned** — see the header
+of `TicketMapper.cs` for the exact tweaks (throw on null inputs to match the non-nullable
+contract; use `List<T>` + `foreach` rather than the tool's interface-cast emit).
 
 Regenerate after changing either the interface or the register:
 
@@ -123,7 +126,8 @@ dotnet dotnet-mapster mapper \
   -N true
 ```
 
-Then commit `src/Heimdall.BLL/Mappers/TicketMapper.g.cs` alongside the source change.
+Then re-apply the post-generation tweaks documented at the top of `TicketMapper.cs` and
+commit `src/Heimdall.BLL/Mappers/TicketMapper.cs` alongside the source change.
 
 ## Dependency updates
 
