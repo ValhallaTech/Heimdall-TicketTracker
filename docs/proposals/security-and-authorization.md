@@ -21,7 +21,7 @@ Heimdall today has **no authentication and no authorization layer**. Every visit
 The user-stated goals, in priority order, are:
 
 1. **Security** — defense-in-depth, sensible defaults, no foot-guns, well-understood threat model.
-2. **Scalability** — must work for many users, many tickets, many tenants/groups, and a horizontally scaled web tier (Render auto-scales the Docker service).
+2. **Scalability** — must work for many users, many tickets, many tenants/groups, and (as a **future** requirement) a horizontally scaled web tier. The current `render.yaml` provisions a single free-plan web service with no scale-out configuration, so multi-instance hosting is something this proposal must *not preclude* rather than something we ship today.
 3. **Performance** — authorization checks are on every request and inside hot paths (ticket lists, dashboards). The chosen model must be cheap to evaluate and cache-friendly.
 
 This proposal evaluates the design space and recommends a path. References used:
@@ -65,7 +65,7 @@ Heimdall is **Blazor Interactive Server**. The browser holds a long-lived Signal
 
 Two realistic options:
 
-1. **ASP.NET Core Identity (with a Dapper-backed store).** We get password hashing (PBKDF2 / Argon2-via-extension), lockout, email confirmation, 2FA primitives, and `UserManager`/`SignInManager` for free. The default EF Core store conflicts with our **Dapper-first** convention, so we would either (a) write a thin Dapper-backed `IUserStore<TUser>` / `IRoleStore<TRole>` implementation, or (b) accept EF Core *only* for the Identity tables (a documented exception).
+1. **ASP.NET Core Identity (with a Dapper-backed store).** We get password hashing (PBKDF2 / Argon2-via-extension), lockout, email confirmation, 2FA primitives, and `UserManager`/`SignInManager` for free. The default EF Core store conflicts with our **Dapper-first** convention, so we would either (a) write a Dapper-backed implementation of the relevant `IUserStore<TUser>` / `IRoleStore<TRole>` family of interfaces, or (b) accept EF Core *only* for the Identity tables (a documented exception). Note that to support the feature set proposed elsewhere in this document — email confirmation, password reset, lockout, security stamps, TOTP, recovery codes — option 1a is **not** a "thin" wrapper: it requires implementing `IUserPasswordStore`, `IUserEmailStore`, `IUserLockoutStore`, `IUserSecurityStampStore`, `IUserTwoFactorStore`, `IUserAuthenticatorKeyStore`, `IUserTwoFactorRecoveryCodeStore`, `IUserClaimStore`, `IUserRoleStore`, and `IUserLoginStore`, plus all the corresponding persistence fields. This is a substantial subsystem and should be scoped/sequenced accordingly (see §9.3).
 2. **Roll our own users table + password hashing.** Maximally aligned with our Dapper-first style, but we then own password hashing, lockout, token providers, and 2FA. **Not recommended** — this is a known foot-gun.
 
 **Recommendation:** **ASP.NET Core Identity with a Dapper-backed store** (option 1a). We keep our Dapper-first stance and avoid re-implementing crypto. The Identity schema becomes a FluentMigrator migration like every other table.
@@ -73,17 +73,22 @@ Two realistic options:
 ### 3.4 Recommendation
 
 - **Cookie authentication** (`AddAuthentication().AddCookie()`) for the Blazor UI, with secure defaults: `HttpOnly`, `Secure`, `SameSite=Lax` (or `Strict` where compatible), sliding expiration off, absolute expiration on, fixed cookie name, data-protection keys persisted (see §3.5).
+- **Periodic auth-state revalidation on the circuit.** Cookie expiry alone is not sufficient on Blazor Server: the SignalR circuit caches the `ClaimsPrincipal` captured at circuit start, so disable / lockout / role-revocation / force-logout actions will not take effect until the user reconnects. Wire a `RevalidatingServerAuthenticationStateProvider` (or equivalent) that re-checks the user's `SecurityStamp` on a short interval (suggest 30 s) and tears the circuit down on mismatch. This is the canonical Blazor Server pattern and is required for the admin "force-logout" capability described in §8.1 to actually work.
 - **JWT bearer** (`AddJwtBearer`) added later for any public API surface; same user store, different scheme.
-- **ASP.NET Core Identity** for the user lifecycle, with a Dapper-backed `IUserStore` so we keep our DAL convention.
+- **ASP.NET Core Identity** for the user lifecycle, with a Dapper-backed user store so we keep our DAL convention.
 - **Antiforgery** stays on (already wired).
 
 ### 3.5 Cross-cutting hardening
 
 - **Data Protection keys** persisted to PostgreSQL or a mounted volume so cookies survive container restarts and horizontal scale-out (otherwise users are silently logged out on every redeploy). This is the single most-missed step in containerized Blazor deployments.
+- **Sticky sessions / circuit affinity for horizontal scale.** Persisting Data Protection keys lets *cookies* round-trip between nodes, but a Blazor Server **circuit** is server-affine: the SignalR connection holds in-memory component state on a specific node. When we eventually scale out, the load balancer must pin a given client to its origin node (Render-supported session affinity, or a Redis-backed SignalR backplane combined with affinity at the LB), otherwise a reconnect after a scale event lands on a different node and silently loses interactive state. This is a deployment-side requirement, but it's called out here because it constrains the auth design (e.g. avoid putting purely-in-memory auth state on the circuit if we ever go affinity-less).
 - **HSTS** is already on for non-Development.
 - **Forwarded headers** (`UseForwardedHeaders`) configured for Render's reverse proxy so `Request.IsHttps` is correct.
 - **CSP** header (Blazor Server has documented CSP requirements — `script-src` must allow the `_framework` script and any dynamic interop).
-- **Brute-force protection** via Identity lockout + a bucketed rate-limit on `/login` (`AddRateLimiter`).
+- **Brute-force protection.** Identity lockout covers the persistence side. For request-level throttling, **`AddRateLimiter` on a `/login` route is not sufficient on its own** when the login UI is an interactive Blazor component, because the actual credential check then happens over the SignalR circuit (a single WebSocket message), not a fresh HTTP POST. The implementation PR must therefore choose one of:
+  1. Implement login as a **dedicated server-rendered POST endpoint** (Razor Page / minimal-API handler) outside the interactive circuit, and apply `AddRateLimiter` to that endpoint. This is the recommended pattern.
+  2. *Or* throttle inside the `SignInManager` wrapper itself (per-IP + per-username token bucket), so the limit applies regardless of transport.
+  Either way, the limit must key on **both** client IP *and* submitted username to mitigate credential stuffing without enabling username-based lockout DoS.
 
 ## 4. Two-factor / multi-factor authentication
 
@@ -124,9 +129,12 @@ JWTs are stateless, so we need an explicit revocation strategy:
 
 ### 5.4 Key management
 
-- Signing keys live in **Data Protection** or a dedicated `signing_keys` table with rotation metadata.
-- **Rotate** on a schedule (e.g. 90 days) and on suspected compromise; serve via a JWKS endpoint so verifiers pick up new keys without redeploy.
-- Never check signing keys into the repo.
+- **JWT signing keys are *not* stored in ASP.NET Core Data Protection.** Data Protection's key ring is a symmetric, server-internal payload-protection mechanism — it is not a publishable asymmetric JWK source, and reusing it for JWT signing would either force a second key system later or make external verification impossible. Keep the two key rings separate:
+  - **Data Protection** keys → cookies / antiforgery / TempData only (§3.5).
+  - **JWT signing keys** → asymmetric (RSA / EC) key pairs stored in a dedicated `signing_keys` table (or, preferred when available, a managed KMS / vault) with rotation metadata: `(kid, alg, public_jwk, private_key_protected, created_at, not_before, not_after, retired_at)`.
+- **Rotate** on a schedule (e.g. 90 days) and on suspected compromise. Multiple active keys overlap during rotation so existing tokens remain verifiable until they expire.
+- Publish the **public** halves of all currently-trusted keys via a **JWKS endpoint** (`/.well-known/jwks.json`) keyed by `kid`; verifiers pick up new keys without redeploy.
+- Private halves are stored encrypted-at-rest and never logged or checked into the repo.
 
 ## 6. Authorization model survey
 
@@ -240,16 +248,17 @@ All FluentMigrator migrations; all access via Dapper repositories (DAL conventio
 | ----------------- | ---------------------------------------------------------------------------------------------------------------------- |
 | **Security**      | Identity-managed crypto; 2FA required for admins; rotating refresh tokens with replay detection; deny-by-default policies; comprehensive audit log; no homemade auth. |
 | **Scalability**   | Stateless access tokens; Redis-backed denylist; horizontal Blazor scale via persisted Data Protection keys; clear upgrade path to ReBAC (OpenFGA/Permify) without re-architecting RBAC. |
-| **Performance**   | In-process authorization (no network hop) for the common case; cache role/permission lookups per circuit; refresh-token check is one indexed PG read; access-token verification is local signature verify. |
+| **Performance**   | In-process authorization (no network hop) for the common case; **short-TTL** role/permission cache (request- or seconds-scoped, *not* circuit-scoped) so revocations propagate within seconds while still avoiding per-request DB hits; refresh-token check is one indexed PG read; access-token verification is local signature verify. Caching for the lifetime of a Blazor circuit is explicitly rejected because circuits can live for hours and would leave revoked privileges active until reconnect — see §3.4 (security-stamp revalidation). |
 
 ### 9.3 Phased rollout
 
 - **Phase 1 — Foundations** (one or more PRs)
   1. FluentMigrator migrations for users / roles / permissions / groups.
-  2. ASP.NET Core Identity wiring with Dapper-backed store; cookie auth; Data Protection persistence.
-  3. Login / logout / register pages (Blazor); password reset.
-  4. RBAC + PBAC policies; `[Authorize]` on all existing pages/components; deny-by-default.
-  5. Seed `SystemAdmin` via env-var bootstrap.
+  2. ASP.NET Core Identity wiring with Dapper-backed user store; cookie auth; Data Protection persistence; `RevalidatingServerAuthenticationStateProvider` wired against `SecurityStamp`.
+  3. **Email-delivery subsystem** — pluggable `IEmailSender` with at minimum an SMTP implementation and a `NoOpEmailSender` for local dev. This is a **prerequisite** for any flow that mails the user (email confirmation, password reset, invite), so it must land in Phase 1 alongside login. Until SMTP credentials are configured for an environment, Phase 1 ships with a **password-only** onboarding fallback: admin-created accounts with one-time temporary passwords delivered out-of-band, and email confirmation marked optional. This keeps Phase 1 independently shippable even before transactional email is provisioned.
+  4. Login / logout pages (Blazor + dedicated server-rendered POST endpoint per §3.5); password reset and self-service register are gated on the email subsystem from step 3.
+  5. RBAC + PBAC policies; `[Authorize]` on all existing pages/components; deny-by-default.
+  6. Seed `SystemAdmin` via env-var bootstrap (no email required for the bootstrap admin).
 
 - **Phase 2 — MFA and admin UX**
   1. TOTP enrolment + recovery codes; admin-required policy.
@@ -280,6 +289,7 @@ Each phase is independently shippable and independently testable.
 | Date       | Decision                                                                 |
 | ---------- | ------------------------------------------------------------------------ |
 | 2026-05-02 | Proposal drafted; awaiting review.                                      |
+| 2026-05-02 | Revised per review feedback: clarified Render scale-out is a *future* requirement (§1); reframed Dapper Identity store as a substantial subsystem rather than "thin" (§3.3); added periodic `SecurityStamp` revalidation on the circuit (§3.4); called out sticky-session/circuit-affinity requirement for horizontal scale (§3.5); replaced naive `/login` rate-limit guidance with a Blazor-Server-aware approach (§3.5); separated JWT signing keys from Data Protection and clarified JWKS source-of-truth (§5.4); replaced per-circuit role/permission caching with short-TTL caching (§9.2); made the email-delivery subsystem and a password-only onboarding fallback explicit Phase 1 prerequisites (§9.3). |
 
 ---
 
