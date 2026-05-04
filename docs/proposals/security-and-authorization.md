@@ -4,6 +4,7 @@
 **Author:** Orchestrator (Copilot)
 **Scope:** Heimdall.Web, Heimdall.BLL, Heimdall.DAL, Heimdall.Core (future PRs)
 **Decision required:** What authentication, 2FA, authorization, and admin-management approach should Heimdall adopt to satisfy our goals of (1) security, (2) scalability, and (3) performance?
+**Depends on:** *nothing.* This proposal is the foundation that the other two ([`team-collaboration.md`](./team-collaboration.md) and [`openfga.md`](./openfga.md)) build on.
 
 > This document is **research and planning only**. **No code, package, configuration, or DI changes are made in this PR.** A separate, follow-up PR (or series of PRs) will implement the chosen design once approved.
 
@@ -198,6 +199,8 @@ This sequencing keeps us aligned with the user-stated goal order: **security fir
 
 ## 8. Admin system
 
+> **Deferred out of Phase 1.** With the introduction of [`team-collaboration.md`](./team-collaboration.md) and [`openfga.md`](./openfga.md), the admin surface is no longer a roles/groups/permissions catalogue — it becomes a **tuple-management surface** that returns *after* OpenFGA lands. Detailed implementation steps live in [`openfga.md`](./openfga.md) (step 11 of its sequence). The text below is preserved as the original capability sketch and informs that later work; it is **not** a Phase 1 deliverable.
+
 A first-class admin surface inside the Blazor app, gated by a `RequireRole("SystemAdmin")` policy and 2FA.
 
 ### 8.1 Capabilities (MVP)
@@ -238,9 +241,9 @@ All FluentMigrator migrations; all access via Dapper repositories (DAL conventio
 
 1. **AuthN:** ASP.NET Core Identity + cookie auth (UI), JWT bearer (future API), Dapper-backed Identity store, Data Protection keys persisted.
 2. **MFA:** TOTP + recovery codes; required for admins; WebAuthn in Phase 2.
-3. **AuthZ:** Built-in ASP.NET Core authorization. **RBAC + PBAC** with groups; ReBAC deferred to Phase 2 via OpenFGA/Permify if/when sharing arrives.
+3. **AuthZ:** Phase 1 ships an **"authenticated-only"** gate as a deliberate placeholder. Real authorization is **ReBAC via OpenFGA** ([`openfga.md`](./openfga.md)), introduced after the team-collaboration data model ([`team-collaboration.md`](./team-collaboration.md)). RBAC+PBAC is **dropped** from Phase 1 because OpenFGA replaces it end-to-end; keeping it would mean shipping a roles/permissions/groups schema that gets migrated away.
 4. **Tokens:** short-lived RS256/ES256 access tokens; opaque, hashed, rotating, family-bound refresh tokens; JWKS endpoint; Redis denylist for emergency revoke.
-5. **Admin:** Blazor admin area for users/groups/roles assignment; permissions catalogue read-only in MVP; full audit log.
+5. **Admin:** deferred to Phase 4, post-OpenFGA, as a tuple-management surface (see §8 banner and [`openfga.md`](./openfga.md) step 11).
 
 ### 9.2 Scoring against goals
 
@@ -252,24 +255,62 @@ All FluentMigrator migrations; all access via Dapper repositories (DAL conventio
 
 ### 9.3 Phased rollout
 
-- **Phase 1 — Foundations** (one or more PRs)
-  1. FluentMigrator migrations for users / roles / permissions / groups.
-  2. ASP.NET Core Identity wiring with Dapper-backed user store; cookie auth; Data Protection persistence; `RevalidatingServerAuthenticationStateProvider` wired against `SecurityStamp`.
-  3. **Email-delivery subsystem** — pluggable `IEmailSender` with at minimum an SMTP implementation and a `NoOpEmailSender` for local dev. This is a **prerequisite** for any flow that mails the user (email confirmation, password reset, invite), so it must land in Phase 1 alongside login. Until SMTP credentials are configured for an environment, Phase 1 ships with a **password-only** onboarding fallback: admin-created accounts with one-time temporary passwords delivered out-of-band, and email confirmation marked optional. This keeps Phase 1 independently shippable even before transactional email is provisioned.
-  4. Login / logout pages (Blazor + dedicated server-rendered POST endpoint per §3.5); password reset and self-service register are gated on the email subsystem from step 3.
-  5. RBAC + PBAC policies; `[Authorize]` on all existing pages/components; deny-by-default.
-  6. Seed `SystemAdmin` via env-var bootstrap (no email required for the bootstrap admin).
+The phases below are **strictly ordered** by dependency. Each numbered step inside a phase must complete before the next one starts. The proposal-level dependency chain is:
 
-- **Phase 2 — MFA and admin UX**
-  1. TOTP enrolment + recovery codes; admin-required policy.
-  2. Admin area: users/groups/roles assignment; audit-log viewer.
+- **Proposal 1** (this doc) → **Proposal 2** ([`team-collaboration.md`](./team-collaboration.md)) → **Proposal 3** ([`openfga.md`](./openfga.md)) → MFA → API+tokens → Admin UI.
 
-- **Phase 3 — API + tokens**
-  1. JWT bearer scheme (RS256/ES256), JWKS endpoint, refresh-token rotation, Redis denylist.
-  2. First versioned API endpoints under `/api/v1/...`.
+MFA, API+tokens, and Admin UI have been **repositioned to follow OpenFGA** so that policy evaluation and admin-surface tuple management share one mechanism instead of two.
 
-- **Phase 4 — (conditional) ReBAC**
-  1. Re-evaluate need; if justified, integrate OpenFGA or Permify as sidecar; migrate sharing-shaped checks; keep RBAC for coarse role gates.
+#### Phase 1 — Authenticated foundation
+
+The existing list mixed prerequisites with delivery. The order below is topological: each step's preconditions are all satisfied by earlier steps.
+
+1. **`users` migration only.** FluentMigrator migration creating `users` (`id` UUID, `email` citext unique, `normalized_email`, `password_hash`, `security_stamp`, `concurrency_stamp`, `email_confirmed` bool, lockout fields, `created_at`, `updated_at`, `system_admin` bool). **No** `roles`, `permissions`, `groups`, `role_permissions`, `user_roles`, `group_*` tables — those were RBAC+PBAC, which is dropped.
+2. **`audit_events` migration.** Columns: `actor_user_id`, `event_type`, `target`, `ip`, `user_agent`, `payload jsonb`, `occurred_at`. Lands **before** any auth code so every subsequent step (login, bootstrap, MFA, token issuance) can write to it from day one.
+3. **Dapper-backed Identity stores** in `Heimdall.DAL`: `IUserStore<HeimdallUser>`, `IUserPasswordStore`, `IUserEmailStore`, `IUserSecurityStampStore`, `IUserLockoutStore`. Unit-tested against the migration from step 1. Honours the repo's Dapper-first DAL convention.
+4. **`AddIdentityCore<HeimdallUser>()` + cookie auth + Data Protection key persistence to PostgreSQL** in `Heimdall.Web/Program.cs`, placed immediately after the existing Serilog / `AddDal()` block. No JWT scheme yet (that's Phase 3).
+5. **`RevalidatingServerAuthenticationStateProvider`** wired against `SecurityStamp` per §3.4. Configure a short revalidation interval so revocations propagate quickly across long-lived Blazor circuits.
+6. **`IEmailSender` abstraction in `Heimdall.Core` + two implementations** (`SmtpEmailSender`, `NoOpEmailSender`) registered by configuration. **No flow depends on this yet** — it's just the seam, deliberately introduced before any user-visible flow needs it.
+7. **Server-rendered login/logout POST endpoint** (per §3.5) plus Blazor login/logout pages that post to it. Cookie issued on success. Audit events emitted to the table from step 2.
+8. **`SystemAdmin` env-var bootstrap on startup.** If no users exist *and* `HEIMDALL_BOOTSTRAP_ADMIN_EMAIL` + `HEIMDALL_BOOTSTRAP_ADMIN_PASSWORD` are set, create one user with `system_admin = true`. Idempotent — safe to re-run on restart, no-ops once a user exists.
+9. **"Authenticated-only" gate applied globally.** `[Authorize]` on the Blazor router fallback + `RequireAuthorization()` on protected endpoints. **No role checks, no policy checks** — just authenticated. This is the **placeholder OpenFGA replaces** in [`openfga.md`](./openfga.md) step 9.
+10. **Password reset + self-service register pages**, **gated on `IEmailSender` not being `NoOpEmailSender`** (a feature flag evaluated at startup based on configuration). Keeps Phase 1 independently shippable to environments without SMTP credentials provisioned.
+11. **Phase 1 acceptance.** pgTAP tests for the new tables; xUnit tests for the Dapper Identity stores; integration test asserting that an unauthenticated request to a protected page redirects to login and an authenticated one succeeds.
+
+Phase 1 ships **only** the data model and flows above. It does **not** ship organizations, teams, projects, tickets-with-owners, role catalogues, permission catalogues, or any authorization beyond "is this request authenticated?" Those are Proposals 2 and 3.
+
+#### Phase 2 — Team collaboration data model
+
+See [`team-collaboration.md`](./team-collaboration.md). Strictly data-and-domain; ships zero authorization changes; the Phase 1 "authenticated-only" gate still applies. Adding it as a phase here for sequencing — full step list lives in that doc.
+
+#### Phase 3 — OpenFGA ReBAC
+
+See [`openfga.md`](./openfga.md). Replaces the Phase 1 "authenticated-only" gate with policy-based `[Authorize]` resolved through OpenFGA `Check()` calls. Full step list lives in that doc.
+
+#### Phase 4 — MFA
+
+Content unchanged from earlier drafts; **repositioned to follow OpenFGA** so the admin-required check can be expressed as an OpenFGA `Check()` against `organization#admin` rather than against a coarse `system_admin` boolean.
+
+1. TOTP enrolment migration (`user_authenticator_keys`, `user_recovery_codes`).
+2. Implement `IUserAuthenticatorKeyStore`, `IUserTwoFactorStore`, `IUserTwoFactorRecoveryCodeStore`.
+3. Enrolment + challenge UI; QR-code rendering server-side.
+4. Policy: require MFA for users matching `Check(organization:heimdall#admin@user:X)` (since OpenFGA precedes this phase in the new order, the admin predicate is already a tuple lookup, not a column read).
+5. WebAuthn deferred to a follow-up (unchanged from earlier drafts).
+
+#### Phase 5 — API + tokens
+
+Content unchanged from earlier drafts.
+
+1. RS256/ES256 signing key generation + JWKS endpoint.
+2. `refresh_tokens` migration (hashed token, `family_id`, `parent_id`, `replaced_by`, `revoked_at`).
+3. JWT bearer scheme registration alongside cookie auth.
+4. Refresh-token rotation with family-replay detection.
+5. Redis denylist for emergency revoke.
+6. First `/api/v1/...` endpoints, authorized via the **same** OpenFGA `Check()` adapter as the UI (no parallel policy stack).
+
+#### Phase 6 — Admin UI
+
+Returns *after* OpenFGA lands as a **tuple-management surface**, not a roles/groups surface. Detailed steps in [`openfga.md`](./openfga.md) step 11.
 
 Each phase is independently shippable and independently testable.
 
@@ -290,6 +331,7 @@ Each phase is independently shippable and independently testable.
 | ---------- | ------------------------------------------------------------------------ |
 | 2026-05-02 | Proposal drafted; awaiting review.                                      |
 | 2026-05-02 | Revised per review feedback: clarified Render scale-out is a *future* requirement (§1); reframed Dapper Identity store as a substantial subsystem rather than "thin" (§3.3); added periodic `SecurityStamp` revalidation on the circuit (§3.4); called out sticky-session/circuit-affinity requirement for horizontal scale (§3.5); replaced naive `/login` rate-limit guidance with a Blazor-Server-aware approach (§3.5); separated JWT signing keys from Data Protection and clarified JWKS source-of-truth (§5.4); replaced per-circuit role/permission caching with short-TTL caching (§9.2); made the email-delivery subsystem and a password-only onboarding fallback explicit Phase 1 prerequisites (§9.3). |
+| 2026-05-04 | **Phase 1 retopologised and RBAC+PBAC dropped.** §9.3 rewritten as 11 strictly-ordered steps (`users` migration → `audit_events` → Dapper Identity stores → `AddIdentityCore` + cookie + Data Protection → `RevalidatingServerAuthenticationStateProvider` → `IEmailSender` seam → login POST + Blazor pages → env-var `SystemAdmin` bootstrap → "authenticated-only" gate → email-gated reset/register → tests). RBAC+PBAC and the `roles`/`permissions`/`groups` migrations removed from Phase 1 because OpenFGA ([`openfga.md`](./openfga.md)) replaces them end-to-end. §8 admin surface deferred to post-OpenFGA as a tuple-management surface. §9.1 line 3 (AuthZ) and §9.1 line 5 (Admin) updated accordingly. MFA, API+tokens, and Admin UI repositioned to phases 4–6, after OpenFGA, so policy evaluation goes through one mechanism. Added "Depends on: nothing" line in the header; sibling proposals [`team-collaboration.md`](./team-collaboration.md) and [`openfga.md`](./openfga.md) added in the same review. |
 
 ---
 
