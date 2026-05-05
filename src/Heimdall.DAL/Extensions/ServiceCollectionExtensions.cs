@@ -1,8 +1,10 @@
 using Dapper.Extensions;
 using Dapper.Extensions.PostgreSql;
 using Heimdall.Core.Auditing;
+using Heimdall.Core.Interfaces;
 using Heimdall.DAL.Auditing;
 using Heimdall.DAL.Configuration;
+using Heimdall.DAL.Repositories;
 using Microsoft.Extensions.DependencyInjection;
 
 namespace Heimdall.DAL.Extensions;
@@ -36,6 +38,13 @@ public static class ServiceCollectionExtensions
         // request-bound Identity / DbContext-style services even though the writer
         // itself is stateless and could be a singleton.
         services.AddScoped<IAuditEventWriter, AuditEventWriter>();
+
+        // Phase 2.1 collaboration-hierarchy repositories
+        // (docs/proposals/team-collaboration.md §4 step 13). Scoped to match the
+        // existing audit writer; each call opens its own NpgsqlConnection.
+        services.AddScoped<IOrganizationRepository, OrganizationRepository>();
+        services.AddScoped<ITeamRepository, TeamRepository>();
+        services.AddScoped<IProjectRepository, ProjectRepository>();
         return services;
     }
 }

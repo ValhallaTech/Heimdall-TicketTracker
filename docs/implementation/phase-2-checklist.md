@@ -1,6 +1,6 @@
 # Phase 2 — Team Collaboration Infrastructure: Implementation Checklist
 
-**Status:** Planning, awaiting approval (this checklist is in flight on `copilot/phase-2-team-collaboration-infrastructure`).
+**Status:** Phase 2.1 complete on `copilot/phase-2-team-collaboration-infrastructure`; phases 2.2–2.10 in planning.
 **Source of truth:** [`docs/proposals/team-collaboration.md`](../proposals/team-collaboration.md) (§4 sequencing, §5 policy matrix, §6 `IPermissionService`, §7 admin panel, §8 enrollment hook).
 **Depends on:** Phase 1 ([`phase-1-checklist.md`](./phase-1-checklist.md)) — complete on `main` after PR #26.
 
@@ -11,11 +11,11 @@
 
 ## Phase 2.1 — Object hierarchy (migrations + domain models only)
 
-- [ ] **1. `organizations` migration.** UUID PK, citext `slug` unique, `name`, `created_at`, `created_by` UUID FK → `users(id)` `ON DELETE RESTRICT`. pgTAP: PK / FK / unique-slug coverage.
-- [ ] **2. `teams` migration.** UUID PK, `organization_id` FK CASCADE, citext `slug`, `name`, audit columns. Composite unique `(organization_id, slug)`; index on `organization_id`. pgTAP coverage.
-- [ ] **3. `projects` migration.** UUID PK, `team_id` FK CASCADE, citext `slug`, `name`, audit columns. Composite unique `(team_id, slug)`; index on `team_id`. pgTAP coverage.
-- [ ] **4. `Organization`, `Team`, `Project` domain types** in `Heimdall.Core/Models`. No framework references; mirror existing `HeimdallUser` style (XML doc comments on every public member).
-- [ ] **5. Dapper repositories** `IOrganizationRepository`, `ITeamRepository`, `IProjectRepository` in `Heimdall.DAL`. Wired into `AddDal()`. xUnit + Testcontainers integration tests against `postgres:18-alpine` (matches Phase 1 fixture).
+- [x] **1. `organizations` migration.** UUID PK, citext `slug` unique, `name`, `created_at`, `created_by` UUID FK → `users(id)` `ON DELETE RESTRICT`. pgTAP: PK / FK / unique-slug coverage.
+- [x] **2. `teams` migration.** UUID PK, `organization_id` FK CASCADE, citext `slug`, `name`, audit columns. Composite unique `(organization_id, slug)`; index on `organization_id`. pgTAP coverage.
+- [x] **3. `projects` migration.** UUID PK, `team_id` FK CASCADE, citext `slug`, `name`, audit columns. Composite unique `(team_id, slug)`; index on `team_id`. pgTAP coverage.
+- [x] **4. `Organization`, `Team`, `Project` domain types** in `Heimdall.Core/Models`. No framework references; mirror existing `HeimdallUser` style (XML doc comments on every public member).
+- [x] **5. Dapper repositories** `IOrganizationRepository`, `ITeamRepository`, `IProjectRepository` in `Heimdall.DAL`. Wired into `AddDal()`. xUnit + Testcontainers integration tests against `postgres:18-alpine` (matches Phase 1 fixture).
 
 ## Phase 2.2 — Memberships (the people-to-objects edges)
 
