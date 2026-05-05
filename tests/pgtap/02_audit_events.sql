@@ -60,7 +60,19 @@ SELECT col_not_null('audit_events', 'occurred_at');
 -- ---------------------------------------------------------------------------
 SELECT col_is_pk('audit_events', 'id');
 
-SELECT col_default_is('audit_events', 'payload',     $$'{}'::jsonb$$);
+-- pgTAP's col_default_is helper deserialises the column default through the
+-- column's own type, which fails for jsonb expressions like '{}'::jsonb (the
+-- inner cast is parsed as text, not jsonb). Compare the catalog default
+-- expression textually instead.
+SELECT is(
+    pg_get_expr(d.adbin, d.adrelid),
+    $$'{}'::jsonb$$,
+    'audit_events.payload should default to ''{}''::jsonb'
+)
+FROM pg_attrdef d
+JOIN pg_attribute a ON a.attrelid = d.adrelid AND a.attnum = d.adnum
+WHERE d.adrelid = 'audit_events'::regclass
+  AND a.attname = 'payload';
 SELECT col_default_is('audit_events', 'occurred_at', 'now()');
 
 -- ---------------------------------------------------------------------------
@@ -92,8 +104,7 @@ SELECT has_index('audit_events', 'ix_audit_events_occurred_at');
 
 SELECT index_is_partial(
     'audit_events',
-    'ix_audit_events_actor_occurred',
-    'ix_audit_events_actor_occurred is a partial index (WHERE actor_user_id IS NOT NULL)'
+    'ix_audit_events_actor_occurred'
 );
 
 -- ---------------------------------------------------------------------------

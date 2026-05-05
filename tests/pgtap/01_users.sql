@@ -75,8 +75,8 @@ SELECT col_not_null('users', 'updated_at');
 -- Primary key & unique constraints
 -- ---------------------------------------------------------------------------
 SELECT col_is_pk('users', 'id');
-SELECT col_is_unique('users', 'email');
-SELECT col_is_unique('users', 'normalized_email');
+SELECT index_is_unique('ux_users_email');
+SELECT index_is_unique('ux_users_normalized_email');
 
 -- ---------------------------------------------------------------------------
 -- Defaults
