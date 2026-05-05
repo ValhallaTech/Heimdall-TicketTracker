@@ -1,5 +1,7 @@
 using Dapper.Extensions;
 using Dapper.Extensions.PostgreSql;
+using Heimdall.Core.Auditing;
+using Heimdall.DAL.Auditing;
 using Heimdall.DAL.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 
@@ -28,6 +30,12 @@ public static class ServiceCollectionExtensions
         // translated Npgsql connection string used elsewhere in the app is used here too.
         services.AddDapperForPostgreSQL();
         services.AddDapperConnectionStringProvider<DataOptionsConnectionStringProvider>();
+
+        // Append-only audit writer (Phase 1 step 7 of
+        // docs/proposals/security-and-authorization.md §9.3). Scoped to align with
+        // request-bound Identity / DbContext-style services even though the writer
+        // itself is stateless and could be a singleton.
+        services.AddScoped<IAuditEventWriter, AuditEventWriter>();
         return services;
     }
 }

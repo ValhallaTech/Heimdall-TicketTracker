@@ -21,6 +21,10 @@
     <BlazorDisableThrowNavigationException>true</BlazorDisableThrowNavigationException>
   </PropertyGroup>
 
+  <ItemGroup>
+    <InternalsVisibleTo Include="Heimdall.Web.Tests" />
+  </ItemGroup>
+
   <!--
     Ensure Bootstrap assets exist in wwwroot before publish. Set SkipYarnBuild=true to
     suppress (e.g. when the Dockerfile already ran `yarn build` earlier in the pipeline).

@@ -1,4 +1,5 @@
 using System;
+using System.Threading.RateLimiting;
 using AspNetCore.DataProtection.CustomStorage.Dapper.PostgreSQL;
 using Autofac;
 using Autofac.Extensions.DependencyInjection;
@@ -11,11 +12,13 @@ using Heimdall.DAL.Migrations;
 using Heimdall.Web.Authentication;
 using Heimdall.Web.Components;
 using Heimdall.Web.DependencyInjection;
+using Heimdall.Web.Endpoints;
 using Microsoft.AspNetCore.Authentication.Cookies;
 using Microsoft.AspNetCore.Components.Authorization;
 using Microsoft.AspNetCore.DataProtection;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Identity;
+using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.Extensions.DependencyInjection;
 using Serilog;
 using StackExchange.Redis;
@@ -179,6 +182,37 @@ builder
 // to step 9 — Phase 1 has no [Authorize] attributes or global gate.
 builder.Services.AddAuthorization();
 
+// --- Rate limiting (Phase 1 step 7 / §3.5) --------------------------------
+// /account/login throttle keyed on (client IP, submitted username) per §3.5:
+// IP alone enables credential-stuffing through botnets; username alone hands
+// attackers a free username-based lockout DoS. Combining both narrows the
+// limit to a (source, target) pair.
+//
+// The policy callback is sync — RateLimitPartition.GetFixedWindowLimiter is
+// not awaitable — so we read the form synchronously here. ASP.NET Core
+// buffers the form by the time the rate limiter middleware runs, so this is
+// safe (no async I/O is performed).
+builder.Services.AddRateLimiter(options =>
+{
+    options.AddPolicy("login", httpContext =>
+    {
+        string ip = httpContext.Connection.RemoteIpAddress?.ToString() ?? "unknown";
+        var form = httpContext.Request.HasFormContentType
+            ? httpContext.Request.ReadFormAsync().GetAwaiter().GetResult()
+            : null;
+        string submittedEmail = form?["email"].ToString() ?? string.Empty;
+        string key = $"{ip}|{submittedEmail.ToLowerInvariant()}";
+        return RateLimitPartition.GetFixedWindowLimiter(key, _ => new FixedWindowRateLimiterOptions
+        {
+            PermitLimit = 10,
+            Window = TimeSpan.FromMinutes(5),
+            QueueLimit = 0,
+            AutoReplenishment = true,
+        });
+    });
+    options.RejectionStatusCode = StatusCodes.Status429TooManyRequests;
+});
+
 // --- Data Protection key persistence (PostgreSQL) -------------------------
 // Render scales horizontally, so each replica MUST share the Data Protection
 // key ring or antiforgery / auth cookies minted by one replica will be
@@ -290,10 +324,17 @@ app.UseSerilogRequestLogging();
 // and will not break the existing public Tickets pages.
 app.UseAuthentication();
 app.UseAuthorization();
+app.UseRateLimiter();
 app.UseAntiforgery();
 
 app.MapStaticAssets();
 app.MapRazorComponents<App>().AddInteractiveServerRenderMode();
+
+// --- Account endpoints (Phase 1 step 7) -----------------------------------
+// Server-rendered POST /account/login + /account/logout. Mapped after the
+// Razor components so they participate in the same routing namespace, and
+// after UseAntiforgery so form posts go through antiforgery validation.
+app.MapAccountEndpoints();
 
 app.Run();
 

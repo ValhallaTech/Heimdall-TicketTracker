@@ -1,0 +1,87 @@
+@page "/login"
+@attribute [Microsoft.AspNetCore.Authorization.AllowAnonymous]
+
+@*
+    Server-rendered login page (Phase 1 step 7 of
+    docs/proposals/security-and-authorization.md §9.3 / §3.5). Intentionally
+    NOT @rendermode InteractiveServer — the actual credential check must run
+    over a fresh HTTP POST so AddRateLimiter and cookie issuance both happen
+    on the HTTP pipeline, not over the SignalR circuit.
+*@
+
+<PageTitle>Sign in &middot; Heimdall TicketTracker</PageTitle>
+
+<div class="container py-5">
+    <div class="row justify-content-center">
+        <div class="col-md-6 col-lg-5 col-xl-4">
+            <div class="card shadow-sm">
+                <div class="card-body p-4 p-md-5">
+
+                    <div class="text-center mb-4">
+                        <div class="splash-icon mb-3" aria-hidden="true">
+                            <i class="fa-solid fa-shield-halved"></i>
+                        </div>
+                        <h1 class="h3 fw-bold mb-0">Sign in</h1>
+                    </div>
+
+                    @if (HasError)
+                    {
+                        <div class="alert alert-danger" role="alert">
+                            <i class="fa-solid fa-triangle-exclamation me-2" aria-hidden="true"></i>
+                            Invalid email or password.
+                        </div>
+                    }
+
+                    <form method="post" action="/account/login">
+                        <AntiforgeryToken />
+
+                        <div class="mb-3">
+                            <label for="login-email" class="form-label">Email address</label>
+                            <input id="login-email"
+                                   name="email"
+                                   type="email"
+                                   class="form-control"
+                                   autocomplete="email"
+                                   required
+                                   aria-invalid="@AriaInvalid" />
+                        </div>
+
+                        <div class="mb-3">
+                            <label for="login-password" class="form-label">Password</label>
+                            <input id="login-password"
+                                   name="password"
+                                   type="password"
+                                   class="form-control"
+                                   autocomplete="current-password"
+                                   required
+                                   aria-invalid="@AriaInvalid" />
+                        </div>
+
+                        @if (!string.IsNullOrEmpty(ReturnUrl))
+                        {
+                            <input type="hidden" name="returnUrl" value="@ReturnUrl" />
+                        }
+
+                        <button type="submit" class="btn btn-primary w-100 py-2">
+                            <i class="fa-solid fa-right-to-bracket me-2" aria-hidden="true"></i>
+                            Sign in
+                        </button>
+                    </form>
+
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+@code {
+    /// <summary>Optional <c>?returnUrl=</c> query param echoed back into the form.</summary>
+    [SupplyParameterFromQuery] public string? ReturnUrl { get; set; }
+
+    /// <summary>Optional <c>?error=</c> query param. Renders the error block when equal to <c>"invalid-credentials"</c>.</summary>
+    [SupplyParameterFromQuery] public string? Error { get; set; }
+
+    private bool HasError => string.Equals(Error, "invalid-credentials", StringComparison.Ordinal);
+
+    private string? AriaInvalid => HasError ? "true" : null;
+}
