@@ -586,6 +586,21 @@ public static class AccountEndpoints
                 ex,
                 "Account-confirmation email send failed for new user {UserId}; account remains in unconfirmed state.",
                 user.Id);
+
+            string sendFailPayload = JsonSerializer.Serialize(new
+            {
+                email_domain = emailDomain,
+                exception_type = ex.GetType().FullName,
+            });
+            await TryWriteAuditAsync(httpContext, auditWriter, new AuditEvent
+            {
+                ActorUserId = user.Id,
+                EventType = "account.register.confirmation_email.failure",
+                Target = user.Id.ToString(),
+                Ip = ip,
+                UserAgent = userAgent,
+                PayloadJson = sendFailPayload,
+            }, cancellationToken).ConfigureAwait(false);
         }
 
         string successPayload = JsonSerializer.Serialize(new { email_domain = emailDomain });

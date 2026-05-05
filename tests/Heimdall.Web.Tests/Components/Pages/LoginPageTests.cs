@@ -111,14 +111,9 @@ public class LoginPageTests : BunitContext
     [Fact]
     public void Should_RenderRegisterLink_When_GateActiveAndRegistrationEnabled()
     {
-        // Replace the registrations with active values.
-        Services.AddSingleton(new EmailSenderRegistrationInfo
-        {
-            ChosenImplementation = "MailKitEmailSender",
-            Reason = "test active",
-        });
-
-        // Use a bUnit context that re-resolves EmailFlowGate against the new info.
+        // Use a separate bUnit context wired with the *active* gate values; the
+        // base class's own context (registered with NoOp + Registration:Enabled=false
+        // in the constructor) is left alone here.
         using var ctx = new BunitContext();
         ctx.Services.AddSingleton(new EmailSenderRegistrationInfo
         {

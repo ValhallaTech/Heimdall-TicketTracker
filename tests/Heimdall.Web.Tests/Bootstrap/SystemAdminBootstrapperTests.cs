@@ -282,7 +282,7 @@ public class SystemAdminBootstrapperTests
     }
 
     [Fact]
-    public async Task Should_OmitFullEmailFromAuditPayload_When_AdminCreated()
+    public async Task Should_OmitEmailAndDomainFromAuditPayload_When_AdminCreated()
     {
         var harness = new TestHarness();
         const string email = "ops@corporate.example.com";
@@ -302,14 +302,17 @@ public class SystemAdminBootstrapperTests
         await harness.Bootstrapper.RunAsync(email, password, CancellationToken.None);
 
         captured.Should().NotBeNull();
-        captured!.PayloadJson.Should().Contain("email_domain");
-        captured.PayloadJson.Should().Contain("corporate.example.com");
+        // Audit payload must contain neither the full email nor its domain — the
+        // ActorUserId already identifies the bootstrapped account, and writing any
+        // form of the address would constitute a PII sink.
+        captured!.PayloadJson.Should().NotContain("email_domain");
+        captured.PayloadJson.Should().NotContain("corporate.example.com");
         captured.PayloadJson.Should().NotContain("ops@");
         captured.PayloadJson.Should().NotContain("ops\"");
 
         // Sanity-check JSON structure
         using JsonDocument doc = JsonDocument.Parse(captured.PayloadJson);
-        doc.RootElement.GetProperty("email_domain").GetString().Should().Be("corporate.example.com");
+        doc.RootElement.TryGetProperty("email_domain", out _).Should().BeFalse();
         doc.RootElement.TryGetProperty("email", out _).Should().BeFalse();
     }
 

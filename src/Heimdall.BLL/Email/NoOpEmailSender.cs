@@ -29,9 +29,10 @@ public sealed class NoOpEmailSender : IEmailSender
     {
         ArgumentNullException.ThrowIfNull(message);
 
+        // Subject is template text controlled by the application and safe to log;
+        // the recipient address is PII and is intentionally omitted.
         _logger.LogInformation(
-            "NoOpEmailSender suppressed email to {Recipient} subject={Subject} (configure SMTP to send real emails)",
-            message.To,
+            "NoOpEmailSender suppressed email subject={Subject} (configure SMTP to send real emails)",
             message.Subject);
 
         return Task.CompletedTask;

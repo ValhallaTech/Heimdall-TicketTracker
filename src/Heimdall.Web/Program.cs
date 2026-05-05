@@ -17,10 +17,12 @@ using Heimdall.Web.DependencyInjection;
 using Heimdall.Web.Email;
 using Heimdall.Web.Endpoints;
 using Heimdall.Web.Identity;
+using Heimdall.Web.RateLimiting;
 using Microsoft.AspNetCore.Authentication.Cookies;
 using Microsoft.AspNetCore.Components.Authorization;
 using Microsoft.AspNetCore.DataProtection;
 using Microsoft.AspNetCore.Http;
+using Microsoft.AspNetCore.HttpOverrides;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.Extensions.DependencyInjection;
@@ -96,6 +98,21 @@ builder.Services.AddHeimdallMigrations(postgresConnectionString);
 // --- Data access layer (Dapper.Extensions for PostgreSQL) ------------------
 builder.Services.AddDal();
 
+// --- Forwarded headers (proxy-aware HTTPS detection) ----------------------
+// Render (and most PaaS hosts) terminate TLS at an upstream proxy and forward
+// plain HTTP to the app with X-Forwarded-Proto: https. Without this the app
+// would see Scheme=http for genuinely-HTTPS requests, breaking redirect URL
+// generation, the SecurePolicy=SameAsRequest cookie decision, and any "is
+// this secure?" check downstream. KnownNetworks/KnownProxies are cleared
+// because the proxy is in a routable address range we can't enumerate; this
+// is the documented Microsoft pattern for hosting behind an opaque PaaS proxy.
+builder.Services.Configure<ForwardedHeadersOptions>(options =>
+{
+    options.ForwardedHeaders = ForwardedHeaders.XForwardedFor | ForwardedHeaders.XForwardedProto;
+    options.KnownIPNetworks.Clear();
+    options.KnownProxies.Clear();
+});
+
 // --- ASP.NET Core Identity (cookie scheme) --------------------------------
 // Phase 1 step 4 of docs/proposals/security-and-authorization.md §9.3. Order
 // matters: migrations → DAL → identity (Identity stores resolve through the
@@ -168,7 +185,15 @@ builder
             options.SlidingExpiration = true;
 
             options.Cookie.HttpOnly = true;
-            options.Cookie.SecurePolicy = CookieSecurePolicy.Always;
+
+            // SameAsRequest (rather than Always) so the auth cookie survives plain
+            // HTTP scenarios that the deployment topology genuinely uses HTTP for —
+            // primarily the in-process TestServer used by the Phase 1 acceptance
+            // suite. Production traffic always reaches the app over HTTPS:
+            // app.UseHttpsRedirection() (registered below in non-Development) plus
+            // Render's TLS-terminating proxy + ForwardedHeaders middleware ensure
+            // the request scheme is "https" and so the cookie is minted Secure.
+            options.Cookie.SecurePolicy = CookieSecurePolicy.SameAsRequest;
 
             // Lax (not Strict) so OAuth / external-login callbacks in later
             // phases — which round-trip through a third-party origin — still
@@ -200,18 +225,20 @@ builder.Services.AddAuthorization(AuthorizationConfiguration.Configure);
 // limit to a (source, target) pair.
 //
 // The policy callback is sync — RateLimitPartition.GetFixedWindowLimiter is
-// not awaitable — so we read the form synchronously here. ASP.NET Core
-// buffers the form by the time the rate limiter middleware runs, so this is
-// safe (no async I/O is performed).
+// not awaitable. Rather than sync-blocking on ReadFormAsync().GetAwaiter()
+// (which would sync-over-async on body I/O if the form isn't buffered yet
+// and risks threadpool starvation under load), the email is pre-extracted
+// asynchronously by RateLimitFormEmailMiddleware (registered earlier in the
+// pipeline) and stashed in HttpContext.Items. The callback below just reads
+// that value synchronously.
 builder.Services.AddRateLimiter(options =>
 {
     options.AddPolicy("login", httpContext =>
     {
         string ip = httpContext.Connection.RemoteIpAddress?.ToString() ?? "unknown";
-        var form = httpContext.Request.HasFormContentType
-            ? httpContext.Request.ReadFormAsync().GetAwaiter().GetResult()
-            : null;
-        string submittedEmail = form?["email"].ToString() ?? string.Empty;
+        string submittedEmail =
+            httpContext.Items[RateLimitFormEmailKeys.SubmittedEmailItemKey] as string
+            ?? string.Empty;
         string key = $"{ip}|{submittedEmail.ToLowerInvariant()}";
         return RateLimitPartition.GetFixedWindowLimiter(key, _ => new FixedWindowRateLimiterOptions
         {
@@ -229,10 +256,9 @@ builder.Services.AddRateLimiter(options =>
     options.AddPolicy("password-reset", httpContext =>
     {
         string ip = httpContext.Connection.RemoteIpAddress?.ToString() ?? "unknown";
-        var form = httpContext.Request.HasFormContentType
-            ? httpContext.Request.ReadFormAsync().GetAwaiter().GetResult()
-            : null;
-        string submittedEmail = form?["email"].ToString() ?? string.Empty;
+        string submittedEmail =
+            httpContext.Items[RateLimitFormEmailKeys.SubmittedEmailItemKey] as string
+            ?? string.Empty;
         string key = $"{ip}|{submittedEmail.ToLowerInvariant()}";
         return RateLimitPartition.GetFixedWindowLimiter(key, _ => new FixedWindowRateLimiterOptions
         {
@@ -375,10 +401,23 @@ catch (Exception ex)
 }
 
 // --- Pipeline -------------------------------------------------------------
+// ForwardedHeaders MUST run first — every downstream component (HSTS,
+// HttpsRedirection, SecurePolicy=SameAsRequest, redirect URL generation) keys
+// off Request.Scheme, and the only correct value behind a TLS-terminating
+// proxy comes from X-Forwarded-Proto. See ForwardedHeadersOptions registration
+// above; KnownNetworks/KnownProxies are intentionally empty for opaque PaaS
+// proxies (Render).
+app.UseForwardedHeaders();
+
 if (!app.Environment.IsDevelopment())
 {
     app.UseExceptionHandler("/Error", createScopeForErrors: true);
     app.UseHsts();
+
+    // HTTPS-only in production. Skipped under Development so the in-process
+    // TestServer used by Phase1AcceptanceTests (which runs over plain HTTP)
+    // is not 307'd into an unreachable HTTPS endpoint.
+    app.UseHttpsRedirection();
 }
 
 app.UseStatusCodePagesWithReExecute("/not-found", createScopeForStatusCodePages: true);
@@ -393,6 +432,11 @@ app.UseSerilogRequestLogging();
 // and will not break the existing public Tickets pages.
 app.UseAuthentication();
 app.UseAuthorization();
+// Pre-extract the form-submitted email on (ip|email)-keyed rate-limited POSTs
+// so the synchronous rate-limit policy callbacks (login, password-reset) can
+// read it from HttpContext.Items without sync-over-async on body I/O. Must
+// run before UseRateLimiter so the policy observes the stashed value.
+app.UseRateLimitFormEmailExtraction();
 app.UseRateLimiter();
 app.UseAntiforgery();
 

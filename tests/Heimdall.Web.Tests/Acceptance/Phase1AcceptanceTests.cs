@@ -49,7 +49,11 @@ public sealed class Phase1AcceptanceTests : IClassFixture<HeimdallWebApplication
         response.StatusCode.Should().BeOneOf(HttpStatusCode.Redirect, HttpStatusCode.Found);
         response.Headers.Location.Should().NotBeNull();
         response.Headers.Location!.OriginalString.Should().Contain("/login");
-        response.Headers.Location.OriginalString.Should().Contain("returnUrl=");
+        // The cookie scheme emits the param as "ReturnUrl" (default
+        // CookieAuthenticationOptions.ReturnUrlParameter casing). Compare
+        // case-insensitively so we don't tie the test to that detail.
+        response.Headers.Location.OriginalString
+            .Should().ContainEquivalentOf("returnUrl=");
     }
 
     [Theory]

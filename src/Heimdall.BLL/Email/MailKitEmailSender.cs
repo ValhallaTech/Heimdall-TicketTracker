@@ -99,14 +99,15 @@ public sealed class MailKitEmailSender : IEmailSender
                 .ConfigureAwait(false);
             await client.SendAsync(mime, cancellationToken).ConfigureAwait(false);
 
-            _logger.LogInformation(
-                "Sent email to {Recipient} subject={Subject}",
-                message.To,
-                message.Subject);
+            // Subject is operator-controlled template text and is safe to log; the
+            // recipient address is PII and is intentionally omitted.
+            _logger.LogInformation("Sent email subject={Subject}", message.Subject);
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Email delivery failed for {Recipient}", message.To);
+            // Do not log the recipient — message.To is PII. The exception (with SMTP
+            // response code) and timing are sufficient for operational triage.
+            _logger.LogError(ex, "Email delivery failed (subject={Subject})", message.Subject);
             throw;
         }
         finally

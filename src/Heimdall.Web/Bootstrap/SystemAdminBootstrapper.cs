@@ -1,6 +1,5 @@
 using System;
 using System.Linq;
-using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
 using Heimdall.Core.Auditing;
@@ -91,27 +90,23 @@ public sealed class SystemAdminBootstrapper
 
         try
         {
-            // Email-domain only in audit payloads — full address is PII and the domain
-            // alone is enough to correlate a bootstrap event to the operator's tenancy.
-            string emailDomain = ExtractEmailDomain(email);
-
             HeimdallUser? existing = await _userManager.FindByEmailAsync(email).ConfigureAwait(false);
             if (existing is null)
             {
-                await CreateAdminAsync(email, password, emailDomain, cancellationToken).ConfigureAwait(false);
+                await CreateAdminAsync(email, password, cancellationToken).ConfigureAwait(false);
             }
             else if (existing.SystemAdmin)
             {
                 // Fully-idempotent path: re-running on a row that's already an admin must
-                // not write anything (no DB row touched, no audit event emitted). Log the
-                // email domain only to keep PII out of logs (mirrors AccountEndpoints).
+                // not write anything (no DB row touched, no audit event emitted). No PII
+                // (email or email domain) is written to logs — the operator already knows
+                // which email they configured via the env var.
                 _logger.LogInformation(
-                    "SystemAdmin bootstrap: user with domain {EmailDomain} already exists and is already an admin.",
-                    emailDomain);
+                    "SystemAdmin bootstrap: target user already exists and is already an admin; no-op.");
             }
             else
             {
-                await PromoteAdminAsync(existing, emailDomain, cancellationToken).ConfigureAwait(false);
+                await PromoteAdminAsync(existing, cancellationToken).ConfigureAwait(false);
             }
         }
         catch (OperationCanceledException)
@@ -132,7 +127,6 @@ public sealed class SystemAdminBootstrapper
     private async Task CreateAdminAsync(
         string email,
         string password,
-        string emailDomain,
         CancellationToken cancellationToken)
     {
         // Set Id explicitly here. The migration's PK default gen_random_uuid() does not
@@ -160,7 +154,9 @@ public sealed class SystemAdminBootstrapper
             return;
         }
 
-        string payload = JsonSerializer.Serialize(new { email_domain = emailDomain });
+        // Audit payload is intentionally empty — ActorUserId already identifies the
+        // bootstrapped account, and writing the email or its domain into audit_events
+        // would constitute a PII sink with no analytical benefit.
         await _auditWriter.WriteAsync(
             new AuditEvent
             {
@@ -169,19 +165,17 @@ public sealed class SystemAdminBootstrapper
                 Target = user.Id.ToString(),
                 Ip = null,
                 UserAgent = null,
-                PayloadJson = payload,
+                PayloadJson = "{}",
             },
             cancellationToken).ConfigureAwait(false);
 
         _logger.LogInformation(
-            "SystemAdmin bootstrap created admin user {UserId} (domain {EmailDomain}).",
-            user.Id,
-            emailDomain);
+            "SystemAdmin bootstrap created admin user {UserId}.",
+            user.Id);
     }
 
     private async Task PromoteAdminAsync(
         HeimdallUser existing,
-        string emailDomain,
         CancellationToken cancellationToken)
     {
         existing.SystemAdmin = true;
@@ -201,7 +195,6 @@ public sealed class SystemAdminBootstrapper
             return;
         }
 
-        string payload = JsonSerializer.Serialize(new { email_domain = emailDomain });
         await _auditWriter.WriteAsync(
             new AuditEvent
             {
@@ -210,19 +203,12 @@ public sealed class SystemAdminBootstrapper
                 Target = existing.Id.ToString(),
                 Ip = null,
                 UserAgent = null,
-                PayloadJson = payload,
+                PayloadJson = "{}",
             },
             cancellationToken).ConfigureAwait(false);
 
         _logger.LogInformation(
-            "SystemAdmin bootstrap promoted user {UserId} (domain {EmailDomain}) to admin.",
-            existing.Id,
-            emailDomain);
-    }
-
-    private static string ExtractEmailDomain(string email)
-    {
-        int atIdx = email.IndexOf('@', StringComparison.Ordinal);
-        return atIdx >= 0 && atIdx < email.Length - 1 ? email[(atIdx + 1)..] : string.Empty;
+            "SystemAdmin bootstrap promoted user {UserId} to admin.",
+            existing.Id);
     }
 }
