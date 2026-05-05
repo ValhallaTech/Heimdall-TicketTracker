@@ -2,6 +2,7 @@ using System;
 using AspNetCore.DataProtection.CustomStorage.Dapper.PostgreSQL;
 using Autofac;
 using Autofac.Extensions.DependencyInjection;
+using Heimdall.BLL.Email;
 using Heimdall.Core.Models;
 using Heimdall.DAL.Caching;
 using Heimdall.DAL.Configuration;
@@ -15,6 +16,7 @@ using Microsoft.AspNetCore.Components.Authorization;
 using Microsoft.AspNetCore.DataProtection;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Identity;
+using Microsoft.Extensions.DependencyInjection;
 using Serilog;
 using StackExchange.Redis;
 
@@ -214,6 +216,13 @@ builder.Services.AddScoped<AuthenticationStateProvider, HeimdallRevalidatingAuth
 // [CascadingParameter] AuthenticationState work without manual plumbing.
 builder.Services.AddCascadingAuthenticationState();
 
+// --- Email seam (Phase 1 step 6) ------------------------------------------
+// Registers IEmailSender. Picks MailKitEmailSender when Email:Smtp Host /
+// UserName / Password / From are all configured; otherwise falls back to
+// NoOpEmailSender so non-SMTP environments boot cleanly. The chosen
+// implementation is logged below after Build().
+builder.Services.AddHeimdallEmail(builder.Configuration);
+
 // --- Autofac --------------------------------------------------------------
 builder.Host.UseServiceProviderFactory(new AutofacServiceProviderFactory());
 builder.Host.ConfigureContainer<ContainerBuilder>(containerBuilder =>
@@ -232,6 +241,15 @@ catch (Exception ex)
     Log.Fatal(ex, "Database migration failed on startup.");
     throw;
 }
+
+// --- Email sender choice (Phase 1 step 6) ---------------------------------
+// Surfaces which IEmailSender implementation was wired up. The Reason text is
+// secret-free by construction (see EmailServiceCollectionExtensions).
+var emailInfo = app.Services.GetRequiredService<EmailSenderRegistrationInfo>();
+Log.Information(
+    "Email sender: {Implementation} ({Reason})",
+    emailInfo.ChosenImplementation,
+    emailInfo.Reason);
 
 // --- Seed database unless explicitly opted out (SEED_DATABASE=false) -------
 var seedEnv = Environment.GetEnvironmentVariable("SEED_DATABASE")?.Trim();
