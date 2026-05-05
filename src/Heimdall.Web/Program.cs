@@ -1,12 +1,18 @@
 using System;
+using AspNetCore.DataProtection.CustomStorage.Dapper.PostgreSQL;
 using Autofac;
 using Autofac.Extensions.DependencyInjection;
+using Heimdall.Core.Models;
 using Heimdall.DAL.Caching;
 using Heimdall.DAL.Configuration;
 using Heimdall.DAL.Extensions;
 using Heimdall.DAL.Migrations;
 using Heimdall.Web.Components;
 using Heimdall.Web.DependencyInjection;
+using Microsoft.AspNetCore.Authentication.Cookies;
+using Microsoft.AspNetCore.DataProtection;
+using Microsoft.AspNetCore.Http;
+using Microsoft.AspNetCore.Identity;
 using Serilog;
 using StackExchange.Redis;
 
@@ -79,6 +85,117 @@ builder.Services.AddHeimdallMigrations(postgresConnectionString);
 // --- Data access layer (Dapper.Extensions for PostgreSQL) ------------------
 builder.Services.AddDal();
 
+// --- ASP.NET Core Identity (cookie scheme) --------------------------------
+// Phase 1 step 4 of docs/proposals/security-and-authorization.md §9.3. Order
+// matters: migrations → DAL → identity (Identity stores resolve through the
+// Dapper-backed HeimdallUserStore registered by AddHeimdallIdentityStores).
+//
+// Scope is intentionally narrow:
+//   * No JWT bearer scheme — that lands in Phase 5.
+//   * No [Authorize] attributes / global auth gate — step 9 owns that.
+//   * No login/logout endpoints, no IEmailSender — steps 6-7 own those.
+//   * No AddRoles<...>() — RBAC was dropped in PR #25.
+// Just the wiring required for Identity to be usable by later steps.
+builder.Services.AddHeimdallIdentityStores();
+
+builder
+    .Services.AddIdentityCore<HeimdallUser>(options =>
+    {
+        // Email is the login identifier; collisions are not allowed.
+        options.User.RequireUniqueEmail = true;
+
+        // Strong-but-reasonable password policy. 12 chars + four character
+        // classes + 4 distinct chars rejects the common low-entropy patterns
+        // (e.g. "Password1!") without pushing users into password-manager-only
+        // territory.
+        options.Password.RequiredLength = 12;
+        options.Password.RequireDigit = true;
+        options.Password.RequireLowercase = true;
+        options.Password.RequireUppercase = true;
+        options.Password.RequireNonAlphanumeric = true;
+        options.Password.RequiredUniqueChars = 4;
+
+        // Lockout: 5 strikes / 15 minutes, applied to brand-new users too so an
+        // attacker cannot bypass it by targeting freshly-created accounts.
+        options.Lockout.MaxFailedAccessAttempts = 5;
+        options.Lockout.DefaultLockoutTimeSpan = TimeSpan.FromMinutes(15);
+        options.Lockout.AllowedForNewUsers = true;
+
+        // Phase 1 keeps onboarding simple — email-gated reset/register lands in
+        // step 10 once IEmailSender is wired in step 6. Flipping these to true
+        // before then would brick first-run sign-in.
+        options.SignIn.RequireConfirmedEmail = false;
+        options.SignIn.RequireConfirmedAccount = false;
+    })
+    .AddSignInManager()
+
+    // Default token providers (DataProtector / Email / Phone / Authenticator).
+    // Required by the password-reset and email-confirmation flows that land in
+    // step 10; registered now so the DI graph is stable across phases.
+    .AddDefaultTokenProviders();
+
+// Cookie auth scheme. AddIdentityCore deliberately does NOT register one — we
+// opt in here with the canonical Identity scheme name so SignInManager's calls
+// to HttpContext.SignInAsync(IdentityConstants.ApplicationScheme, ...) resolve
+// to this handler.
+builder
+    .Services.AddAuthentication(IdentityConstants.ApplicationScheme)
+    .AddCookie(
+        IdentityConstants.ApplicationScheme,
+        options =>
+        {
+            // Endpoints land in step 7; the paths are reserved here so 401s
+            // redirect somewhere sensible the moment those pages exist.
+            options.LoginPath = "/login";
+            options.LogoutPath = "/logout";
+            options.AccessDeniedPath = "/access-denied";
+
+            // 8h ≈ a working day. Sliding refresh keeps an active user signed
+            // in; the SecurityStamp-based RevalidatingServerAuthenticationStateProvider
+            // (step 5) will still kick out a session whose stamp has changed.
+            options.ExpireTimeSpan = TimeSpan.FromHours(8);
+            options.SlidingExpiration = true;
+
+            options.Cookie.HttpOnly = true;
+            options.Cookie.SecurePolicy = CookieSecurePolicy.Always;
+
+            // Lax (not Strict) so OAuth / external-login callbacks in later
+            // phases — which round-trip through a third-party origin — still
+            // carry the cookie back. Strict would silently break those flows.
+            options.Cookie.SameSite = SameSiteMode.Lax;
+
+            // Predictable name (instead of the framework's GUID-suffixed
+            // default) so ops tooling, log filters, and the browser devtools
+            // can recognise the auth cookie at a glance.
+            options.Cookie.Name = ".Heimdall.Auth";
+        }
+    );
+
+// Authorization services only. Policy registration is intentionally deferred
+// to step 9 — Phase 1 has no [Authorize] attributes or global gate.
+builder.Services.AddAuthorization();
+
+// --- Data Protection key persistence (PostgreSQL) -------------------------
+// Render scales horizontally, so each replica MUST share the Data Protection
+// key ring or antiforgery / auth cookies minted by one replica will be
+// rejected by another. Persisting to Postgres (rather than the default
+// per-instance file system) gives every replica the same view of the ring.
+//
+// InitializeTable = false: the package can auto-create its table at startup,
+// but Heimdall owns its schema in FluentMigrator
+// (M202605050003_CreateDataProtectionKeys) so deployments fail loudly on a
+// missing migration instead of silently drifting between environments.
+//
+// SetApplicationName isolates this app's keys from any other app sharing the
+// same database — required by Data Protection's purpose-string contract.
+builder
+    .Services.AddDataProtection()
+    .PersistKeysWithDapperInPostgreSQL(
+        postgresConnectionString,
+        config => config.InitializeTable = false
+    )
+    .SetApplicationName("Heimdall");
+
 // --- Blazor ---------------------------------------------------------------
 builder.Services.AddRazorComponents().AddInteractiveServerComponents();
 
@@ -130,6 +247,16 @@ if (!app.Environment.IsDevelopment())
 
 app.UseStatusCodePagesWithReExecute("/not-found", createScopeForStatusCodePages: true);
 app.UseSerilogRequestLogging();
+
+// Pipeline order: routing → authentication → authorization → antiforgery →
+// static assets → razor components. UseAuthentication MUST precede
+// UseAntiforgery so antiforgery tokens can be bound to an authenticated
+// identity once login lands in step 7. UseAuthorization is registered now to
+// keep the DI graph stable; with no [Authorize] attributes or fallback policy
+// in place (step 9) it is effectively a no-op for unauthenticated requests
+// and will not break the existing public Tickets pages.
+app.UseAuthentication();
+app.UseAuthorization();
 app.UseAntiforgery();
 
 app.MapStaticAssets();
