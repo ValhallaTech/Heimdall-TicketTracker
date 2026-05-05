@@ -1,4 +1,5 @@
 using System;
+using System.Linq;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
 
@@ -67,14 +68,7 @@ internal static class RateLimitFormEmailMiddleware
 
     private static bool MatchesTargetPath(PathString path)
     {
-        foreach (var prefix in TargetPaths)
-        {
-            if (path.StartsWithSegments(prefix, StringComparison.OrdinalIgnoreCase))
-            {
-                return true;
-            }
-        }
-
-        return false;
+        return TargetPaths.Any(prefix =>
+            path.StartsWithSegments(prefix, StringComparison.OrdinalIgnoreCase));
     }
 }

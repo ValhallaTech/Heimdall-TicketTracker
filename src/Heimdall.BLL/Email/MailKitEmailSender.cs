@@ -118,7 +118,12 @@ public sealed class MailKitEmailSender : IEmailSender
                 {
                     await client.DisconnectAsync(quit: true, cancellationToken).ConfigureAwait(false);
                 }
-                catch (Exception disconnectEx)
+                catch (Exception disconnectEx) when (
+                    disconnectEx is OperationCanceledException
+                    or SmtpProtocolException
+                    or SmtpCommandException
+                    or System.IO.IOException
+                    or ObjectDisposedException)
                 {
                     // Disconnect failures must not mask the original delivery outcome.
                     _logger.LogWarning(disconnectEx, "SMTP disconnect failed after send.");

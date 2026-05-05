@@ -96,7 +96,7 @@ public sealed class Phase1AcceptanceTests : IClassFixture<HeimdallWebApplication
         var token = ExtractAntiforgeryToken(html);
 
         // POST credentials.
-        var form = new FormUrlEncodedContent(new[]
+        using var form = new FormUrlEncodedContent(new[]
         {
             new KeyValuePair<string, string>("email", SeededEmail),
             new KeyValuePair<string, string>("password", SeededPassword),

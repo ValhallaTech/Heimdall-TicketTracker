@@ -114,10 +114,11 @@ public sealed class SystemAdminBootstrapper
             // Cooperative cancellation must propagate — host shutdown depends on it.
             throw;
         }
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OperationCanceledException)
         {
             // Bootstrap is best-effort by design: a transient DB outage at boot must
-            // not abort startup. Log loudly and let the host continue.
+            // not abort startup. Log loudly and let the host continue. Cancellation
+            // is excluded by the filter so host shutdown is honoured promptly.
             _logger.LogError(
                 ex,
                 "SystemAdmin bootstrap failed unexpectedly; continuing startup without bootstrap.");

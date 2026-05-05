@@ -1,4 +1,5 @@
 using System;
+using System.Linq;
 using System.Security.Claims;
 using System.Text.Json;
 using System.Threading;
@@ -326,7 +327,7 @@ public static class AccountEndpoints
                     PayloadJson = payload,
                 }, cancellationToken).ConfigureAwait(false);
             }
-            catch (Exception ex)
+            catch (Exception ex) when (ex is not OperationCanceledException)
             {
                 ILoggerFactory loggerFactory = httpContext.RequestServices.GetRequiredService<ILoggerFactory>();
                 ILogger logger = loggerFactory.CreateLogger("AccountEndpoints");
@@ -578,7 +579,7 @@ public static class AccountEndpoints
         {
             await emailSender.SendAsync(message, cancellationToken).ConfigureAwait(false);
         }
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OperationCanceledException)
         {
             ILoggerFactory loggerFactory = httpContext.RequestServices.GetRequiredService<ILoggerFactory>();
             ILogger logger = loggerFactory.CreateLogger("AccountEndpoints");
@@ -753,16 +754,10 @@ public static class AccountEndpoints
             return Array.Empty<string>();
         }
 
-        var codes = new System.Collections.Generic.List<string>();
-        foreach (var err in result.Errors)
-        {
-            if (!string.IsNullOrEmpty(err.Code))
-            {
-                codes.Add(err.Code);
-            }
-        }
-
-        return codes.ToArray();
+        return result.Errors
+            .Where(err => !string.IsNullOrEmpty(err.Code))
+            .Select(err => err.Code)
+            .ToArray();
     }
 
     /// <summary>
@@ -803,7 +798,7 @@ public static class AccountEndpoints
         {
             await auditWriter.WriteAsync(auditEvent, cancellationToken).ConfigureAwait(false);
         }
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OperationCanceledException)
         {
             ILoggerFactory loggerFactory = httpContext.RequestServices.GetRequiredService<ILoggerFactory>();
             ILogger logger = loggerFactory.CreateLogger("AccountEndpoints");
