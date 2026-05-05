@@ -7,9 +7,11 @@ using Heimdall.DAL.Caching;
 using Heimdall.DAL.Configuration;
 using Heimdall.DAL.Extensions;
 using Heimdall.DAL.Migrations;
+using Heimdall.Web.Authentication;
 using Heimdall.Web.Components;
 using Heimdall.Web.DependencyInjection;
 using Microsoft.AspNetCore.Authentication.Cookies;
+using Microsoft.AspNetCore.Components.Authorization;
 using Microsoft.AspNetCore.DataProtection;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Identity;
@@ -198,6 +200,19 @@ builder
 
 // --- Blazor ---------------------------------------------------------------
 builder.Services.AddRazorComponents().AddInteractiveServerComponents();
+
+// Per-circuit revalidating auth state provider: re-checks the user's
+// security_stamp every RevalidationInterval (5 min) so password resets,
+// force-logouts, and account disables propagate to live SignalR circuits
+// without waiting for the user to navigate. Must be registered scoped
+// because the base RevalidatingServerAuthenticationStateProvider tracks
+// per-circuit timer state. See docs/proposals/security-and-authorization.md
+// §3.4 / §9.3 step 5.
+builder.Services.AddScoped<AuthenticationStateProvider, HeimdallRevalidatingAuthenticationStateProvider>();
+
+// Cascades AuthenticationState to every component so <AuthorizeView> and
+// [CascadingParameter] AuthenticationState work without manual plumbing.
+builder.Services.AddCascadingAuthenticationState();
 
 // --- Autofac --------------------------------------------------------------
 builder.Host.UseServiceProviderFactory(new AutofacServiceProviderFactory());
