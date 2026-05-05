@@ -12,8 +12,8 @@
 ## Phase 2.1 — Object hierarchy (migrations + domain models only)
 
 - [x] **1. `organizations` migration.** UUID PK, citext `slug` unique, `name`, `created_at`, `created_by` UUID FK → `users(id)` `ON DELETE RESTRICT`. pgTAP: PK / FK / unique-slug coverage.
-- [x] **2. `teams` migration.** UUID PK, `organization_id` FK CASCADE, citext `slug`, `name`, audit columns. Composite unique `(organization_id, slug)`; index on `organization_id`. pgTAP coverage.
-- [x] **3. `projects` migration.** UUID PK, `team_id` FK CASCADE, citext `slug`, `name`, audit columns. Composite unique `(team_id, slug)`; index on `team_id`. pgTAP coverage.
+- [x] **2. `teams` migration.** UUID PK, `organization_id` FK CASCADE, citext `slug`, `name`, audit columns. Composite unique `(organization_id, slug)` (the composite's leading column also serves parent-only lookups and the cascade probe — no standalone index needed). pgTAP coverage.
+- [x] **3. `projects` migration.** UUID PK, `team_id` FK CASCADE, citext `slug`, `name`, audit columns. Composite unique `(team_id, slug)` (same reasoning as teams — leading column doubles as the parent-id index). pgTAP coverage.
 - [x] **4. `Organization`, `Team`, `Project` domain types** in `Heimdall.Core/Models`. No framework references; mirror existing `HeimdallUser` style (XML doc comments on every public member).
 - [x] **5. Dapper repositories** `IOrganizationRepository`, `ITeamRepository`, `IProjectRepository` in `Heimdall.DAL`. Wired into `AddDal()`. xUnit + Testcontainers integration tests against `postgres:18-alpine` (matches Phase 1 fixture).
 

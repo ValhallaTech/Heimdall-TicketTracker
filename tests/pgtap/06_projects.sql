@@ -5,7 +5,7 @@
 
 BEGIN;
 
-SELECT plan(20);
+SELECT plan(28);
 
 -- ---------------------------------------------------------------------------
 -- Table & columns exist
@@ -28,6 +28,23 @@ SELECT col_type_is('projects', 'slug', 'citext');
 SELECT col_type_is('projects', 'name', 'text');
 SELECT col_type_is('projects', 'created_at', 'timestamp with time zone');
 SELECT col_type_is('projects', 'created_by', 'uuid');
+
+-- ---------------------------------------------------------------------------
+-- Nullability — every column is NOT NULL.
+-- ---------------------------------------------------------------------------
+SELECT col_not_null('projects', 'id');
+SELECT col_not_null('projects', 'team_id');
+SELECT col_not_null('projects', 'slug');
+SELECT col_not_null('projects', 'name');
+SELECT col_not_null('projects', 'created_at');
+SELECT col_not_null('projects', 'created_by');
+
+-- ---------------------------------------------------------------------------
+-- Defaults — created_at carries the column-level DEFAULT now() so callers can
+-- omit it from INSERTs (matches ProjectRepository's INSERT SQL).
+-- ---------------------------------------------------------------------------
+SELECT col_has_default('projects', 'created_at');
+SELECT col_default_is('projects', 'created_at', 'now()');
 
 -- ---------------------------------------------------------------------------
 -- Primary key + composite unique + supporting indexes

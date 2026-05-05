@@ -5,7 +5,7 @@
 
 BEGIN;
 
-SELECT plan(20);
+SELECT plan(28);
 
 -- ---------------------------------------------------------------------------
 -- Table & columns exist
@@ -28,6 +28,24 @@ SELECT col_type_is('teams', 'slug', 'citext');
 SELECT col_type_is('teams', 'name', 'text');
 SELECT col_type_is('teams', 'created_at', 'timestamp with time zone');
 SELECT col_type_is('teams', 'created_by', 'uuid');
+
+-- ---------------------------------------------------------------------------
+-- Nullability — every column is NOT NULL.
+-- ---------------------------------------------------------------------------
+SELECT col_not_null('teams', 'id');
+SELECT col_not_null('teams', 'organization_id');
+SELECT col_not_null('teams', 'slug');
+SELECT col_not_null('teams', 'name');
+SELECT col_not_null('teams', 'created_at');
+SELECT col_not_null('teams', 'created_by');
+
+-- ---------------------------------------------------------------------------
+-- Defaults — created_at carries the column-level DEFAULT now() so callers can
+-- omit it from INSERTs (matches OrganizationRepository / TeamRepository
+-- INSERT SQL which leaves created_at unset).
+-- ---------------------------------------------------------------------------
+SELECT col_has_default('teams', 'created_at');
+SELECT col_default_is('teams', 'created_at', 'now()');
 
 -- ---------------------------------------------------------------------------
 -- Primary key + composite unique + supporting indexes

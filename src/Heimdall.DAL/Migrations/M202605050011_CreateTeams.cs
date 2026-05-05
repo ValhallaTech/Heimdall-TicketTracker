@@ -7,12 +7,11 @@ namespace Heimdall.DAL.Migrations;
 /// <c>docs/proposals/team-collaboration.md</c> §4. Teams sit one level below
 /// organizations in the hierarchy and are scoped per-org: two organizations can both
 /// have a team called <c>platform</c>. The composite unique index on
-/// <c>(organization_id, slug)</c> enforces this and doubles as the lookup index for
-/// "find team by org + slug". A separate index on <c>organization_id</c> supports the
-/// parent-only listing query ("show all teams in this org") and is the index the
-/// planner uses when cascading the <c>ON DELETE CASCADE</c> from the organization
-/// FK — without it, a parent-org delete would issue a full table scan per cascade
-/// step.
+/// <c>(organization_id, slug)</c> enforces this and doubles as the supporting index
+/// for parent-only lookups (<c>WHERE organization_id = $1</c>) and for the
+/// <c>ON DELETE CASCADE</c> probe from the parent organization — <c>organization_id</c>
+/// is the leading column, so a standalone single-column index would be strictly
+/// redundant and is intentionally not created.
 /// </summary>
 [Migration(202605050011, "Create teams")]
 public class M202605050011_CreateTeams : Migration
