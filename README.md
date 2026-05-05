@@ -48,6 +48,41 @@ The web app reads two connection settings from environment variables (preferred)
 | `PORT`          | Optional listening port (defaults to `8080`). Set automatically by Render.    |
 | `SEED_DATABASE` | Set to `false` to skip startup seeding. Default seeds when the table is empty. |
 | `SEED_COUNT`    | Number of synthetic tickets to seed. Default `50`.                            |
+| `HEIMDALL_BOOTSTRAP_ADMIN_EMAIL`    | Initial SystemAdmin email (see [Initial admin bootstrap](#initial-admin-bootstrap)). |
+| `HEIMDALL_BOOTSTRAP_ADMIN_PASSWORD` | Initial SystemAdmin password (see [Initial admin bootstrap](#initial-admin-bootstrap)). |
+
+### Initial admin bootstrap
+
+On startup Heimdall reads the two `HEIMDALL_BOOTSTRAP_ADMIN_*` environment
+variables and ensures a SystemAdmin user exists for that email. Behaviour is
+idempotent:
+
+- **Both vars set, email not yet in `users`** → a new user is created with
+  `system_admin = true`, `email_confirmed = true`, and the supplied password
+  hashed via ASP.NET Core Identity. An audit event `bootstrap.admin.created`
+  is written.
+- **Email already exists, `system_admin = false`** → the user is promoted
+  (`system_admin` is flipped to `true`); password and other fields are left
+  alone. An audit event `bootstrap.admin.promoted` is written.
+- **Email already exists and is already a SystemAdmin** → no-op (no DB write,
+  no audit event).
+- **Either var unset / empty** → bootstrap is skipped (logged at `Information`).
+
+The variables are read once per process start. The password must satisfy the
+configured Identity policy: 12+ characters, at least one uppercase, one
+lowercase, one digit, one symbol, and 4 distinct characters. A policy
+violation is logged at `Error` with the exact `IdentityError` codes so the
+operator can correct the value and restart.
+
+```bash
+export HEIMDALL_BOOTSTRAP_ADMIN_EMAIL="ops@example.com"
+export HEIMDALL_BOOTSTRAP_ADMIN_PASSWORD="<your-strong-password>"
+dotnet run --project src/Heimdall.Web
+```
+
+Audit payloads record only the email **domain**, never the full address.
+Bootstrap failures (other than cooperative cancellation) are logged but never
+abort startup, so a transient DB hiccup at boot will not take the app down.
 
 ## Run locally with Docker Compose
 

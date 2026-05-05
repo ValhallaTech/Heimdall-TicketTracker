@@ -10,6 +10,7 @@ using Heimdall.DAL.Configuration;
 using Heimdall.DAL.Extensions;
 using Heimdall.DAL.Migrations;
 using Heimdall.Web.Authentication;
+using Heimdall.Web.Bootstrap;
 using Heimdall.Web.Components;
 using Heimdall.Web.DependencyInjection;
 using Heimdall.Web.Endpoints;
@@ -257,6 +258,11 @@ builder.Services.AddCascadingAuthenticationState();
 // implementation is logged below after Build().
 builder.Services.AddHeimdallEmail(builder.Configuration);
 
+// --- SystemAdmin bootstrap registration (Phase 1 step 8) ------------------
+// Resolved per-scope from the startup bootstrap block below. Scoped lifetime
+// matches the Identity stores it composes (UserManager, IUserStore).
+builder.Services.AddScoped<SystemAdminBootstrapper>();
+
 // --- Autofac --------------------------------------------------------------
 builder.Host.UseServiceProviderFactory(new AutofacServiceProviderFactory());
 builder.Host.ConfigureContainer<ContainerBuilder>(containerBuilder =>
@@ -274,6 +280,27 @@ catch (Exception ex)
 {
     Log.Fatal(ex, "Database migration failed on startup.");
     throw;
+}
+
+// --- SystemAdmin bootstrap (Phase 1 step 8) -------------------------------
+// On first deploy to a fresh DB, create an initial admin from env vars so an
+// operator can sign in and start managing users. Both env vars must be set;
+// missing / empty values are a no-op. Idempotent: re-running on an existing
+// admin is a no-op; running on an existing non-admin email promotes it.
+//
+// Failures here are logged but never abort startup — a transient DB hiccup
+// at boot must not take the whole app down.
+var bootstrapEmail = Environment.GetEnvironmentVariable("HEIMDALL_BOOTSTRAP_ADMIN_EMAIL");
+var bootstrapPassword = Environment.GetEnvironmentVariable("HEIMDALL_BOOTSTRAP_ADMIN_PASSWORD");
+try
+{
+    using var bootstrapScope = app.Services.CreateAsyncScope();
+    var bootstrapper = bootstrapScope.ServiceProvider.GetRequiredService<SystemAdminBootstrapper>();
+    await bootstrapper.RunAsync(bootstrapEmail, bootstrapPassword).ConfigureAwait(false);
+}
+catch (Exception ex)
+{
+    Log.Error(ex, "SystemAdmin bootstrap raised an unexpected exception; continuing startup.");
 }
 
 // --- Email sender choice (Phase 1 step 6) ---------------------------------
