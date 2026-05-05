@@ -4,9 +4,14 @@ namespace Heimdall.Core.Models;
 /// Strongly-typed role for a <see cref="TeamMember"/>. Mirrors the Postgres
 /// <c>team_member_role</c> enum created by <c>M202605050014_CreateTeamMembers</c>.
 /// The on-the-wire / database representation is snake_case
-/// (<c>manager</c>, <c>team_lead</c>, <c>member</c>, <c>viewer</c>); Dapper maps
-/// to and from these wire strings via the type handler registered in
-/// <c>Heimdall.DAL.Extensions.ServiceCollectionExtensions.AddDal</c>.
+/// (<c>manager</c>, <c>team_lead</c>, <c>member</c>, <c>viewer</c>);
+/// <c>TeamMemberRepository</c> bridges to that representation explicitly via
+/// <c>TeamMemberRoleConverter.ToWireString</c> on writes (combined with a
+/// <c>::team_member_role</c> SQL cast) and an internal row DTO plus
+/// <c>TeamMemberRoleConverter.ParseWireString</c> on reads. A custom
+/// <c>SqlMapper.TypeHandler&lt;TeamMemberRole&gt;</c> is intentionally NOT used
+/// because Dapper short-circuits enum-typed parameter properties around
+/// registered handlers.
 /// </summary>
 public enum TeamMemberRole
 {

@@ -128,13 +128,14 @@ public sealed class TeamMemberRepository : ITeamMemberRepository
     public async Task AddAsync(TeamMember member, CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(member);
-        // Dapper 2.1.72 short-circuits custom TypeHandler<TEnum> when the parameter
-        // source is a strongly-typed enum *property* on an object and transmits the
-        // underlying integer instead of invoking SetValue. Postgres then rejects the
-        // ::team_member_role cast against an integer. To work around this we bind
-        // @Role explicitly as text via DynamicParameters using the wire string, and
-        // let the ::team_member_role cast in the SQL reinterpret it as the enum.
-        // added_at is sourced from the column DEFAULT now() and is omitted.
+        // Dapper 2.1.72 short-circuits enum-typed parameter properties: it transmits
+        // the underlying integer rather than routing through any registered
+        // TypeHandler<TEnum>. Postgres then rejects the ::team_member_role cast
+        // against an integer. We therefore bind @Role explicitly as text via
+        // DynamicParameters using TeamMemberRoleConverter.ToWireString and let the
+        // ::team_member_role cast in the SQL reinterpret it as the enum. Reads use
+        // the symmetric workaround in TeamMemberRow + ToDomain. added_at is sourced
+        // from the column DEFAULT now() and is omitted.
         const string sql = @"
 INSERT INTO team_members (user_id, team_id, role, added_by)
 VALUES (@UserId, @TeamId, @Role::team_member_role, @AddedBy);";
@@ -163,8 +164,8 @@ UPDATE team_members
 SET role = @Role::team_member_role
 WHERE user_id = @UserId AND team_id = @TeamId;";
 
-        // See AddAsync for why @Role is bound as text via DynamicParameters rather
-        // than relying on TeamMemberRoleTypeHandler for the write path.
+        // See AddAsync for why @Role is bound as text via DynamicParameters +
+        // TeamMemberRoleConverter.ToWireString rather than passing the enum directly.
         var parameters = new DynamicParameters();
         parameters.Add("UserId", userId);
         parameters.Add("TeamId", parentId);

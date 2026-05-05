@@ -35,14 +35,6 @@ public sealed class PostgresFixture : IAsyncLifetime
         services.AddHeimdallMigrations(ConnectionString);
         await using var sp = services.BuildServiceProvider();
         await sp.RunHeimdallMigrationsAsync(maxAttempts: 1, retryDelay: TimeSpan.Zero);
-
-        // Register the Phase 2.2 TeamMemberRoleTypeHandler globally on Dapper's
-        // SqlMapper so TeamMemberRepository tests can materialise the
-        // team_member_role enum end-to-end. AddDal is the production entry point
-        // that performs the registration; calling it against a throwaway
-        // ServiceCollection here gives us the side effect without requiring the
-        // tests to spin up a real DI container.
-        new ServiceCollection().AddDal();
     }
 
     public async Task DisposeAsync() => await _container.DisposeAsync();

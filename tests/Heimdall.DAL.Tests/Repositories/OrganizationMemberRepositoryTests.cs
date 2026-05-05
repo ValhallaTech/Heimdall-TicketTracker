@@ -143,7 +143,7 @@ RETURNING id;",
         var rows = await _repo.GetByParentAsync(org1);
 
         rows.Should().HaveCount(3);
-        rows.Select(r => r.UserId).Should().BeEquivalentTo(new[] { bob, carol, dave });
+        rows.Select(r => r.UserId).Should().Equal(bob, carol, dave);
         rows.Should().BeInAscendingOrder(r => r.AddedAt);
     }
 
