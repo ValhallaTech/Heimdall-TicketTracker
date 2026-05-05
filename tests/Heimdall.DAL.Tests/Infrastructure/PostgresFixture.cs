@@ -13,7 +13,7 @@ namespace Heimdall.DAL.Tests.Infrastructure;
 /// </summary>
 public sealed class PostgresFixture : IAsyncLifetime
 {
-    private readonly PostgreSqlContainer _container = new PostgreSqlBuilder("postgres:16-alpine")
+    private readonly PostgreSqlContainer _container = new PostgreSqlBuilder("postgres:18-alpine")
         .WithDatabase("heimdall_test")
         .WithUsername("heimdall")
         .WithPassword("heimdall")
@@ -47,6 +47,19 @@ public sealed class PostgresFixture : IAsyncLifetime
         await using var conn = new NpgsqlConnection(ConnectionString);
         await conn.OpenAsync();
         await conn.ExecuteAsync("DELETE FROM tickets; ALTER SEQUENCE tickets_id_seq RESTART WITH 1;");
+    }
+
+    /// <summary>
+    /// Wipes the <c>users</c> and <c>audit_events</c> tables so each test starts from a
+    /// clean, deterministic state. The <c>audit_events.actor_user_id</c> FK is
+    /// <c>ON DELETE SET NULL</c>, so the order is not strictly required, but both are
+    /// cleared for cleanliness.
+    /// </summary>
+    public async Task ResetUsersTableAsync()
+    {
+        await using var conn = new NpgsqlConnection(ConnectionString);
+        await conn.OpenAsync();
+        await conn.ExecuteAsync("DELETE FROM users; DELETE FROM audit_events;");
     }
 }
 

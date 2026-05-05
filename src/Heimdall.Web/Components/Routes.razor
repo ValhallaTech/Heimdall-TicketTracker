@@ -1,6 +1,21 @@
+@using Heimdall.Web.Components.Authentication
+@using Microsoft.AspNetCore.Components.Authorization
+
 <Router AppAssembly="typeof(Program).Assembly" NotFoundPage="typeof(Pages.NotFound)">
     <Found Context="routeData">
-        <RouteView RouteData="routeData" DefaultLayout="typeof(Layout.MainLayout)" />
+        @*
+            Phase 1 step 9 of docs/proposals/security-and-authorization.md §9.3.
+            AuthorizeRouteView enforces the global fallback policy
+            (AuthorizationConfiguration.Configure) on every routed component;
+            anonymous users are redirected to /login via RedirectToLogin and
+            public pages opt out with @attribute [AllowAnonymous].
+        *@
+        <AuthorizeRouteView RouteData="routeData" DefaultLayout="typeof(Layout.MainLayout)">
+            <NotAuthorized>
+                <RedirectToLogin />
+            </NotAuthorized>
+        </AuthorizeRouteView>
         <FocusOnNavigate RouteData="routeData" Selector="h1" />
     </Found>
 </Router>
+

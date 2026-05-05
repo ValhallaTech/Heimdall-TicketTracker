@@ -1,5 +1,15 @@
 @page "/"
 @page "/splash"
+@attribute [Microsoft.AspNetCore.Authorization.AllowAnonymous]
+
+@*
+    Phase 1 step 9 of docs/proposals/security-and-authorization.md §9.3.
+    The splash page is the marketing/landing surface and is intentionally
+    public — we want anonymous visitors (and ops smoke-tests) to be able to
+    reach "/" without first signing in. The "Open Tickets" CTA below stays
+    as-is for now; an anonymous-aware sign-in CTA is out of scope here and
+    will land in a follow-up UI iteration.
+*@
 
 <PageTitle>Heimdall TicketTracker</PageTitle>
 

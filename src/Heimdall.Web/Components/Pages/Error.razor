@@ -1,5 +1,12 @@
 ﻿@page "/Error"
+@attribute [Microsoft.AspNetCore.Authorization.AllowAnonymous]
 @using System.Diagnostics
+
+@*
+    Phase 1 step 9: marked [AllowAnonymous] so the exception-handler
+    re-execute path can render for anonymous callers without recursing into
+    the global authenticated-only fallback policy.
+*@
 
 <PageTitle>Error — Heimdall TicketTracker</PageTitle>
 

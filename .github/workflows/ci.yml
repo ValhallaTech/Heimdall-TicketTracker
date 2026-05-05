@@ -138,6 +138,11 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v6
 
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v5
+        with:
+          dotnet-version: '10.0.x'
+
       - name: Install pgTAP extension into Postgres service container
         run: |
           docker exec ${{ job.services.postgres.id }} bash -c "
@@ -151,6 +156,31 @@ jobs:
           sudo apt-get install -y --no-install-recommends \
             libtap-parser-sourcehandler-pgtap-perl \
             postgresql-client
+
+      # The pgTAP suite asserts the schema produced by the FluentMigrator
+      # migrations under src/Heimdall.DAL/Migrations (users, audit_events,
+      # data_protection_keys, ...). Build the DAL assembly and apply every
+      # migration against the service container before running pg_prove.
+      # FluentMigrator.DotNet.Cli is pinned to the same major version as the
+      # FluentMigrator package reference in Heimdall.DAL.csproj.
+      - name: Build Heimdall.DAL for migrations
+        run: >-
+          dotnet publish src/Heimdall.DAL/Heimdall.DAL.csproj
+          --configuration Release
+          --output src/Heimdall.DAL/publish
+
+      - name: Install FluentMigrator dotnet-fm CLI
+        run: dotnet tool install --global FluentMigrator.DotNet.Cli --version 8.0.1
+
+      - name: Apply Heimdall migrations to pgTAP service container
+        env:
+          PG_CONN: "Host=localhost;Port=5432;Database=heimdall_test;Username=postgres;Password=postgres"
+        run: |
+          export PATH="$PATH:$HOME/.dotnet/tools"
+          dotnet-fm migrate \
+            --processor PostgreSQL \
+            --connection "$PG_CONN" \
+            --assembly src/Heimdall.DAL/publish/Heimdall.DAL.dll
 
       - name: Run pgTAP tests
         env:

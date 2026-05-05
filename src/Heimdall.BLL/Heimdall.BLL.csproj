@@ -5,12 +5,27 @@
   </ItemGroup>
 
   <ItemGroup>
+    <PackageReference Include="MailKit" Version="4.16.0" />
     <PackageReference Include="Mapster" Version="10.0.7" />
+    <PackageReference
+      Include="Microsoft.Extensions.Configuration.Abstractions"
+      Version="10.0.7"
+    />
+    <PackageReference
+      Include="Microsoft.Extensions.Configuration.Binder"
+      Version="10.0.7"
+    />
     <PackageReference
       Include="Microsoft.Extensions.DependencyInjection.Abstractions"
       Version="10.0.7"
     />
     <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" Version="10.0.7" />
+    <PackageReference Include="Microsoft.Extensions.Options" Version="10.0.7" />
+    <PackageReference
+      Include="Microsoft.Extensions.Options.ConfigurationExtensions"
+      Version="10.0.7"
+    />
+    <PackageReference Include="MimeKit" Version="4.16.0" />
   </ItemGroup>
 
   <PropertyGroup>
