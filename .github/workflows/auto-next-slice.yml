@@ -58,6 +58,9 @@ jobs:
             --assignee Copilot \
             --body "Auto-created follow-up to #${{ github.event.pull_request.number }}.
 
+          Agent:
+          - \`ValhallaTech/.github-private/agents/orchestrator.md\`
+
           Refs:
           - \`docs/implementation/phase-1-checklist.md\`
           - \`docs/implementation/phase-2-checklist.md\`
