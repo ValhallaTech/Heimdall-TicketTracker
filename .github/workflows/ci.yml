@@ -164,7 +164,10 @@ jobs:
       # FluentMigrator.DotNet.Cli is pinned to the same major version as the
       # FluentMigrator package reference in Heimdall.DAL.csproj.
       - name: Build Heimdall.DAL for migrations
-        run: dotnet build src/Heimdall.DAL/Heimdall.DAL.csproj --configuration Release
+        run: >-
+          dotnet publish src/Heimdall.DAL/Heimdall.DAL.csproj
+          --configuration Release
+          --output src/Heimdall.DAL/publish
 
       - name: Install FluentMigrator dotnet-fm CLI
         run: dotnet tool install --global FluentMigrator.DotNet.Cli --version 8.0.1
@@ -175,9 +178,9 @@ jobs:
         run: |
           export PATH="$PATH:$HOME/.dotnet/tools"
           dotnet-fm migrate \
-            --processor postgres \
+            --processor PostgreSQL \
             --connection "$PG_CONN" \
-            --assembly src/Heimdall.DAL/bin/Release/net10.0/Heimdall.DAL.dll
+            --assembly src/Heimdall.DAL/publish/Heimdall.DAL.dll
 
       - name: Run pgTAP tests
         env:
