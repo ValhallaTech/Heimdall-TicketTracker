@@ -11,7 +11,7 @@
 --   * org_member_role enum carries owner/admin/member/viewer in that declared order
 --   * deleting the parent organization cascades the membership rows
 --   * deleting the member user cascades their membership rows
---   * deleting the inviter (added_by) is blocked by the RESTRICT FK
+--   * deleting the inviter (added_by) is blocked by the RESTRICT FK (SQLSTATE 23001)
 --
 -- Wrapped in BEGIN ... ROLLBACK so it leaves no residue.
 
@@ -152,9 +152,9 @@ ROLLBACK TO SAVEPOINT cascade_member;
 SAVEPOINT restrict_added_by;
 SELECT throws_ok(
     $$DELETE FROM users WHERE email = 'carol@example.com'$$,
-    '23503',
+    '23001',
     NULL,
-    'deleting an inviter is blocked by added_by RESTRICT FK (SQLSTATE 23503)'
+    'deleting an inviter is blocked by added_by RESTRICT FK (SQLSTATE 23001)'
 );
 ROLLBACK TO SAVEPOINT restrict_added_by;
 
