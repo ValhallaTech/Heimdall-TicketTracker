@@ -1,3 +1,4 @@
+using Dapper;
 using Dapper.Extensions;
 using Dapper.Extensions.PostgreSql;
 using Heimdall.Core.Auditing;
@@ -26,6 +27,14 @@ public static class ServiceCollectionExtensions
     {
         ArgumentNullException.ThrowIfNull(services);
 
+        // Register the bridge between TeamMemberRole and the Postgres
+        // team_member_role enum before any Dapper queries are issued. AddDal is
+        // the single per-process entry point for DAL wiring, so calling
+        // SqlMapper.AddTypeHandler here is naturally idempotent at runtime; tests
+        // that re-invoke AddDal in-process are tolerated because Dapper's handler
+        // dictionary is keyed by Type and re-registration is a no-op overwrite.
+        SqlMapper.AddTypeHandler(new TeamMemberRoleTypeHandler());
+
         // AddDapperForPostgreSQL registers IDapper (PostgreSqlDapper) as scoped and the default
         // IConnectionStringProvider as a singleton. AddDapperConnectionStringProvider then
         // replaces the default with our DataOptions-backed implementation so that the same
@@ -45,6 +54,13 @@ public static class ServiceCollectionExtensions
         services.AddScoped<IOrganizationRepository, OrganizationRepository>();
         services.AddScoped<ITeamRepository, TeamRepository>();
         services.AddScoped<IProjectRepository, ProjectRepository>();
+
+        // Phase 2.2 collaboration-membership repositories
+        // (docs/proposals/team-collaboration.md §4 step 4). Same lifetime rationale
+        // as the Phase 2.1 hierarchy block above.
+        services.AddScoped<IOrganizationMemberRepository, OrganizationMemberRepository>();
+        services.AddScoped<ITeamMemberRepository, TeamMemberRepository>();
+        services.AddScoped<IProjectMemberRepository, ProjectMemberRepository>();
         return services;
     }
 }
