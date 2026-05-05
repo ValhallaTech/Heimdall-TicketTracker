@@ -1,0 +1,23 @@
+@page "/access-denied"
+@attribute [Microsoft.AspNetCore.Authorization.AllowAnonymous]
+@layout MainLayout
+
+@*
+    Phase 1 step 9 of docs/proposals/security-and-authorization.md §9.3.
+    Rendered when the cookie auth handler's AccessDeniedPath fires. Marked
+    [AllowAnonymous] so a signed-out user reaching this page does not get
+    re-redirected to /login by the global authenticated-only fallback
+    policy (which would mask the real cause of the failure).
+*@
+
+<PageTitle>Access denied — Heimdall TicketTracker</PageTitle>
+
+<div class="text-center py-5">
+    <div class="mb-3"><i class="fa-solid fa-shield-halved fa-4x text-body-secondary" aria-hidden="true"></i></div>
+    <p class="display-1 fw-bold text-body-secondary" aria-hidden="true">403</p>
+    <h1 class="h2 fw-semibold mb-2">Access denied</h1>
+    <p class="text-body-secondary mb-4">
+        You don&rsquo;t have permission to view this page.
+    </p>
+    <a href="/" class="btn btn-primary"><i class="fa-solid fa-arrow-left me-1" aria-hidden="true"></i> Back to home</a>
+</div>

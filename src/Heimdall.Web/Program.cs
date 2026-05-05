@@ -10,6 +10,7 @@ using Heimdall.DAL.Configuration;
 using Heimdall.DAL.Extensions;
 using Heimdall.DAL.Migrations;
 using Heimdall.Web.Authentication;
+using Heimdall.Web.Authorization;
 using Heimdall.Web.Bootstrap;
 using Heimdall.Web.Components;
 using Heimdall.Web.DependencyInjection;
@@ -179,9 +180,16 @@ builder
         }
     );
 
-// Authorization services only. Policy registration is intentionally deferred
-// to step 9 — Phase 1 has no [Authorize] attributes or global gate.
-builder.Services.AddAuthorization();
+// Authorization services + the global authenticated-only fallback policy
+// (Phase 1 step 9 of docs/proposals/security-and-authorization.md §9.3). The
+// fallback applies to every endpoint without its own authorization metadata;
+// public pages (login, access-denied, error/not-found, splash) opt out with
+// [AllowAnonymous]. Phase 3 will layer OpenFGA-backed resource checks on top.
+//
+// The configuration delegate lives in AuthorizationConfiguration.Configure
+// so the focused unit tests in Heimdall.Web.Tests.Authorization apply the
+// exact same options as production startup.
+builder.Services.AddAuthorization(AuthorizationConfiguration.Configure);
 
 // --- Rate limiting (Phase 1 step 7 / §3.5) --------------------------------
 // /account/login throttle keyed on (client IP, submitted username) per §3.5:

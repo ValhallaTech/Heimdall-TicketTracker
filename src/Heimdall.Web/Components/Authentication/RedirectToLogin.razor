@@ -1,0 +1,22 @@
+@*
+    Phase 1 step 9 of docs/proposals/security-and-authorization.md §9.3.
+    Bridges Blazor's interactive router into a real HTTP redirect to the
+    server-rendered /login page.
+
+    forceLoad: true is critical — the login page is server-rendered (not
+    interactive Blazor), so the SignalR circuit cannot navigate to it via
+    the normal Blazor router. We need a real HTTP request so the cookie
+    auth challenge / redirect cycle and antiforgery tokens line up with
+    the form-post that lives outside the circuit.
+*@
+@inject NavigationManager Navigation
+
+@code {
+    /// <inheritdoc />
+    protected override void OnInitialized()
+    {
+        var returnUrl = Uri.EscapeDataString(
+            new Uri(Navigation.Uri).PathAndQuery);
+        Navigation.NavigateTo($"login?returnUrl={returnUrl}", forceLoad: true);
+    }
+}

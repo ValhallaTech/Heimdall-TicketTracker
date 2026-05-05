@@ -39,10 +39,12 @@ public static class AccountEndpoints
         ArgumentNullException.ThrowIfNull(endpoints);
 
         endpoints.MapPost("/account/login", HandleLoginAsync)
+            .AllowAnonymous()
             .WithName("Account_Login")
             .RequireRateLimiting("login");
 
         endpoints.MapPost("/account/logout", HandleLogoutAsync)
+            .AllowAnonymous()
             .WithName("Account_Logout");
 
         return endpoints;
