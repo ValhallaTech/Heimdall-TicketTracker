@@ -13,7 +13,7 @@ namespace Heimdall.DAL.Tests.Infrastructure;
 /// </summary>
 public sealed class PostgresFixture : IAsyncLifetime
 {
-    private readonly PostgreSqlContainer _container = new PostgreSqlBuilder("postgres:16-alpine")
+    private readonly PostgreSqlContainer _container = new PostgreSqlBuilder("postgres:18-alpine")
         .WithDatabase("heimdall_test")
         .WithUsername("heimdall")
         .WithPassword("heimdall")
