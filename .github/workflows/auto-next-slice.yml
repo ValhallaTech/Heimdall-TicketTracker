@@ -1,0 +1,67 @@
+name: Auto-open next Phase 2 slice
+
+on:
+  pull_request:
+    types: [closed]
+    branches: [main]
+
+jobs:
+  open-next-slice:
+    if: >
+      github.event.pull_request.merged == true &&
+      startsWith(github.event.pull_request.head.ref, 'copilot/phase-2')
+    runs-on: ubuntu-latest
+    permissions:
+      pull-requests: write
+      contents: write
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Determine next slice
+        id: next
+        run: |
+          declare -A NEXT_BRANCH
+          NEXT_BRANCH["copilot/phase-2-1-object-hierarchy"]="copilot/phase-2-2-memberships"
+          NEXT_BRANCH["copilot/phase-2-2-memberships"]="copilot/phase-2-3-backfill"
+          NEXT_BRANCH["copilot/phase-2-3-backfill"]="copilot/phase-2-4-ticket-fks"
+          NEXT_BRANCH["copilot/phase-2-4-ticket-fks"]="copilot/phase-2-5-reporter-assignee"
+          NEXT_BRANCH["copilot/phase-2-5-reporter-assignee"]="copilot/phase-2-6-permission-service"
+          NEXT_BRANCH["copilot/phase-2-6-permission-service"]="copilot/phase-2-7-routing-audit"
+          NEXT_BRANCH["copilot/phase-2-7-routing-audit"]="copilot/phase-2-8-ui"
+          NEXT_BRANCH["copilot/phase-2-8-ui"]="copilot/phase-2-9-enrollment-service"
+          NEXT_BRANCH["copilot/phase-2-9-enrollment-service"]="copilot/phase-2-10-acceptance"
+          # Phase 2.10 is the last slice — no next entry, workflow simply exits
+
+          CURRENT="${{ github.event.pull_request.head.ref }}"
+          NEXT="${NEXT_BRANCH[$CURRENT]}"
+
+          echo "next_branch=$NEXT" >> $GITHUB_OUTPUT
+
+      - name: Create next branch
+        if: steps.next.outputs.next_branch != ''
+        run: |
+          git checkout -b ${{ steps.next.outputs.next_branch }}
+          git push origin ${{ steps.next.outputs.next_branch }}
+
+      - name: Open next slice PR
+        if: steps.next.outputs.next_branch != ''
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh pr create \
+            --base main \
+            --head ${{ steps.next.outputs.next_branch }} \
+            --title "Phase 2 — ${{ steps.next.outputs.next_branch }} (planning, awaiting approval)" \
+            --assignee IronSloth \
+            --assignee Copilot \
+            --body "Auto-created follow-up to #${{ github.event.pull_request.number }}.
+
+          Refs:
+          - \`docs/implementation/phase-1-checklist.md\`
+          - \`docs/implementation/phase-2-checklist.md\`
+          - \`docs/proposals/team-collaboration.md\`
+          - \`docs/proposals/security-and-authorization.md\`
+          - \`docs/proposals/openfga.md\`
+          - \`docs/proposals/openfga-vs-permify.md\`"
