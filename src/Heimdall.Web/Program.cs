@@ -132,8 +132,8 @@ builder
         // Email is the login identifier; collisions are not allowed.
         options.User.RequireUniqueEmail = true;
 
-        // Strong-but-reasonable password policy. 12 chars + four character
-        // classes + 4 distinct chars rejects the common low-entropy patterns
+        // Strong-but-reasonable password policy. At lease 12 chars + 4 character
+        // classes + 1 distinct chars rejects the common low-entropy patterns
         // (e.g. "Password1!") without pushing users into password-manager-only
         // territory.
         options.Password.RequiredLength = 12;
@@ -141,7 +141,7 @@ builder
         options.Password.RequireLowercase = true;
         options.Password.RequireUppercase = true;
         options.Password.RequireNonAlphanumeric = true;
-        options.Password.RequiredUniqueChars = 4;
+        options.Password.RequiredUniqueChars = 1;
 
         // Lockout: 5 strikes / 15 minutes, applied to brand-new users too so an
         // attacker cannot bypass it by targeting freshly-created accounts.
