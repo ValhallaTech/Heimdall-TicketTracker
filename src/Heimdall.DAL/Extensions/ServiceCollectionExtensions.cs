@@ -1,4 +1,3 @@
-using Dapper;
 using Dapper.Extensions;
 using Dapper.Extensions.PostgreSql;
 using Heimdall.Core.Auditing;
@@ -26,14 +25,6 @@ public static class ServiceCollectionExtensions
     public static IServiceCollection AddDal(this IServiceCollection services)
     {
         ArgumentNullException.ThrowIfNull(services);
-
-        // Register the bridge between TeamMemberRole and the Postgres
-        // team_member_role enum before any Dapper queries are issued. AddDal is
-        // the single per-process entry point for DAL wiring, so calling
-        // SqlMapper.AddTypeHandler here is naturally idempotent at runtime; tests
-        // that re-invoke AddDal in-process are tolerated because Dapper's handler
-        // dictionary is keyed by Type and re-registration is a no-op overwrite.
-        SqlMapper.AddTypeHandler(new TeamMemberRoleTypeHandler());
 
         // AddDapperForPostgreSQL registers IDapper (PostgreSqlDapper) as scoped and the default
         // IConnectionStringProvider as a singleton. AddDapperConnectionStringProvider then

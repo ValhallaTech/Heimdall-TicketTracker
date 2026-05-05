@@ -1,6 +1,4 @@
 using System;
-using System.Data;
-using Dapper;
 using Heimdall.Core.Models;
 
 namespace Heimdall.DAL.Repositories;
@@ -10,8 +8,9 @@ namespace Heimdall.DAL.Repositories;
 /// <c>team_member_role</c> wire representation. The wire format is snake_case
 /// (<c>manager</c>, <c>team_lead</c>, <c>member</c>, <c>viewer</c>) — different
 /// from .NET's PascalCase enum names — so a stringly-typed converter is the
-/// least-surprising contact point with both Dapper parameter binding and the
-/// <see cref="TeamMemberRoleTypeHandler"/> projection path.
+/// least-surprising contact point for both Dapper parameter binding (write
+/// path, via <see cref="Dapper.DynamicParameters"/>) and DTO-based row
+/// materialization (read path, in <see cref="TeamMemberRepository"/>).
 /// </summary>
 internal static class TeamMemberRoleConverter
 {
@@ -76,30 +75,3 @@ internal static class TeamMemberRoleConverter
     }
 }
 
-/// <summary>
-/// Dapper type handler that bridges <see cref="TeamMemberRole"/> with the Postgres
-/// <c>team_member_role</c> enum column. On read, the SELECT projection casts
-/// <c>role::text AS Role</c> so Dapper sees a plain string; the handler's
-/// <see cref="Parse(object)"/> turns it back into the enum. On write, the handler
-/// emits the snake_case wire string; the repository's INSERT/UPDATE SQL still has
-/// to apply the <c>::team_member_role</c> cast on the parameter because Npgsql
-/// otherwise binds it as plain text and the implicit cast does not exist for
-/// custom enums.
-/// </summary>
-internal sealed class TeamMemberRoleTypeHandler : SqlMapper.TypeHandler<TeamMemberRole>
-{
-    /// <inheritdoc />
-    public override TeamMemberRole Parse(object value)
-    {
-        ArgumentNullException.ThrowIfNull(value);
-        return TeamMemberRoleConverter.ParseWireString(value.ToString()!);
-    }
-
-    /// <inheritdoc />
-    public override void SetValue(IDbDataParameter parameter, TeamMemberRole value)
-    {
-        ArgumentNullException.ThrowIfNull(parameter);
-        parameter.DbType = DbType.String;
-        parameter.Value = value.ToWireString();
-    }
-}
