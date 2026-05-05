@@ -1,8 +1,12 @@
 using System.Security.Claims;
 using FluentAssertions;
+using Heimdall.BLL.Email;
 using Heimdall.Core.Auditing;
+using Heimdall.Core.Email;
 using Heimdall.Core.Models;
+using Heimdall.Web.Email;
 using Heimdall.Web.Endpoints;
+using Heimdall.Web.Identity;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Http.HttpResults;
@@ -402,5 +406,401 @@ public class AccountEndpointsTests
             .ToArray();
         routePatterns.Should().Contain("/account/login");
         routePatterns.Should().Contain("/account/logout");
+        routePatterns.Should().Contain("/account/forgot-password");
+        routePatterns.Should().Contain("/account/reset-password");
+        routePatterns.Should().Contain("/account/register");
+        routePatterns.Should().Contain("/account/confirm-email");
+    }
+
+    // -----------------------------------------------------------------------------
+    // Phase 1 step 10 helpers
+    // -----------------------------------------------------------------------------
+
+    private static EmailFlowGate ActiveGate() =>
+        new(new EmailSenderRegistrationInfo
+        {
+            ChosenImplementation = "MailKitEmailSender",
+            Reason = "test",
+        });
+
+    private static EmailFlowGate InactiveGate() =>
+        new(new EmailSenderRegistrationInfo
+        {
+            ChosenImplementation = "NoOpEmailSender",
+            Reason = "test",
+        });
+
+    private static IOptions<RegistrationOptions> RegistrationEnabled() =>
+        Options.Create(new RegistrationOptions { Enabled = true });
+
+    private static IOptions<RegistrationOptions> RegistrationDisabled() =>
+        Options.Create(new RegistrationOptions { Enabled = false });
+
+    // -----------------------------------------------------------------------------
+    // Forgot-password
+    // -----------------------------------------------------------------------------
+
+    [Fact]
+    public async Task Should_RedirectToConfirmation_When_ForgotPasswordCalledWithKnownConfirmedEmail()
+    {
+        var ctx = CreateHttpContext();
+        var user = SampleUser();
+        user.EmailConfirmed = true;
+        var um = CreateUserManagerMock();
+        um.Setup(x => x.FindByEmailAsync(user.Email)).ReturnsAsync(user);
+        um.Setup(x => x.GeneratePasswordResetTokenAsync(user)).ReturnsAsync("reset-token-xyz");
+        var sender = new Mock<IEmailSender>();
+        sender.Setup(x => x.SendAsync(It.IsAny<EmailMessage>(), It.IsAny<CancellationToken>()))
+              .Returns(Task.CompletedTask);
+
+        var result = await AccountEndpoints.HandleForgotPasswordAsync(
+            ctx, user.Email, um.Object, sender.Object, ActiveGate(), _audit.Object, default);
+
+        result.Should().BeOfType<RedirectHttpResult>().Which.Url.Should().Be("/forgot-password-confirmation");
+        sender.Verify(x => x.SendAsync(It.IsAny<EmailMessage>(), It.IsAny<CancellationToken>()), Times.Once);
+        um.Verify(x => x.GeneratePasswordResetTokenAsync(user), Times.Once);
+        _audit.Verify(
+            x => x.WriteAsync(It.Is<AuditEvent>(e => e.EventType == "password.reset.requested"
+                                                     && e.ActorUserId == user.Id),
+                              It.IsAny<CancellationToken>()),
+            Times.Once);
+    }
+
+    [Fact]
+    public async Task Should_RedirectToConfirmation_When_ForgotPasswordCalledWithUnknownEmail()
+    {
+        var ctx = CreateHttpContext();
+        var um = CreateUserManagerMock();
+        um.Setup(x => x.FindByEmailAsync(It.IsAny<string>())).ReturnsAsync((HeimdallUser?)null);
+        var sender = new Mock<IEmailSender>();
+
+        var result = await AccountEndpoints.HandleForgotPasswordAsync(
+            ctx, "ghost@example.com", um.Object, sender.Object, ActiveGate(), _audit.Object, default);
+
+        result.Should().BeOfType<RedirectHttpResult>().Which.Url.Should().Be("/forgot-password-confirmation");
+        sender.Verify(x => x.SendAsync(It.IsAny<EmailMessage>(), It.IsAny<CancellationToken>()), Times.Never);
+        _audit.Verify(
+            x => x.WriteAsync(It.Is<AuditEvent>(e => e.EventType == "password.reset.requested.unknown_email"
+                                                     && e.ActorUserId == null),
+                              It.IsAny<CancellationToken>()),
+            Times.Once);
+    }
+
+    [Fact]
+    public async Task Should_RedirectToConfirmation_When_ForgotPasswordCalledWithUnconfirmedEmail()
+    {
+        var ctx = CreateHttpContext();
+        var user = SampleUser();
+        user.EmailConfirmed = false;
+        var um = CreateUserManagerMock();
+        um.Setup(x => x.FindByEmailAsync(user.Email)).ReturnsAsync(user);
+        var sender = new Mock<IEmailSender>();
+
+        var result = await AccountEndpoints.HandleForgotPasswordAsync(
+            ctx, user.Email, um.Object, sender.Object, ActiveGate(), _audit.Object, default);
+
+        result.Should().BeOfType<RedirectHttpResult>().Which.Url.Should().Be("/forgot-password-confirmation");
+        sender.Verify(x => x.SendAsync(It.IsAny<EmailMessage>(), It.IsAny<CancellationToken>()), Times.Never);
+        _audit.Verify(
+            x => x.WriteAsync(It.Is<AuditEvent>(e => e.EventType == "password.reset.requested.unknown_email"),
+                              It.IsAny<CancellationToken>()),
+            Times.Once);
+    }
+
+    [Fact]
+    public async Task Should_RedirectToConfirmation_When_EmailSendThrows()
+    {
+        var ctx = CreateHttpContext();
+        var user = SampleUser();
+        user.EmailConfirmed = true;
+        var um = CreateUserManagerMock();
+        um.Setup(x => x.FindByEmailAsync(user.Email)).ReturnsAsync(user);
+        um.Setup(x => x.GeneratePasswordResetTokenAsync(user)).ReturnsAsync("token");
+        var sender = new Mock<IEmailSender>();
+        sender.Setup(x => x.SendAsync(It.IsAny<EmailMessage>(), It.IsAny<CancellationToken>()))
+              .ThrowsAsync(new InvalidOperationException("smtp down"));
+
+        var result = await AccountEndpoints.HandleForgotPasswordAsync(
+            ctx, user.Email, um.Object, sender.Object, ActiveGate(), _audit.Object, default);
+
+        result.Should().BeOfType<RedirectHttpResult>().Which.Url.Should().Be("/forgot-password-confirmation");
+        _audit.Verify(
+            x => x.WriteAsync(It.Is<AuditEvent>(e => e.EventType == "password.reset.send_failed"
+                                                     && e.ActorUserId == user.Id),
+                              It.IsAny<CancellationToken>()),
+            Times.Once);
+    }
+
+    [Fact]
+    public async Task Should_RedirectToForgotPasswordWithDisabled_When_GateInactive()
+    {
+        var ctx = CreateHttpContext();
+        var um = CreateUserManagerMock();
+        var sender = new Mock<IEmailSender>();
+
+        var result = await AccountEndpoints.HandleForgotPasswordAsync(
+            ctx, "x@example.com", um.Object, sender.Object, InactiveGate(), _audit.Object, default);
+
+        result.Should().BeOfType<RedirectHttpResult>().Which.Url.Should().Be("/forgot-password?error=disabled");
+        um.Verify(x => x.FindByEmailAsync(It.IsAny<string>()), Times.Never);
+        sender.Verify(x => x.SendAsync(It.IsAny<EmailMessage>(), It.IsAny<CancellationToken>()), Times.Never);
+    }
+
+    // -----------------------------------------------------------------------------
+    // Reset-password
+    // -----------------------------------------------------------------------------
+
+    [Fact]
+    public async Task Should_RedirectToLoginWithReset_When_ResetSucceeds()
+    {
+        var ctx = CreateHttpContext();
+        var user = SampleUser();
+        var um = CreateUserManagerMock();
+        um.Setup(x => x.FindByEmailAsync(user.Email)).ReturnsAsync(user);
+        um.Setup(x => x.ResetPasswordAsync(user, "tok", "NewP@ssword12!"))
+          .ReturnsAsync(IdentityResult.Success);
+
+        var result = await AccountEndpoints.HandleResetPasswordAsync(
+            ctx, user.Email, "tok", "NewP@ssword12!", "NewP@ssword12!",
+            um.Object, ActiveGate(), _audit.Object, default);
+
+        result.Should().BeOfType<RedirectHttpResult>().Which.Url.Should().Be("/login?reset=success");
+        _audit.Verify(
+            x => x.WriteAsync(It.Is<AuditEvent>(e => e.EventType == "password.reset.success"
+                                                     && e.ActorUserId == user.Id),
+                              It.IsAny<CancellationToken>()),
+            Times.Once);
+    }
+
+    [Fact]
+    public async Task Should_RedirectToReset_When_PasswordsMismatch()
+    {
+        var ctx = CreateHttpContext();
+        var um = CreateUserManagerMock();
+
+        var result = await AccountEndpoints.HandleResetPasswordAsync(
+            ctx, "user@example.com", "tok", "P@ssword12!", "different",
+            um.Object, ActiveGate(), _audit.Object, default);
+
+        var url = result.Should().BeOfType<RedirectHttpResult>().Subject.Url;
+        url.Should().Contain("/reset-password");
+        url.Should().Contain("error=passwords-mismatch");
+        um.Verify(x => x.FindByEmailAsync(It.IsAny<string>()), Times.Never);
+    }
+
+    [Fact]
+    public async Task Should_RedirectToResetWithError_When_TokenInvalid()
+    {
+        var ctx = CreateHttpContext();
+        var user = SampleUser();
+        var um = CreateUserManagerMock();
+        um.Setup(x => x.FindByEmailAsync(user.Email)).ReturnsAsync(user);
+        um.Setup(x => x.ResetPasswordAsync(user, It.IsAny<string>(), It.IsAny<string>()))
+          .ReturnsAsync(IdentityResult.Failed(new IdentityError { Code = "InvalidToken", Description = "bad" }));
+
+        var result = await AccountEndpoints.HandleResetPasswordAsync(
+            ctx, user.Email, "bad-token", "NewP@ssword12!", "NewP@ssword12!",
+            um.Object, ActiveGate(), _audit.Object, default);
+
+        var url = result.Should().BeOfType<RedirectHttpResult>().Subject.Url;
+        url.Should().Contain("error=invalid-token");
+        _audit.Verify(
+            x => x.WriteAsync(It.Is<AuditEvent>(e => e.EventType == "password.reset.failure.invalid_token"
+                                                     && e.ActorUserId == user.Id),
+                              It.IsAny<CancellationToken>()),
+            Times.Once);
+    }
+
+    [Fact]
+    public async Task Should_RedirectToResetWithError_When_UserNotFound()
+    {
+        var ctx = CreateHttpContext();
+        var um = CreateUserManagerMock();
+        um.Setup(x => x.FindByEmailAsync(It.IsAny<string>())).ReturnsAsync((HeimdallUser?)null);
+
+        var result = await AccountEndpoints.HandleResetPasswordAsync(
+            ctx, "ghost@example.com", "tok", "NewP@ssword12!", "NewP@ssword12!",
+            um.Object, ActiveGate(), _audit.Object, default);
+
+        result.Should().BeOfType<RedirectHttpResult>().Which.Url.Should().Be("/reset-password?error=invalid-token");
+        _audit.Verify(
+            x => x.WriteAsync(It.Is<AuditEvent>(e => e.EventType == "password.reset.failure.unknown_email"),
+                              It.IsAny<CancellationToken>()),
+            Times.Once);
+    }
+
+    [Fact]
+    public async Task Should_Return404_When_GateInactive_OnResetPassword()
+    {
+        var ctx = CreateHttpContext();
+        var um = CreateUserManagerMock();
+
+        var result = await AccountEndpoints.HandleResetPasswordAsync(
+            ctx, "x@example.com", "t", "p", "p",
+            um.Object, InactiveGate(), _audit.Object, default);
+
+        result.Should().BeOfType<NotFound>();
+        um.Verify(x => x.FindByEmailAsync(It.IsAny<string>()), Times.Never);
+    }
+
+    // -----------------------------------------------------------------------------
+    // Register
+    // -----------------------------------------------------------------------------
+
+    [Fact]
+    public async Task Should_Return404_When_RegistrationDisabled()
+    {
+        var ctx = CreateHttpContext();
+        var um = CreateUserManagerMock();
+        var sender = new Mock<IEmailSender>();
+
+        var result = await AccountEndpoints.HandleRegisterAsync(
+            ctx, "u@example.com", "P@ssword12!", "P@ssword12!",
+            um.Object, sender.Object, ActiveGate(), RegistrationDisabled(), _audit.Object, default);
+
+        result.Should().BeOfType<NotFound>();
+        um.Verify(x => x.CreateAsync(It.IsAny<HeimdallUser>(), It.IsAny<string>()), Times.Never);
+    }
+
+    [Fact]
+    public async Task Should_Return404_When_GateInactive_OnRegister()
+    {
+        var ctx = CreateHttpContext();
+        var um = CreateUserManagerMock();
+        var sender = new Mock<IEmailSender>();
+
+        var result = await AccountEndpoints.HandleRegisterAsync(
+            ctx, "u@example.com", "P@ssword12!", "P@ssword12!",
+            um.Object, sender.Object, InactiveGate(), RegistrationEnabled(), _audit.Object, default);
+
+        result.Should().BeOfType<NotFound>();
+    }
+
+    [Fact]
+    public async Task Should_RedirectToRegisterConfirmation_When_RegistrationSucceeds()
+    {
+        var ctx = CreateHttpContext();
+        var um = CreateUserManagerMock();
+        um.Setup(x => x.NormalizeEmail(It.IsAny<string>())).Returns<string>(s => s.ToUpperInvariant());
+        um.Setup(x => x.CreateAsync(It.IsAny<HeimdallUser>(), "P@ssword12!"))
+          .ReturnsAsync(IdentityResult.Success);
+        um.Setup(x => x.GenerateEmailConfirmationTokenAsync(It.IsAny<HeimdallUser>()))
+          .ReturnsAsync("confirm-token");
+        var sender = new Mock<IEmailSender>();
+        sender.Setup(x => x.SendAsync(It.IsAny<EmailMessage>(), It.IsAny<CancellationToken>()))
+              .Returns(Task.CompletedTask);
+
+        var result = await AccountEndpoints.HandleRegisterAsync(
+            ctx, "new@example.com", "P@ssword12!", "P@ssword12!",
+            um.Object, sender.Object, ActiveGate(), RegistrationEnabled(), _audit.Object, default);
+
+        result.Should().BeOfType<RedirectHttpResult>().Which.Url.Should().Be("/register-confirmation");
+        sender.Verify(x => x.SendAsync(It.IsAny<EmailMessage>(), It.IsAny<CancellationToken>()), Times.Once);
+        _audit.Verify(
+            x => x.WriteAsync(It.Is<AuditEvent>(e => e.EventType == "account.register.success"
+                                                     && e.PayloadJson.Contains("example.com")),
+                              It.IsAny<CancellationToken>()),
+            Times.Once);
+    }
+
+    [Fact]
+    public async Task Should_RedirectToRegisterWithError_When_DuplicateUser()
+    {
+        var ctx = CreateHttpContext();
+        var um = CreateUserManagerMock();
+        um.Setup(x => x.NormalizeEmail(It.IsAny<string>())).Returns<string>(s => s.ToUpperInvariant());
+        um.Setup(x => x.CreateAsync(It.IsAny<HeimdallUser>(), It.IsAny<string>()))
+          .ReturnsAsync(IdentityResult.Failed(new IdentityError { Code = "DuplicateUserName", Description = "exists" }));
+        var sender = new Mock<IEmailSender>();
+
+        var result = await AccountEndpoints.HandleRegisterAsync(
+            ctx, "dup@example.com", "P@ssword12!", "P@ssword12!",
+            um.Object, sender.Object, ActiveGate(), RegistrationEnabled(), _audit.Object, default);
+
+        var url = result.Should().BeOfType<RedirectHttpResult>().Subject.Url;
+        url.Should().Contain("/register?error=DuplicateUserName");
+        _audit.Verify(
+            x => x.WriteAsync(It.Is<AuditEvent>(e => e.EventType == "account.register.failure"
+                                                     && e.PayloadJson.Contains("DuplicateUserName")),
+                              It.IsAny<CancellationToken>()),
+            Times.Once);
+    }
+
+    [Fact]
+    public async Task Should_RedirectToRegisterWithError_When_RegisterPasswordsMismatch()
+    {
+        var ctx = CreateHttpContext();
+        var um = CreateUserManagerMock();
+        var sender = new Mock<IEmailSender>();
+
+        var result = await AccountEndpoints.HandleRegisterAsync(
+            ctx, "u@example.com", "P@ssword12!", "different",
+            um.Object, sender.Object, ActiveGate(), RegistrationEnabled(), _audit.Object, default);
+
+        var url = result.Should().BeOfType<RedirectHttpResult>().Subject.Url;
+        url.Should().Contain("/register?error=PasswordMismatch");
+        um.Verify(x => x.CreateAsync(It.IsAny<HeimdallUser>(), It.IsAny<string>()), Times.Never);
+    }
+
+    // -----------------------------------------------------------------------------
+    // Confirm-email
+    // -----------------------------------------------------------------------------
+
+    [Fact]
+    public async Task Should_RedirectToLoginWithSuccess_When_ConfirmEmailValid()
+    {
+        var ctx = CreateHttpContext();
+        var user = SampleUser();
+        var um = CreateUserManagerMock();
+        um.Setup(x => x.FindByEmailAsync(user.Email)).ReturnsAsync(user);
+        um.Setup(x => x.ConfirmEmailAsync(user, "tok")).ReturnsAsync(IdentityResult.Success);
+
+        var result = await AccountEndpoints.HandleConfirmEmailAsync(
+            ctx, user.Email, "tok", um.Object, _audit.Object, default);
+
+        result.Should().BeOfType<RedirectHttpResult>().Which.Url.Should().Be("/login?confirm=success");
+        _audit.Verify(
+            x => x.WriteAsync(It.Is<AuditEvent>(e => e.EventType == "account.confirm_email.success"
+                                                     && e.ActorUserId == user.Id),
+                              It.IsAny<CancellationToken>()),
+            Times.Once);
+    }
+
+    [Fact]
+    public async Task Should_RedirectToLoginWithInvalid_When_ConfirmEmailUnknownUser()
+    {
+        var ctx = CreateHttpContext();
+        var um = CreateUserManagerMock();
+        um.Setup(x => x.FindByEmailAsync(It.IsAny<string>())).ReturnsAsync((HeimdallUser?)null);
+
+        var result = await AccountEndpoints.HandleConfirmEmailAsync(
+            ctx, "ghost@example.com", "tok", um.Object, _audit.Object, default);
+
+        result.Should().BeOfType<RedirectHttpResult>().Which.Url.Should().Be("/login?confirm=invalid");
+        _audit.Verify(
+            x => x.WriteAsync(It.Is<AuditEvent>(e => e.EventType == "account.confirm_email.failure.unknown_email"),
+                              It.IsAny<CancellationToken>()),
+            Times.Once);
+    }
+
+    [Fact]
+    public async Task Should_RedirectToLoginWithInvalid_When_ConfirmEmailTokenInvalid()
+    {
+        var ctx = CreateHttpContext();
+        var user = SampleUser();
+        var um = CreateUserManagerMock();
+        um.Setup(x => x.FindByEmailAsync(user.Email)).ReturnsAsync(user);
+        um.Setup(x => x.ConfirmEmailAsync(user, It.IsAny<string>()))
+          .ReturnsAsync(IdentityResult.Failed(new IdentityError { Code = "InvalidToken" }));
+
+        var result = await AccountEndpoints.HandleConfirmEmailAsync(
+            ctx, user.Email, "bad", um.Object, _audit.Object, default);
+
+        result.Should().BeOfType<RedirectHttpResult>().Which.Url.Should().Be("/login?confirm=invalid");
+        _audit.Verify(
+            x => x.WriteAsync(It.Is<AuditEvent>(e => e.EventType == "account.confirm_email.failure.invalid_token"
+                                                     && e.ActorUserId == user.Id),
+                              It.IsAny<CancellationToken>()),
+            Times.Once);
     }
 }

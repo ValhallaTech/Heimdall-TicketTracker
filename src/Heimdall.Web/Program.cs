@@ -14,7 +14,9 @@ using Heimdall.Web.Authorization;
 using Heimdall.Web.Bootstrap;
 using Heimdall.Web.Components;
 using Heimdall.Web.DependencyInjection;
+using Heimdall.Web.Email;
 using Heimdall.Web.Endpoints;
+using Heimdall.Web.Identity;
 using Microsoft.AspNetCore.Authentication.Cookies;
 using Microsoft.AspNetCore.Components.Authorization;
 using Microsoft.AspNetCore.DataProtection;
@@ -219,6 +221,27 @@ builder.Services.AddRateLimiter(options =>
             AutoReplenishment = true,
         });
     });
+
+    // Password-reset throttle (Phase 1 step 10). Different threat model from
+    // login: an attacker spamming forgot-password gets a free way to flood a
+    // victim's inbox and burn token-provider entropy. Tighter than login (5
+    // permits / 10 minutes) and keyed identically on (ip|submitted-email).
+    options.AddPolicy("password-reset", httpContext =>
+    {
+        string ip = httpContext.Connection.RemoteIpAddress?.ToString() ?? "unknown";
+        var form = httpContext.Request.HasFormContentType
+            ? httpContext.Request.ReadFormAsync().GetAwaiter().GetResult()
+            : null;
+        string submittedEmail = form?["email"].ToString() ?? string.Empty;
+        string key = $"{ip}|{submittedEmail.ToLowerInvariant()}";
+        return RateLimitPartition.GetFixedWindowLimiter(key, _ => new FixedWindowRateLimiterOptions
+        {
+            PermitLimit = 5,
+            Window = TimeSpan.FromMinutes(10),
+            QueueLimit = 0,
+            AutoReplenishment = true,
+        });
+    });
     options.RejectionStatusCode = StatusCodes.Status429TooManyRequests;
 });
 
@@ -265,6 +288,17 @@ builder.Services.AddCascadingAuthenticationState();
 // NoOpEmailSender so non-SMTP environments boot cleanly. The chosen
 // implementation is logged below after Build().
 builder.Services.AddHeimdallEmail(builder.Configuration);
+
+// EmailFlowGate (Phase 1 step 10) — surfaces whether email-driven self-service
+// flows are usable. Singleton because EmailSenderRegistrationInfo is also a
+// singleton; both are decided at startup and never change at runtime.
+builder.Services.AddSingleton<EmailFlowGate>();
+
+// Self-service registration toggle (Phase 1 step 10). Default Enabled=false;
+// the operator must explicitly opt in via the "Registration" config section
+// (and SMTP must be configured) before the /register page becomes reachable.
+builder.Services.AddOptions<RegistrationOptions>()
+    .Bind(builder.Configuration.GetSection("Registration"));
 
 // --- SystemAdmin bootstrap registration (Phase 1 step 8) ------------------
 // Resolved per-scope from the startup bootstrap block below. Scoped lifetime

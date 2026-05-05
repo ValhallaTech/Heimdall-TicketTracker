@@ -1,5 +1,7 @@
 @page "/login"
 @attribute [Microsoft.AspNetCore.Authorization.AllowAnonymous]
+@inject Heimdall.Web.Email.EmailFlowGate Gate
+@inject Microsoft.Extensions.Options.IOptions<Heimdall.Web.Identity.RegistrationOptions> RegistrationOptions
 
 @*
     Server-rendered login page (Phase 1 step 7 of
@@ -68,6 +70,17 @@
                         </button>
                     </form>
 
+                    <div class="text-center mt-3">
+                        <a href="/forgot-password" class="small text-decoration-none">Forgot your password?</a>
+                    </div>
+
+                    @if (ShowRegisterLink)
+                    {
+                        <div class="text-center mt-2">
+                            <a href="/register" class="small text-decoration-none">Don't have an account? Register</a>
+                        </div>
+                    }
+
                 </div>
             </div>
         </div>
@@ -84,4 +97,11 @@
     private bool HasError => string.Equals(Error, "invalid-credentials", StringComparison.Ordinal);
 
     private string? AriaInvalid => HasError ? "true" : null;
+
+    /// <summary>
+    /// Self-service registration is only advertised when SMTP is configured AND
+    /// the operator has flipped <c>Registration:Enabled</c>. Both conditions are
+    /// required so we never show a "Register" link that would 404 on submission.
+    /// </summary>
+    private bool ShowRegisterLink => Gate.IsActive && (RegistrationOptions.Value?.Enabled ?? false);
 }

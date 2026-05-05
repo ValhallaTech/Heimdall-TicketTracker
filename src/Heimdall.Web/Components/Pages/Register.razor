@@ -1,0 +1,128 @@
+@page "/register"
+@attribute [Microsoft.AspNetCore.Authorization.AllowAnonymous]
+@inject Heimdall.Web.Email.EmailFlowGate Gate
+@inject Microsoft.Extensions.Options.IOptions<Heimdall.Web.Identity.RegistrationOptions> RegistrationOptions
+
+@*
+    Server-rendered self-service registration page (Phase 1 step 10). Posts to
+    /account/register. Gated on BOTH EmailFlowGate.IsActive AND
+    RegistrationOptions.Enabled — either being off renders a "currently
+    disabled" card and suppresses the form. The endpoint also 404s in that
+    case as a backstop, so direct POSTs don't bypass the page-level check.
+*@
+
+<PageTitle>Create account &middot; Heimdall TicketTracker</PageTitle>
+
+<div class="container py-5">
+    <div class="row justify-content-center">
+        <div class="col-md-6 col-lg-5 col-xl-4">
+            <div class="card shadow-sm">
+                <div class="card-body p-4 p-md-5">
+
+                    <div class="text-center mb-4">
+                        <div class="splash-icon mb-3" aria-hidden="true">
+                            <i class="fa-solid fa-user-plus"></i>
+                        </div>
+                        <h1 class="h3 fw-bold mb-0">Create an account</h1>
+                    </div>
+
+                    @if (!IsRegistrationOpen)
+                    {
+                        <div class="alert alert-info" role="alert">
+                            <i class="fa-solid fa-circle-info me-2" aria-hidden="true"></i>
+                            Registration is currently disabled — please contact your administrator.
+                        </div>
+                        <a href="/login" class="btn btn-outline-secondary w-100 py-2">
+                            <i class="fa-solid fa-arrow-left me-2" aria-hidden="true"></i>
+                            Back to sign in
+                        </a>
+                    }
+                    else
+                    {
+                        @if (!string.IsNullOrEmpty(Error))
+                        {
+                            <div class="alert alert-danger" role="alert">
+                                <i class="fa-solid fa-triangle-exclamation me-2" aria-hidden="true"></i>
+                                @ErrorMessage
+                            </div>
+                        }
+
+                        <form method="post" action="/account/register">
+                            <AntiforgeryToken />
+
+                            <div class="mb-3">
+                                <label for="register-email" class="form-label">Email address</label>
+                                <input id="register-email"
+                                       name="email"
+                                       type="email"
+                                       class="form-control"
+                                       autocomplete="email"
+                                       required
+                                       aria-invalid="@AriaInvalid" />
+                            </div>
+
+                            <div class="mb-3">
+                                <label for="register-password" class="form-label">Password</label>
+                                <input id="register-password"
+                                       name="password"
+                                       type="password"
+                                       class="form-control"
+                                       autocomplete="new-password"
+                                       required
+                                       aria-invalid="@AriaInvalid" />
+                            </div>
+
+                            <div class="mb-3">
+                                <label for="register-password-confirm" class="form-label">Confirm password</label>
+                                <input id="register-password-confirm"
+                                       name="confirmPassword"
+                                       type="password"
+                                       class="form-control"
+                                       autocomplete="new-password"
+                                       required
+                                       aria-invalid="@AriaInvalid" />
+                            </div>
+
+                            <button type="submit" class="btn btn-primary w-100 py-2">
+                                <i class="fa-solid fa-user-plus me-2" aria-hidden="true"></i>
+                                Create account
+                            </button>
+                        </form>
+
+                        <div class="text-center mt-3">
+                            <a href="/login" class="small text-decoration-none">Already have an account? Sign in</a>
+                        </div>
+                    }
+
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+@code {
+    /// <summary>
+    /// Optional Identity error code echoed back from the endpoint
+    /// (e.g. <c>"DuplicateUserName"</c>, <c>"PasswordTooShort"</c>,
+    /// <c>"PasswordMismatch"</c>, <c>"InvalidEmail"</c>).
+    /// </summary>
+    [SupplyParameterFromQuery] public string? Error { get; set; }
+
+    private bool IsRegistrationOpen => Gate.IsActive && (RegistrationOptions.Value?.Enabled ?? false);
+
+    private string? AriaInvalid => string.IsNullOrEmpty(Error) ? null : "true";
+
+    private string ErrorMessage => Error switch
+    {
+        "PasswordMismatch" => "The two passwords did not match. Please try again.",
+        "InvalidEmail" => "Please enter a valid email address.",
+        "DuplicateUserName" or "DuplicateEmail" => "An account with that email already exists.",
+        "PasswordTooShort" => "Your password is too short. Please choose a longer password.",
+        "PasswordRequiresDigit" => "Your password must contain at least one digit.",
+        "PasswordRequiresLower" => "Your password must contain at least one lowercase letter.",
+        "PasswordRequiresUpper" => "Your password must contain at least one uppercase letter.",
+        "PasswordRequiresNonAlphanumeric" => "Your password must contain at least one non-alphanumeric character.",
+        "PasswordRequiresUniqueChars" => "Your password does not contain enough unique characters.",
+        _ => "We couldn't create your account. Please check your details and try again.",
+    };
+}

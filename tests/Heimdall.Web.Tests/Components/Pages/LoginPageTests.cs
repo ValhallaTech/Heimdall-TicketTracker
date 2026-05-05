@@ -1,8 +1,12 @@
 using Bunit;
 using FluentAssertions;
+using Heimdall.BLL.Email;
 using Heimdall.Web.Components.Pages;
+using Heimdall.Web.Email;
+using Heimdall.Web.Identity;
 using Microsoft.AspNetCore.Components;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Options;
 
 namespace Heimdall.Web.Tests.Components.Pages;
 
@@ -18,6 +22,20 @@ namespace Heimdall.Web.Tests.Components.Pages;
 /// </summary>
 public class LoginPageTests : BunitContext
 {
+    public LoginPageTests()
+    {
+        // Login.razor injects EmailFlowGate + IOptions<RegistrationOptions> to
+        // decide whether to advertise the "Register" link. Default both to off.
+        Services.AddSingleton(new EmailSenderRegistrationInfo
+        {
+            ChosenImplementation = "NoOpEmailSender",
+            Reason = "test default",
+        });
+        Services.AddSingleton<EmailFlowGate>();
+        Services.AddSingleton<IOptions<RegistrationOptions>>(
+            Options.Create(new RegistrationOptions { Enabled = false }));
+    }
+
     [Fact]
     public void Should_RenderForm_When_RenderedAnonymously()
     {
@@ -70,5 +88,52 @@ public class LoginPageTests : BunitContext
 
         cut.Markup.Should().NotContain("name=\"returnUrl\"");
     }
+
+    [Fact]
+    public void Should_RenderForgotPasswordLink_Always()
+    {
+        var cut = Render<Login>();
+
+        cut.Markup.Should().Contain("/forgot-password");
+        cut.Markup.Should().Contain("Forgot your password?");
+    }
+
+    [Fact]
+    public void Should_NotRenderRegisterLink_When_GateInactiveOrRegistrationDisabled()
+    {
+        // Both gate (NoOp) and Registration:Enabled=false in the constructor.
+        var cut = Render<Login>();
+
+        cut.Markup.Should().NotContain("/register");
+        cut.Markup.Should().NotContain("Don't have an account");
+    }
+
+    [Fact]
+    public void Should_RenderRegisterLink_When_GateActiveAndRegistrationEnabled()
+    {
+        // Replace the registrations with active values.
+        Services.AddSingleton(new EmailSenderRegistrationInfo
+        {
+            ChosenImplementation = "MailKitEmailSender",
+            Reason = "test active",
+        });
+
+        // Use a bUnit context that re-resolves EmailFlowGate against the new info.
+        using var ctx = new BunitContext();
+        ctx.Services.AddSingleton(new EmailSenderRegistrationInfo
+        {
+            ChosenImplementation = "MailKitEmailSender",
+            Reason = "test active",
+        });
+        ctx.Services.AddSingleton<EmailFlowGate>();
+        ctx.Services.AddSingleton<IOptions<RegistrationOptions>>(
+            Options.Create(new RegistrationOptions { Enabled = true }));
+
+        var cut = ctx.Render<Login>();
+
+        cut.Markup.Should().Contain("/register");
+        cut.Markup.Should().Contain("Don't have an account");
+    }
 }
+
 
