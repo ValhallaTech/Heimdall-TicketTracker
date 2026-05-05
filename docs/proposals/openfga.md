@@ -67,10 +67,10 @@ The 14 steps below are **strictly ordered** by dependency. Each step's precondit
 
 #### Phase 3.4 — Get tuples into the store
 
-7. **Tuple-write hooks.** Hook the BLL services from [`team-collaboration.md`](./team-collaboration.md) step 12 to emit tuple writes on:
-   - `organization` / `team` / `project` create → `parent_*` tuples;
-   - member add/remove on any of the three membership tables → `admin` / `member` / `viewer` tuples per the mapping in [`team-collaboration.md`](./team-collaboration.md) step 16;
-   - ticket create → `parent_project` tuple, plus `reporter` and (if set) `assignee`;
+7. **Tuple-write hooks.** Hook the BLL services from [`team-collaboration.md`](./team-collaboration.md) step 13 to emit tuple writes on:
+   - `organization` / `team` / `project` create → `parent_*` tuples **plus an immediate `*_members` insert with `role = 'owner'` for the creator** (which the same hook then writes as an `admin` tuple per the mapping in [`team-collaboration.md`](./team-collaboration.md) step 17). Without this, a newly-created org/team/project would have no admin tuple at all and its creator would lose access to it the moment the cutover (step 9) lands.
+   - member add/remove on any of the three membership tables → `admin` / `member` / `viewer` tuples per the mapping in [`team-collaboration.md`](./team-collaboration.md) step 17;
+   - ticket create → `parent_project` tuple, plus `reporter` (always — the column is NOT NULL after [`team-collaboration.md`](./team-collaboration.md) step 9) and (if set) `assignee`;
    - assignee change → tuple replace (delete-old + write-new in one call).
 
    **Pick one consistency story and document it.** Two options:
@@ -85,10 +85,13 @@ The 14 steps below are **strictly ordered** by dependency. Each step's precondit
 #### Phase 3.5 — Cutover
 
 9. **Replace the Phase 1 "authenticated-only" gates with policy-based `[Authorize]`.** Introduce policies that map 1:1 onto the model's computed permissions: `CanViewProject`, `CanEditProject`, `CanViewTicket`, `CanEditTicket`, `CanCommentTicket`, `CanAssignTicket`, `CanManageMembers`, etc. Each policy resolves to a `Check()` call via the adapter from step 6. Apply to **every** Blazor page and BLL service entry point that touched the Phase 1 gate. Once coverage is verified (step 14), **remove the Phase 1 "authenticated-only" fallback entirely** so there's no parallel policy stack.
-10. **Deny-closed on sidecar outage.** `Check()` failures (timeout, network, 5xx) return **false**. An audited break-glass path, scoped exclusively to users matching `Check(organization:heimdall#admin@user:X)`, is the only exception. Break-glass:
+10. **Deny-closed on sidecar outage.** `Check()` failures (timeout, network, 5xx) return **false** for every caller. The break-glass path is therefore **deliberately not gated by `Check()`** (that would make it unavailable in exactly the failure mode it exists for); it is gated by a **DB-only** check against `HeimdallUser.system_admin == true` (the column from [`security-and-authorization.md`](./security-and-authorization.md) §9.3 step 1). Break-glass:
     - requires an explicit env-var enable (`HEIMDALL_AUTHZ_BREAK_GLASS=1`),
+    - additionally requires `system_admin == true` on the requesting user (read directly from PostgreSQL, no sidecar dependency),
     - logs an `audit_events` row per use including actor, target, and reason header,
     - does *not* survive process restart unless the env var remains set (deliberate operator-effort barrier).
+
+    The `system_admin` boolean is therefore the **only** authority Heimdall consults during a sidecar outage, and remains the safety-net that lets a documented operator unstick a deployment when OpenFGA is unreachable.
 
 #### Phase 3.6 — Admin surface returns
 
@@ -127,6 +130,7 @@ Each step is independently committable behind a feature flag (steps 9 and 14 are
 | Date       | Decision                                                                                                                                                                                                                                                                                                                                            |
 | ---------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | 2026-05-04 | Proposal drafted as the implementation companion to [`openfga-vs-permify.md`](./openfga-vs-permify.md) (which holds the selection rationale and is **not** edited here). 14-step strictly-ordered implementation sequence. Cutover step (9) and decommission step (14) bookend the only non-additive changes; all other steps are additive behind a feature flag. Awaiting review. |
+| 2026-05-05 | Revised per review feedback. (a) Step 7 create-hook now also inserts an `*_members` row with `role = 'owner'` for the creator so a newly-created org/team/project produces an admin tuple — without it, creators lost access to their own objects at cutover. (b) Step 10 break-glass path no longer gated by `Check(organization:...#admin)` — that would be unavailable in exactly the sidecar-outage scenario it exists for. Replaced with a DB-only `HeimdallUser.system_admin == true` check that does not depend on OpenFGA. Updated step references to match `team-collaboration.md`'s renumbered steps (12 → 13, 16 → 17, reporter NOT NULL is now step 9). |
 
 ---
 

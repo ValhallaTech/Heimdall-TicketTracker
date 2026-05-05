@@ -243,22 +243,16 @@ It is a **close call on developer ergonomics** — Permify's named-permission DS
 
 ## 9. Phasing relative to PR #23
 
-PR #23's Phases 1–3 are **unchanged** and still in this order:
+> **Note (2026-05-05):** PR #23's phasing was substantially restructured after this proposal was first drafted. The phase descriptions below have been updated to reflect the current sequence in [`security-and-authorization.md`](./security-and-authorization.md) §9.3 and the implementation plan in [`openfga.md`](./openfga.md). The selection rationale in §§1–8 is unchanged. **For the authoritative, ordered implementation steps, see [`openfga.md`](./openfga.md) §3** — that document supersedes the rough sub-step list previously printed here.
 
-- **Phase 1 — Foundations** (built-in ASP.NET Core RBAC + PBAC; Identity + cookie auth; Dapper user store; email subsystem; deny-by-default policies). *Unchanged.*
-- **Phase 2 — MFA and admin UX** (TOTP, recovery codes, admin area, audit log viewer). *Unchanged.*
-- **Phase 3 — API + tokens** (JWT bearer, JWKS, refresh-token rotation, Redis denylist). *Unchanged.*
+The current proposal-set sequence is:
 
-**Phase 4 — Planned ReBAC adoption** (this proposal; supersedes PR #23 §9.3 *Phase 4 (conditional)*):
+- **Phase 1 — Authenticated foundation** ([`security-and-authorization.md`](./security-and-authorization.md) §9.3 Phase 1). Identity + cookie auth, Dapper user store, MailKit/MimeKit email seam, **"authenticated-only" placeholder gate** (no RBAC, no PBAC, no roles/permissions/groups tables — those were dropped from Phase 1 because OpenFGA replaces them end-to-end and shipping them would mean migrating them away).
+- **Phase 2 — Team collaboration data model** ([`team-collaboration.md`](./team-collaboration.md)). Organizations, teams, projects, membership tables, ticket reporter/assignee FKs. Strictly data-and-domain; ships zero ReBAC changes; the temporary `system_admin` write-side gate from `team-collaboration.md` §3 covers Phase-2-only privilege-escalation risk on write surfaces.
+- **Phase 3 — OpenFGA ReBAC** ([`openfga.md`](./openfga.md)). Replaces the Phase-1 placeholder with policy-based `[Authorize]` resolved through OpenFGA `Check()`. Tuples are backfilled directly from the Phase-2 `*_members` and `tickets` rows (per the mapping in [`team-collaboration.md`](./team-collaboration.md) step 17), **not** from any RBAC role/group state — there is no such state under the current sequencing.
+- **Phase 4 — MFA**, **Phase 5 — API + tokens**, **Phase 6 — Admin UI** all follow OpenFGA so each goes through one policy mechanism.
 
-1. **Stand up** the chosen authz sidecar (OpenFGA per §8) in a non-prod Render environment, private-networking-only, backed by its own Postgres logical DB.
-2. **Define and version** the schema/model file in the repo at `docs/authz/model.fga` (or equivalent), reviewed and merged like any other contract.
-3. **Implement** the `IAuthorizationService` adapter wrapping `Check` / `BatchCheck` / `ListObjects`, with a short-TTL in-process cache and OpenTelemetry instrumentation.
-4. **Backfill tuples** from existing RBAC role/group state (one-shot job at cutover; idempotent so it can be re-run during the phase).
-5. **Migrate sharing-shaped checks** off PBAC onto ReBAC (`can_view`, `can_comment`, `can_edit`, `can_assign`, `can_delete` on tickets first, then projects/teams). Keep RBAC for coarse role gates (`SystemAdmin`, `TenantAdmin`).
-6. **Add admin UI** for tuple inspection — **read-only first** (browse a subject's permissions on a resource; expand a relation to its evidence). Write-side admin tooling lands only after read-side has bedded in.
-
-Each sub-step is independently shippable behind a feature flag. The cutover from PBAC sharing checks to ReBAC sharing checks is the only step that's not strictly additive, and it can be done one resource type at a time.
+The OpenFGA selection in §8 of this proposal is unaffected by the resequencing; only the *order* and *upstream data sources* of the implementation steps changed.
 
 ## 10. Open questions and decision log
 
@@ -277,6 +271,7 @@ Each sub-step is independently shippable behind a feature flag. The cutover from
 | Date       | Decision                                                                                                                                                  |
 | ---------- | --------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | 2026-05-04 | Proposal drafted; supersedes the "(conditional)" framing of ReBAC in PR #23 §9.3 Phase 4. Recommends **OpenFGA** as the sidecar, deployed in Phase 4 per §9. Awaiting review. |
+| 2026-05-05 | §9 phasing rewritten to match the resequenced proposal set: RBAC+PBAC tables were dropped from Phase 1 of [`security-and-authorization.md`](./security-and-authorization.md); OpenFGA now backfills tuples from the Phase-2 `*_members` and `tickets` rows in [`team-collaboration.md`](./team-collaboration.md), not from RBAC role/group state. Authoritative implementation steps moved to [`openfga.md`](./openfga.md) §3; this section now points there. The §8 OpenFGA-vs-Permify selection rationale is unchanged. |
 
 ---
 
