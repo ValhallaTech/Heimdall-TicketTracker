@@ -1,10 +1,9 @@
 using System;
+using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
 using Heimdall.Core.Interfaces;
 using Microsoft.Extensions.Logging;
-using Newtonsoft.Json;
-using Newtonsoft.Json.Serialization;
 using StackExchange.Redis;
 
 namespace Heimdall.DAL.Caching;
@@ -15,15 +14,17 @@ namespace Heimdall.DAL.Caching;
 /// </summary>
 public class RedisCacheService : ICacheService
 {
-    // Newtonsoft.Json with default settings + camelCase resolver is what Midgard uses
-    // for the same key namespace, so payloads are interoperable. The default handling for
-    // enums is integer serialization, which round-trips losslessly for TicketStatus /
-    // TicketPriority (both int-backed). If a future contract change switches enums to
-    // string form via StringEnumConverter, BOTH the producer and consumer settings must be
-    // updated in lockstep — otherwise reads will throw JsonReaderException.
-    private static readonly JsonSerializerSettings SerializerSettings = new()
+    // System.Text.Json with camelCase property naming. STJ is faster and lower-allocation
+    // than Newtonsoft.Json (the previous serializer used here) and is the org-wide default
+    // — see README. Default enum handling is integer serialization, which round-trips
+    // losslessly for TicketStatus / TicketPriority (both int-backed). If a future contract
+    // change switches enums to string form via JsonStringEnumConverter, BOTH the producer
+    // and consumer settings must be updated in lockstep — otherwise reads will throw
+    // JsonException.
+    private static readonly JsonSerializerOptions SerializerOptions = new()
     {
-        ContractResolver = new CamelCasePropertyNamesContractResolver(),
+        PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
+        PropertyNameCaseInsensitive = true,
     };
     private readonly IConnectionMultiplexer _multiplexer;
     private readonly ILogger<RedisCacheService> _logger;
@@ -56,9 +57,9 @@ public class RedisCacheService : ICacheService
                 return null;
             }
 
-            return JsonConvert.DeserializeObject<T>((string)value!, SerializerSettings);
+            return JsonSerializer.Deserialize<T>((string)value!, SerializerOptions);
         }
-        catch (Exception ex) when (ex is RedisException or Newtonsoft.Json.JsonException)
+        catch (Exception ex) when (ex is RedisException or JsonException)
         {
             _logger.LogWarning(ex, "Redis GET failed for key {CacheKey}; returning null.", key);
             return null;
@@ -76,12 +77,12 @@ public class RedisCacheService : ICacheService
     {
         try
         {
-            var payload = JsonConvert.SerializeObject(value, SerializerSettings);
+            var payload = JsonSerializer.Serialize(value, SerializerOptions);
             await GetDatabase()
                 .StringSetAsync(key, payload, ttl, When.Always)
                 .ConfigureAwait(false);
         }
-        catch (Exception ex) when (ex is RedisException or Newtonsoft.Json.JsonException)
+        catch (Exception ex) when (ex is RedisException or JsonException)
         {
             _logger.LogWarning(
                 ex,
