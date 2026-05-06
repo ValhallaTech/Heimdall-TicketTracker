@@ -331,6 +331,12 @@ builder.Services.AddOptions<RegistrationOptions>()
 // matches the Identity stores it composes (UserManager, IUserStore).
 builder.Services.AddScoped<SystemAdminBootstrapper>();
 
+// --- Default-hierarchy bootstrap registration (Phase 2.3 step 9) ----------
+// Resolved per-scope from the startup bootstrap block below, immediately after
+// SystemAdminBootstrapper so the bootstrap admin's user-id exists before this
+// runs. Idempotent on every startup.
+builder.Services.AddScoped<DefaultHierarchyBootstrapper>();
+
 // --- Autofac --------------------------------------------------------------
 builder.Host.UseServiceProviderFactory(new AutofacServiceProviderFactory());
 builder.Host.ConfigureContainer<ContainerBuilder>(containerBuilder =>
@@ -364,11 +370,31 @@ try
 {
     using var bootstrapScope = app.Services.CreateAsyncScope();
     var bootstrapper = bootstrapScope.ServiceProvider.GetRequiredService<SystemAdminBootstrapper>();
-    await bootstrapper.RunAsync(bootstrapEmail, bootstrapPassword).ConfigureAwait(false);
+    await bootstrapper.RunAsync(bootstrapEmail, bootstrapPassword, app.Lifetime.ApplicationStopping).ConfigureAwait(false);
 }
-catch (Exception ex)
+// OCE propagates so cooperative host shutdown is honoured.
+catch (Exception ex) when (ex is not OperationCanceledException)
 {
     Log.Error(ex, "SystemAdmin bootstrap raised an unexpected exception; continuing startup.");
+}
+
+// --- Default-hierarchy bootstrap (Phase 2.3 step 9) -----------------------
+// Sequencing note: cannot run as a FluentMigrator migration on a fresh DB —
+// bootstrap_admin.id does not exist until SystemAdminBootstrapper above runs.
+// Idempotent on every startup, keyed on slug for parents and on
+// (user_id, parent_id) for membership rows. Failures are logged-and-swallowed
+// (same policy as SystemAdminBootstrapper) so a transient DB hiccup at boot
+// does not abort startup.
+try
+{
+    using var hierarchyScope = app.Services.CreateAsyncScope();
+    var hierarchyBootstrapper = hierarchyScope.ServiceProvider.GetRequiredService<DefaultHierarchyBootstrapper>();
+    await hierarchyBootstrapper.RunAsync(bootstrapEmail, app.Lifetime.ApplicationStopping).ConfigureAwait(false);
+}
+// OCE propagates so cooperative host shutdown is honoured.
+catch (Exception ex) when (ex is not OperationCanceledException)
+{
+    Log.Error(ex, "Default-hierarchy bootstrap raised an unexpected exception; continuing startup.");
 }
 
 // --- Email sender choice (Phase 1 step 6) ---------------------------------
