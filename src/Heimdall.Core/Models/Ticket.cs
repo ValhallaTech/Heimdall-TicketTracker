@@ -58,11 +58,33 @@ public class Ticket
     /// <summary>Gets or sets the priority level.</summary>
     public TicketPriority Priority { get; set; } = TicketPriority.Medium;
 
-    /// <summary>Gets or sets the reporter / submitter name.</summary>
-    public string Reporter { get; set; } = string.Empty;
+    /// <summary>
+    /// Gets or sets the FK to the owning <see cref="Project"/> (<c>tickets.project_id</c>,
+    /// NOT NULL after <c>M202605050022</c>). Replaces the legacy free-form columns dropped
+    /// by <c>M202605050025</c>.
+    /// </summary>
+    public Guid ProjectId { get; set; }
 
-    /// <summary>Gets or sets the assignee name (may be empty when unassigned).</summary>
-    public string? Assignee { get; set; }
+    /// <summary>
+    /// Gets or sets the FK to the owning <see cref="Team"/> (<c>tickets.team_id</c>,
+    /// NOT NULL after <c>M202605050022</c>). Drives the per-team queue filter described
+    /// in <c>docs/proposals/team-collaboration.md</c> §5.1.
+    /// </summary>
+    public Guid TeamId { get; set; }
+
+    /// <summary>
+    /// Gets or sets the FK to the reporting <see cref="HeimdallUser"/>
+    /// (<c>tickets.reporter_id</c>, NOT NULL after <c>M202605050024</c> — every ticket
+    /// always has a reporter per <c>docs/proposals/team-collaboration.md</c> §5.3).
+    /// </summary>
+    public Guid ReporterId { get; set; }
+
+    /// <summary>
+    /// Gets or sets the FK to the assigned <see cref="HeimdallUser"/>
+    /// (<c>tickets.assignee_id</c>, nullable). <c>null</c> represents the legitimate
+    /// "unassigned" state per <c>docs/proposals/team-collaboration.md</c> §5.3.
+    /// </summary>
+    public Guid? AssigneeId { get; set; }
 
     /// <summary>Gets or sets the UTC offset timestamp when the ticket was created.</summary>
     public DateTimeOffset DateCreated { get; set; }

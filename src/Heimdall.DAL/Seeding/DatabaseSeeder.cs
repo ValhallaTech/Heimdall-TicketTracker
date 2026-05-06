@@ -15,6 +15,13 @@ namespace Heimdall.DAL.Seeding;
 /// All rows are generated deterministically from the row index, so successive seeding runs
 /// produce predictable, reproducible data sets. A single <c>unnest</c>-based
 /// <c>INSERT … SELECT</c> statement is used to minimise round-trips to the database.
+/// After Phase 2.4 / 2.5 (<c>M202605050020</c>–<c>M202605050025</c>) every ticket carries
+/// FK columns to <c>projects</c>, <c>teams</c>, and <c>users</c>; the legacy free-form
+/// <c>reporter</c> / <c>assignee</c> varchar columns no longer exist. The synthetic
+/// reporter / assignee strings are therefore dropped entirely (per
+/// <c>docs/proposals/team-collaboration.md</c> §2 and §9 decision 5) and every seeded
+/// ticket is anchored to the default hierarchy created by
+/// <c>DefaultHierarchyBootstrapper</c>.
 /// </remarks>
 public sealed class DatabaseSeeder
 {
@@ -38,8 +45,14 @@ public sealed class DatabaseSeeder
 
     /// <summary>
     /// Bulk-inserts <paramref name="count"/> deterministic synthetic rows into <c>tickets</c>
-    /// using a single <c>unnest</c>-based <c>INSERT … SELECT</c> statement.
+    /// using a single <c>unnest</c>-based <c>INSERT … SELECT</c> statement. Every row is
+    /// anchored to the supplied default project / team / reporter so the post-Phase-2.4 / 2.5
+    /// NOT NULL FK constraints on <c>tickets.project_id</c>, <c>tickets.team_id</c>, and
+    /// <c>tickets.reporter_id</c> are satisfied.
     /// </summary>
+    /// <param name="projectId">FK to seed into <c>tickets.project_id</c> on every row.</param>
+    /// <param name="teamId">FK to seed into <c>tickets.team_id</c> on every row.</param>
+    /// <param name="reporterId">FK to seed into <c>tickets.reporter_id</c> on every row.</param>
     /// <param name="count">
     /// Number of rows to insert. Must be greater than zero. Defaults to <c>50</c>.
     /// </param>
@@ -48,7 +61,12 @@ public sealed class DatabaseSeeder
     /// <exception cref="ArgumentOutOfRangeException">
     /// Thrown when <paramref name="count"/> is less than <c>1</c>.
     /// </exception>
-    public async Task SeedAsync(int count = 50, CancellationToken cancellationToken = default)
+    public async Task SeedAsync(
+        Guid projectId,
+        Guid teamId,
+        Guid reporterId,
+        int count = 50,
+        CancellationToken cancellationToken = default)
     {
         ArgumentOutOfRangeException.ThrowIfLessThan(count, 1);
 
@@ -56,8 +74,6 @@ public sealed class DatabaseSeeder
         var descriptions = new string[count];
         var statuses = new short[count];
         var priorities = new short[count];
-        var reporters = new string[count];
-        var assignees = new string?[count];
         var datesCreated = new DateTimeOffset[count];
         var datesUpdated = new DateTimeOffset[count];
 
@@ -71,25 +87,30 @@ public sealed class DatabaseSeeder
             descriptions[i] = $"This is the description for sample ticket number {i + 1}.";
             statuses[i] = (short)(i % 4);    // cycles Open / InProgress / Resolved / Closed
             priorities[i] = (short)(i % 4);  // cycles Low / Medium / High / Critical
-            reporters[i] = $"reporter{i % 5}";
-            assignees[i] = i % 3 == 0 ? null : $"assignee{i % 4}";
             datesCreated[i] = anchor.AddHours(-i);
             datesUpdated[i] = anchor.AddHours(-i + (i % 3));
         }
 
+        // project_id / team_id / reporter_id are scalar (one per call); broadcast across
+        // every row produced by unnest. assignee_id stays NULL — "unassigned" is a real
+        // ticket state per docs/proposals/team-collaboration.md §5.3 and the FK is
+        // ON DELETE SET NULL.
         const string sql = """
             INSERT INTO tickets
-                (title, description, status, priority, reporter, assignee, date_created, date_updated)
-            SELECT * FROM unnest(
+                (title, description, status, priority,
+                 project_id, team_id, reporter_id, assignee_id,
+                 date_created, date_updated)
+            SELECT t.title, t.description, t.status, t.priority,
+                   @ProjectId, @TeamId, @ReporterId, NULL,
+                   t.date_created, t.date_updated
+            FROM unnest(
                 @Titles::varchar[],
                 @Descriptions::text[],
                 @Statuses::int2[],
                 @Priorities::int2[],
-                @Reporters::varchar[],
-                @Assignees::varchar[],
                 @DatesCreated::timestamptz[],
                 @DatesUpdated::timestamptz[]
-            );
+            ) AS t(title, description, status, priority, date_created, date_updated);
             """;
 
         await using var connection = new NpgsqlConnection(_connectionString);
@@ -99,12 +120,13 @@ public sealed class DatabaseSeeder
             sql,
             new
             {
+                ProjectId = projectId,
+                TeamId = teamId,
+                ReporterId = reporterId,
                 Titles = titles,
                 Descriptions = descriptions,
                 Statuses = statuses,
                 Priorities = priorities,
-                Reporters = reporters,
-                Assignees = assignees,
                 DatesCreated = datesCreated,
                 DatesUpdated = datesUpdated,
             },

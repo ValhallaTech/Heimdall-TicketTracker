@@ -27,7 +27,8 @@ public class TicketRepository : ITicketRepository
     // detoasting work.
     private const string SelectColumns =
         "id AS Id, title AS Title, description AS Description, status AS Status, "
-        + "priority AS Priority, reporter AS Reporter, assignee AS Assignee, "
+        + "priority AS Priority, project_id AS ProjectId, team_id AS TeamId, "
+        + "reporter_id AS ReporterId, assignee_id AS AssigneeId, "
         + "date_created AS DateCreated, date_updated AS DateUpdated";
 
     // List projection — excludes description because the Tickets list page does not
@@ -35,7 +36,8 @@ public class TicketRepository : ITicketRepository
     // which is correct for any list-only consumer (the cached list DTO never reads it).
     private const string ListSelectColumns =
         "id AS Id, title AS Title, status AS Status, priority AS Priority, "
-        + "reporter AS Reporter, assignee AS Assignee, "
+        + "project_id AS ProjectId, team_id AS TeamId, "
+        + "reporter_id AS ReporterId, assignee_id AS AssigneeId, "
         + "date_created AS DateCreated, date_updated AS DateUpdated";
 
     // Defensive upper bound on the unfiltered "list everything" query. The cached list
@@ -109,8 +111,10 @@ public class TicketRepository : ITicketRepository
         string whereClause = string.Empty;
         if (!string.IsNullOrEmpty(query.SearchText))
         {
-            whereClause =
-                "WHERE (title ILIKE @Search OR description ILIKE @Search OR reporter ILIKE @Search OR COALESCE(assignee, '') ILIKE @Search)";
+            // Phase 2.5 (M202605050025) dropped the legacy free-form reporter / assignee
+            // text columns; user-name search is the responsibility of Phase 2.8 step 24
+            // (proper user-picker / display-name resolution) and not in scope here.
+            whereClause = "WHERE (title ILIKE @Search OR description ILIKE @Search)";
             parameters.Add("Search", $"%{query.SearchText}%");
         }
 
@@ -194,12 +198,13 @@ public class TicketRepository : ITicketRepository
         using var connection = CreateConnection();
         // status / priority columns are SMALLINT; explicit ::smallint casts keep the parameter
         // type the planner sees stable (Dapper binds the int-backed enums as int4 by default).
+        // FK columns are bound as Guid via Dapper's default uuid mapping — no casts required.
         const string sql =
             @"
 INSERT INTO tickets
-    (title, description, status, priority, reporter, assignee, date_created, date_updated)
+    (title, description, status, priority, project_id, team_id, reporter_id, assignee_id, date_created, date_updated)
 VALUES
-    (@Title, @Description, @Status::smallint, @Priority::smallint, @Reporter, @Assignee, @DateCreated, @DateUpdated)
+    (@Title, @Description, @Status::smallint, @Priority::smallint, @ProjectId, @TeamId, @ReporterId, @AssigneeId, @DateCreated, @DateUpdated)
 RETURNING id;";
         var command = new CommandDefinition(sql, ticket, cancellationToken: cancellationToken);
         var id = await connection.ExecuteScalarAsync<int>(command).ConfigureAwait(false);
@@ -228,8 +233,10 @@ UPDATE tickets SET
     description  = @Description,
     status       = @Status::smallint,
     priority     = @Priority::smallint,
-    reporter     = @Reporter,
-    assignee     = @Assignee,
+    project_id   = @ProjectId,
+    team_id      = @TeamId,
+    reporter_id  = @ReporterId,
+    assignee_id  = @AssigneeId,
     date_updated = now()
 WHERE id = @Id;";
         var command = new CommandDefinition(sql, ticket, cancellationToken: cancellationToken);

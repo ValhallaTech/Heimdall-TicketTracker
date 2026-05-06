@@ -33,8 +33,10 @@ public partial class TicketMapper : ITicketMapper
             Description = source.Description,
             Status = source.Status,
             Priority = source.Priority,
-            Reporter = source.Reporter,
-            Assignee = source.Assignee,
+            ProjectId = source.ProjectId,
+            TeamId = source.TeamId,
+            ReporterId = source.ReporterId,
+            AssigneeId = source.AssigneeId,
             DateCreated = source.DateCreated,
             DateUpdated = source.DateUpdated,
         };
@@ -50,8 +52,10 @@ public partial class TicketMapper : ITicketMapper
             Description = source.Description,
             Status = source.Status,
             Priority = source.Priority,
-            Reporter = source.Reporter,
-            Assignee = source.Assignee,
+            ProjectId = source.ProjectId,
+            TeamId = source.TeamId,
+            ReporterId = source.ReporterId,
+            AssigneeId = source.AssigneeId,
         };
     }
 

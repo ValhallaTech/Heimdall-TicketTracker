@@ -52,6 +52,13 @@ public static class ServiceCollectionExtensions
         services.AddScoped<IOrganizationMemberRepository, OrganizationMemberRepository>();
         services.AddScoped<ITeamMemberRepository, TeamMemberRepository>();
         services.AddScoped<IProjectMemberRepository, ProjectMemberRepository>();
+
+        // Phase 2.6 step 18 (docs/proposals/team-collaboration.md §3): the
+        // permission service short-circuits on system_admin without taking a
+        // dependency on Microsoft.AspNetCore.Identity. Same per-request lifetime
+        // as the rest of the repository layer; each call opens its own
+        // NpgsqlConnection.
+        services.AddScoped<IUserLookup, UserLookup>();
         return services;
     }
 }

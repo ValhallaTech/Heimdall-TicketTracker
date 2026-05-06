@@ -64,16 +64,21 @@
             <fieldset class="row g-3">
                 <legend class="col-12 col-form-label fw-medium pb-0 pt-0">People</legend>
 
+                @* TODO(Phase 2.8 step 24): proper user-picker / display-name resolution. *@
+                @* These are raw Guid inputs as a minimum compile-fix after the Phase 2.5  *@
+                @* migrations replaced the legacy reporter / assignee free-form text       *@
+                @* columns with FK uuid columns. The Frontend Expert will replace these    *@
+                @* with a typeahead user-picker bound to the team membership in step 24.   *@
                 <div class="col-md-6">
-                    <label for="reporter" class="form-label">Reporter</label>
-                    <input id="reporter" name="Model.Reporter" class="form-control" @bind="Model.Reporter" placeholder="Reporter name" />
+                    <label for="reporter" class="form-label">Reporter (user id)</label>
+                    <input id="reporter" name="Model.ReporterId" class="form-control" @bind="Model.ReporterId" placeholder="Reporter user id (UUID)" />
                 </div>
                 <div class="col-md-6">
                     <label for="assignee" class="form-label">
-                        Assignee
+                        Assignee (user id)
                         <span class="text-body-secondary fw-normal">(optional)</span>
                     </label>
-                    <input id="assignee" name="Model.Assignee" class="form-control" @bind="Model.Assignee" placeholder="Assignee name" />
+                    <input id="assignee" name="Model.AssigneeId" class="form-control" @bind="Model.AssigneeId" placeholder="Assignee user id (UUID)" />
                 </div>
             </fieldset>
 

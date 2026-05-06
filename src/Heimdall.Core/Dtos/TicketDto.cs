@@ -28,13 +28,33 @@ public class TicketDto
     [Required]
     public TicketPriority Priority { get; set; } = TicketPriority.Medium;
 
-    /// <summary>Gets or sets the reporter / submitter name.</summary>
-    [Required, StringLength(100)]
-    public string Reporter { get; set; } = string.Empty;
+    /// <summary>
+    /// Gets or sets the FK to the owning project. Required after Phase 2.4 (NOT NULL on the
+    /// underlying column).
+    /// </summary>
+    [Required]
+    public Guid ProjectId { get; set; }
 
-    /// <summary>Gets or sets the assignee name (may be empty when unassigned).</summary>
-    [StringLength(100)]
-    public string? Assignee { get; set; }
+    /// <summary>
+    /// Gets or sets the FK to the owning team. Required after Phase 2.4 (NOT NULL on the
+    /// underlying column). Drives the per-team queue filter in
+    /// <c>docs/proposals/team-collaboration.md</c> §5.1.
+    /// </summary>
+    [Required]
+    public Guid TeamId { get; set; }
+
+    /// <summary>
+    /// Gets or sets the FK to the reporting user. Required after Phase 2.5 — every ticket
+    /// always has a reporter.
+    /// </summary>
+    [Required]
+    public Guid ReporterId { get; set; }
+
+    /// <summary>
+    /// Gets or sets the FK to the assigned user. <c>null</c> represents an unassigned
+    /// ticket (a legitimate state per <c>docs/proposals/team-collaboration.md</c> §5.3).
+    /// </summary>
+    public Guid? AssigneeId { get; set; }
 
     /// <summary>Gets or sets the UTC offset timestamp when the ticket was created.</summary>
     public DateTimeOffset DateCreated { get; set; }

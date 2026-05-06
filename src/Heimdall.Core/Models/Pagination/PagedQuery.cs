@@ -24,8 +24,10 @@ public sealed class PagedQuery
             ["Title"] = "title",
             ["Status"] = "status",
             ["Priority"] = "priority",
-            ["Reporter"] = "reporter",
-            ["Assignee"] = "assignee",
+            ["ProjectId"] = "project_id",
+            ["TeamId"] = "team_id",
+            ["ReporterId"] = "reporter_id",
+            ["AssigneeId"] = "assignee_id",
             ["DateCreated"] = "date_created",
             ["DateUpdated"] = "date_updated",
         }.ToImmutableDictionary(StringComparer.OrdinalIgnoreCase);
@@ -41,8 +43,7 @@ public sealed class PagedQuery
     public int PageSize { get; }
 
     /// <summary>
-    /// Gets the optional free-text search applied against title, description, reporter,
-    /// and assignee.
+    /// Gets the optional free-text search applied against title and description.
     /// </summary>
     public string? SearchText { get; }
 

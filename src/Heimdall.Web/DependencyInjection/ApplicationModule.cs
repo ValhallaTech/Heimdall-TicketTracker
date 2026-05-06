@@ -1,10 +1,12 @@
 using System;
 using Autofac;
+using Heimdall.BLL.Authorization;
 using Heimdall.BLL.Mapping;
 using Heimdall.BLL.Services;
 using Heimdall.Core.Interfaces;
 using Heimdall.DAL.Caching;
 using Heimdall.DAL.Repositories;
+using Microsoft.Extensions.Configuration;
 
 namespace Heimdall.Web.DependencyInjection;
 
@@ -35,5 +37,38 @@ public class ApplicationModule : Autofac.Module
         // Mapping/ITicketMapper.cs. The generated mapper is stateless and thread-safe,
         // so we register it as a singleton.
         builder.RegisterType<TicketMapper>().As<ITicketMapper>().SingleInstance();
+
+        // Authorization seam — docs/proposals/team-collaboration.md §6 (Phase 2.6 step 18).
+        // Both implementations are registered AsSelf so the configuration-driven factory
+        // below can resolve whichever one matches the Authorization:Provider flag without
+        // accidentally exposing both as IPermissionService.
+        builder
+            .RegisterType<TeamRoleBackedPermissionService>()
+            .AsSelf()
+            .InstancePerLifetimeScope();
+        builder
+            .RegisterType<NotImplementedPermissionService>()
+            .AsSelf()
+            .InstancePerLifetimeScope();
+
+        // Bind IPermissionService against the configured provider. Default = "TeamRole"
+        // (Phase 2 behaviour); "OpenFga" → throws on every call until Phase 3 ships its
+        // real implementation, which surfaces a premature flip of the flag immediately
+        // instead of silently allowing or denying actions. Any other value is treated as
+        // a misconfiguration and bound to the not-implemented service for the same
+        // fail-loud reason.
+        builder
+            .Register(componentContext =>
+            {
+                IConfiguration configuration = componentContext.Resolve<IConfiguration>();
+                string? provider = configuration["Authorization:Provider"];
+                bool useTeamRole = string.IsNullOrWhiteSpace(provider)
+                    || string.Equals(provider, "TeamRole", StringComparison.OrdinalIgnoreCase);
+                return useTeamRole
+                    ? (IPermissionService)componentContext.Resolve<TeamRoleBackedPermissionService>()
+                    : componentContext.Resolve<NotImplementedPermissionService>();
+            })
+            .As<IPermissionService>()
+            .InstancePerLifetimeScope();
     }
 }
