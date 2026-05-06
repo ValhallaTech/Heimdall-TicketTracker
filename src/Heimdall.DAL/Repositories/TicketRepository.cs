@@ -93,6 +93,23 @@ public class TicketRepository : ITicketRepository
     }
 
     /// <inheritdoc />
+    public async Task<IReadOnlyList<Ticket>> GetByTeamAsync(
+        Guid teamId,
+        CancellationToken cancellationToken = default
+    )
+    {
+        using var connection = CreateConnection();
+        var command = new CommandDefinition(
+            $"SELECT {ListSelectColumns} FROM tickets WHERE team_id = @TeamId "
+                + $"ORDER BY date_created DESC, id DESC LIMIT {GetAllRowCap}",
+            new { TeamId = teamId },
+            cancellationToken: cancellationToken
+        );
+        var rows = await connection.QueryAsync<Ticket>(command).ConfigureAwait(false);
+        return [.. rows];
+    }
+
+    /// <inheritdoc />
     public async Task<(IReadOnlyList<Ticket> Items, int TotalCount)> GetPagedAsync(
         PagedQuery query,
         CancellationToken cancellationToken = default

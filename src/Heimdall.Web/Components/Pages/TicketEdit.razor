@@ -9,6 +9,8 @@
 @inject IOrganizationRepository OrganizationRepository
 @inject ITeamRepository TeamRepository
 @inject IProjectRepository ProjectRepository
+@inject ITeamMemberRepository TeamMemberRepository
+@inject IUserLookup UserLookup
 @inject NavigationManager Navigation
 
 <PageTitle>@(IsNew ? "New Ticket" : "Edit Ticket") — Heimdall TicketTracker</PageTitle>
@@ -69,23 +71,65 @@
             <hr class="my-3" />
 
             <fieldset class="row g-3">
+                <legend class="col-12 col-form-label fw-medium pb-0 pt-0">Routing</legend>
+
+                <div class="col-md-6">
+                    <label for="team" class="form-label">Team</label>
+                    <InputSelect id="team"
+                                 class="form-select"
+                                 Value="Model.TeamId"
+                                 ValueExpression="@(() => Model.TeamId)"
+                                 ValueChanged="@((Guid v) => OnTeamChangedAsync(v))">
+                        <option value="@Guid.Empty" disabled>Select a team…</option>
+                        @foreach (var t in _teams)
+                        {
+                            <option value="@t.Id">@t.Name</option>
+                        }
+                    </InputSelect>
+                </div>
+                <div class="col-md-6">
+                    <label for="project" class="form-label">Project</label>
+                    <InputSelect id="project" class="form-select" @bind-Value="Model.ProjectId">
+                        <option value="@Guid.Empty" disabled>Select a project…</option>
+                        @foreach (var p in _projects)
+                        {
+                            <option value="@p.Id">@p.Name</option>
+                        }
+                    </InputSelect>
+                </div>
+            </fieldset>
+
+            <hr class="my-3" />
+
+            <fieldset class="row g-3">
                 <legend class="col-12 col-form-label fw-medium pb-0 pt-0">People</legend>
 
-                @* TODO(Phase 2.8 step 24): proper user-picker / display-name resolution. *@
-                @* These are raw Guid inputs as a minimum compile-fix after the Phase 2.5  *@
-                @* migrations replaced the legacy reporter / assignee free-form text       *@
-                @* columns with FK uuid columns. The Frontend Expert will replace these    *@
-                @* with a typeahead user-picker bound to the team membership in step 24.   *@
+                @* Phase 2.8 step 24 — reporter / assignee pickers bound to the      *@
+                @* selected team's membership. The id attributes match those used by *@
+                @* the Phase 2.5 raw-Guid inputs so existing aria-/test selectors    *@
+                @* continue to work; the underlying control is now a <select>.      *@
                 <div class="col-md-6">
-                    <label for="reporter" class="form-label">Reporter (user id)</label>
-                    <input id="reporter" name="Model.ReporterId" class="form-control" @bind="Model.ReporterId" placeholder="Reporter user id (UUID)" />
+                    <label for="reporter" class="form-label">Reporter</label>
+                    <InputSelect id="reporter" class="form-select" @bind-Value="Model.ReporterId">
+                        <option value="@Guid.Empty" disabled>Select a reporter…</option>
+                        @foreach (var m in _teamMembers)
+                        {
+                            <option value="@m.UserId">@(_memberNames.GetValueOrDefault(m.UserId, m.UserId.ToString()))</option>
+                        }
+                    </InputSelect>
                 </div>
                 <div class="col-md-6">
                     <label for="assignee" class="form-label">
-                        Assignee (user id)
+                        Assignee
                         <span class="text-body-secondary fw-normal">(optional)</span>
                     </label>
-                    <input id="assignee" name="Model.AssigneeId" class="form-control" @bind="Model.AssigneeId" placeholder="Assignee user id (UUID)" />
+                    <InputSelect id="assignee" class="form-select" @bind-Value="Model.AssigneeId">
+                        <option value="">Unassigned</option>
+                        @foreach (var m in _teamMembers)
+                        {
+                            <option value="@m.UserId">@(_memberNames.GetValueOrDefault(m.UserId, m.UserId.ToString()))</option>
+                        }
+                    </InputSelect>
                 </div>
             </fieldset>
 
@@ -120,6 +164,14 @@
 
     private bool IsNew => Id is null or 0;
 
+    // Phase 2.8 step 24 — picker backing data. Loaded from the repositories in
+    // OnParametersSetAsync. Lists are intentionally readonly references rebound
+    // (not mutated in-place) so Blazor's diffing picks up the change.
+    private IReadOnlyList<Team> _teams = [];
+    private IReadOnlyList<Project> _projects = [];
+    private IReadOnlyList<TeamMember> _teamMembers = [];
+    private readonly Dictionary<Guid, string> _memberNames = [];
+
     protected override void OnInitialized()
     {
         Model ??= new TicketDto();
@@ -127,6 +179,11 @@
 
     protected override async Task OnParametersSetAsync()
     {
+        if (_teams.Count == 0)
+        {
+            _teams = await TeamRepository.GetAllAsync();
+        }
+
         if (IsNew)
         {
             if (Model.Id != 0)
@@ -135,12 +192,82 @@
             }
 
             await PopulateNewTicketDefaultsAsync();
-            return;
         }
-
-        if (Model.Id != Id!.Value)
+        else if (Model.Id != Id!.Value)
         {
             Model = await TicketService.GetByIdAsync(Id!.Value) ?? new TicketDto { Id = Id!.Value };
+        }
+
+        // Whether new or existing, ensure the dependent pickers (projects /
+        // members) are populated for the currently-selected team.
+        if (Model.TeamId != Guid.Empty)
+        {
+            await ReloadTeamScopedPickersAsync(Model.TeamId);
+        }
+    }
+
+    /// <summary>
+    /// Reloads <see cref="_projects"/> and <see cref="_teamMembers"/> for the given
+    /// <paramref name="teamId"/>, and resolves member display names via
+    /// <see cref="IUserLookup.GetByIdAsync"/>. Called both on initial load and when
+    /// the user changes the team picker.
+    /// </summary>
+    private async Task ReloadTeamScopedPickersAsync(Guid teamId)
+    {
+        var projectsTask = ProjectRepository.GetByTeamAsync(teamId);
+        var membersTask = TeamMemberRepository.GetByParentAsync(teamId);
+        await Task.WhenAll(projectsTask, membersTask);
+        _projects = projectsTask.Result;
+        _teamMembers = membersTask.Result;
+
+        // Resolve any missing member display names. Failures fall through to a
+        // raw-Guid label rather than throwing.
+        var missing = _teamMembers
+            .Select(m => m.UserId)
+            .Where(id => !_memberNames.ContainsKey(id))
+            .ToList();
+        if (missing.Count > 0)
+        {
+            var lookups = missing.Select(async id =>
+            {
+                try
+                {
+                    var user = await UserLookup.GetByIdAsync(id);
+                    return (id, name: user?.Email);
+                }
+                catch
+                {
+                    return (id, name: (string?)null);
+                }
+            });
+            foreach (var (id, name) in await Task.WhenAll(lookups))
+            {
+                if (!string.IsNullOrWhiteSpace(name))
+                {
+                    _memberNames[id] = name!;
+                }
+            }
+        }
+    }
+
+    /// <summary>
+    /// Handler for the team-picker. Updates <see cref="TicketDto.TeamId"/>, clears
+    /// the dependent project / assignee selection (since the previous values likely
+    /// belong to a different team), and reloads the projects + members lists.
+    /// </summary>
+    private async Task OnTeamChangedAsync(Guid newTeamId)
+    {
+        Model.TeamId = newTeamId;
+        Model.ProjectId = Guid.Empty;
+        Model.AssigneeId = null;
+        if (newTeamId != Guid.Empty)
+        {
+            await ReloadTeamScopedPickersAsync(newTeamId);
+        }
+        else
+        {
+            _projects = [];
+            _teamMembers = [];
         }
     }
 
@@ -151,11 +278,6 @@
     /// <see cref="Guid.Empty"/>. Defaults are resolved by the same hard-coded slug
     /// constants that <see cref="DefaultHierarchyBootstrapper"/> creates at startup.
     /// </summary>
-    /// <remarks>
-    /// TODO(Phase 2.8 step 24): replace these defaults with a proper team / project
-    /// picker bound to the user's memberships (see
-    /// <c>docs/proposals/team-collaboration.md</c> §7).
-    /// </remarks>
     private async Task PopulateNewTicketDefaultsAsync()
     {
         if (Model.ProjectId == Guid.Empty || Model.TeamId == Guid.Empty)

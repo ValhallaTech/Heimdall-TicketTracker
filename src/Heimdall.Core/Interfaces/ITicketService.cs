@@ -18,6 +18,19 @@ public interface ITicketService
     );
 
     /// <summary>
+    /// Returns the queue (tickets routed to the team) for the given <paramref name="teamId"/>.
+    /// Not cached — team-queue cardinality is high and cache invalidation on every
+    /// route / claim / assign would thrash. Drives the per-team queue page
+    /// (Phase 2.8 step 23 of <c>docs/proposals/team-collaboration.md</c> §5.1 / §7).
+    /// </summary>
+    /// <param name="teamId">The team whose queue is being read.</param>
+    /// <param name="cancellationToken">Cooperative cancellation token.</param>
+    Task<IReadOnlyList<TicketDto>> GetByTeamAsync(
+        Guid teamId,
+        CancellationToken cancellationToken = default
+    );
+
+    /// <summary>
     /// Returns a single page of tickets matching the supplied <paramref name="query"/>,
     /// with total count metadata for pagination controls.
     /// Results are not cached due to the high cardinality of possible permutations.

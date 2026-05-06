@@ -19,6 +19,18 @@ public interface ITicketRepository
     );
 
     /// <summary>
+    /// Returns up to 500 tickets routed to the given <paramref name="teamId"/>, ordered
+    /// newest first. Drives the per-team queue UI (Phase 2.8 step 23 of
+    /// <c>docs/proposals/team-collaboration.md</c> §5.1 / §7).
+    /// </summary>
+    /// <param name="teamId">The team whose queue is being read.</param>
+    /// <param name="cancellationToken">Cooperative cancellation token.</param>
+    Task<IReadOnlyList<Ticket>> GetByTeamAsync(
+        Guid teamId,
+        CancellationToken cancellationToken = default
+    );
+
+    /// <summary>
     /// Returns a single page of tickets that match the supplied <paramref name="query"/>,
     /// together with the total number of matching records (for pagination controls).
     /// </summary>

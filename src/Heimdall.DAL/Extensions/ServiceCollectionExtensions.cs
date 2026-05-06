@@ -39,6 +39,11 @@ public static class ServiceCollectionExtensions
         // itself is stateless and could be a singleton.
         services.AddScoped<IAuditEventWriter, AuditEventWriter>();
 
+        // Phase 2.8 step 25 (docs/proposals/team-collaboration.md §7) — read side
+        // of the audit log, used by the admin audit feed. Scoped to mirror the
+        // writer; each call opens its own NpgsqlConnection.
+        services.AddScoped<IAuditEventReader, AuditEventReader>();
+
         // Phase 2.1 collaboration-hierarchy repositories
         // (docs/proposals/team-collaboration.md §4 step 13). Scoped to match the
         // existing audit writer; each call opens its own NpgsqlConnection.

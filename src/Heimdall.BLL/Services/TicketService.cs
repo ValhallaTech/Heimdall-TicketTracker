@@ -118,6 +118,18 @@ public class TicketService : ITicketService
     }
 
     /// <inheritdoc />
+    public async Task<IReadOnlyList<TicketDto>> GetByTeamAsync(
+        Guid teamId,
+        CancellationToken cancellationToken = default
+    )
+    {
+        var entries = await _repository
+            .GetByTeamAsync(teamId, cancellationToken)
+            .ConfigureAwait(false);
+        return _mapper.Map(entries);
+    }
+
+    /// <inheritdoc />
     public async Task<PagedResult<TicketDto>> GetPagedAsync(
         PagedQuery query,
         CancellationToken cancellationToken = default
