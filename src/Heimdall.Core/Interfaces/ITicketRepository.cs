@@ -1,4 +1,6 @@
+using System;
 using System.Collections.Generic;
+using System.Data;
 using System.Threading;
 using System.Threading.Tasks;
 using Heimdall.Core.Models;
@@ -42,4 +44,45 @@ public interface ITicketRepository
 
     /// <summary>Deletes the ticket with the given id. Returns <c>true</c> if a row was affected.</summary>
     Task<bool> DeleteAsync(int id, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Updates only the <c>team_id</c> column of the ticket (and refreshes
+    /// <c>date_updated</c>). The caller supplies an open <paramref name="connection"/>
+    /// and active <paramref name="transaction"/> so the audit-event INSERT for the
+    /// route operation can ride alongside in the same unit of work — see
+    /// <c>docs/proposals/team-collaboration.md</c> §5.4.
+    /// </summary>
+    /// <param name="connection">An already-open database connection. Must not be <c>null</c>.</param>
+    /// <param name="transaction">An active transaction on <paramref name="connection"/>. Must not be <c>null</c>.</param>
+    /// <param name="ticketId">The ticket primary key.</param>
+    /// <param name="newTeamId">The team id to assign to the ticket.</param>
+    /// <param name="cancellationToken">Propagates notification that the operation should be cancelled.</param>
+    /// <returns><c>true</c> if a row was updated; otherwise <c>false</c>.</returns>
+    Task<bool> UpdateTeamAsync(
+        IDbConnection connection,
+        IDbTransaction transaction,
+        int ticketId,
+        Guid newTeamId,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Updates only the <c>assignee_id</c> column of the ticket (and refreshes
+    /// <c>date_updated</c>). Pass <c>null</c> for <paramref name="newAssigneeId"/> to
+    /// unassign. The caller supplies an open <paramref name="connection"/> and active
+    /// <paramref name="transaction"/> so the audit-event INSERT for the assign operation
+    /// can ride alongside in the same unit of work — see
+    /// <c>docs/proposals/team-collaboration.md</c> §5.4.
+    /// </summary>
+    /// <param name="connection">An already-open database connection. Must not be <c>null</c>.</param>
+    /// <param name="transaction">An active transaction on <paramref name="connection"/>. Must not be <c>null</c>.</param>
+    /// <param name="ticketId">The ticket primary key.</param>
+    /// <param name="newAssigneeId">The user id to assign, or <c>null</c> to unassign.</param>
+    /// <param name="cancellationToken">Propagates notification that the operation should be cancelled.</param>
+    /// <returns><c>true</c> if a row was updated; otherwise <c>false</c>.</returns>
+    Task<bool> UpdateAssigneeAsync(
+        IDbConnection connection,
+        IDbTransaction transaction,
+        int ticketId,
+        Guid? newAssigneeId,
+        CancellationToken cancellationToken = default);
 }

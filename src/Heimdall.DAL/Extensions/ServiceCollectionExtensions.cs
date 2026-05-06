@@ -59,6 +59,11 @@ public static class ServiceCollectionExtensions
         // as the rest of the repository layer; each call opens its own
         // NpgsqlConnection.
         services.AddScoped<IUserLookup, UserLookup>();
+
+        // Phase 2.7 (docs/proposals/team-collaboration.md §5.4): the BLL ticket
+        // service owns the transaction that wraps the ticket UPDATE + audit-event
+        // INSERT. The factory is stateless — singleton is correct.
+        services.AddSingleton<IDbConnectionFactory, NpgsqlConnectionFactory>();
         return services;
     }
 }

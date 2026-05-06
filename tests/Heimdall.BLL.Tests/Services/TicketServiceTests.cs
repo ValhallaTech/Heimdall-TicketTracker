@@ -1,7 +1,10 @@
+using System.Data;
+using System.Text.Json;
 using FluentAssertions;
 using Heimdall.BLL.Authorization;
 using Heimdall.BLL.Mapping;
 using Heimdall.BLL.Services;
+using Heimdall.Core.Auditing;
 using Heimdall.Core.Caching;
 using Heimdall.Core.Dtos;
 using Heimdall.Core.Interfaces;
@@ -17,10 +20,19 @@ public class TicketServiceTests
     private readonly Mock<ITicketRepository> _repository = new(MockBehavior.Strict);
     private readonly Mock<ICacheService> _cache = new(MockBehavior.Strict);
     private readonly Mock<IPermissionService> _permissions = new(MockBehavior.Loose);
+    private readonly Mock<IDbConnectionFactory> _connectionFactory = new(MockBehavior.Loose);
+    private readonly Mock<IAuditEventWriter> _auditWriter = new(MockBehavior.Loose);
     private readonly ITicketMapper _mapper = new TicketMapper();
 
     private TicketService CreateSut() =>
-        new(_repository.Object, _cache.Object, _mapper, _permissions.Object, NullLogger<TicketService>.Instance);
+        new(
+            _repository.Object,
+            _cache.Object,
+            _mapper,
+            _permissions.Object,
+            _connectionFactory.Object,
+            _auditWriter.Object,
+            NullLogger<TicketService>.Instance);
 
     private static readonly Guid SeedReporterId = Guid.Parse("cccccccc-cccc-cccc-cccc-cccccccccccc");
 
@@ -42,7 +54,14 @@ public class TicketServiceTests
     public void Should_Throw_When_RepositoryIsNull()
     {
         Action act = () =>
-            new TicketService(null!, _cache.Object, _mapper, _permissions.Object, NullLogger<TicketService>.Instance);
+            new TicketService(
+                null!,
+                _cache.Object,
+                _mapper,
+                _permissions.Object,
+                _connectionFactory.Object,
+                _auditWriter.Object,
+                NullLogger<TicketService>.Instance);
         act.Should().Throw<ArgumentNullException>();
     }
 
@@ -55,6 +74,8 @@ public class TicketServiceTests
                 null!,
                 _mapper,
                 _permissions.Object,
+                _connectionFactory.Object,
+                _auditWriter.Object,
                 NullLogger<TicketService>.Instance
             );
         act.Should().Throw<ArgumentNullException>();
@@ -69,6 +90,8 @@ public class TicketServiceTests
                 _cache.Object,
                 null!,
                 _permissions.Object,
+                _connectionFactory.Object,
+                _auditWriter.Object,
                 NullLogger<TicketService>.Instance
             );
         act.Should().Throw<ArgumentNullException>();
@@ -77,7 +100,14 @@ public class TicketServiceTests
     [Fact]
     public void Should_Throw_When_LoggerIsNull()
     {
-        Action act = () => new TicketService(_repository.Object, _cache.Object, _mapper, _permissions.Object, null!);
+        Action act = () => new TicketService(
+            _repository.Object,
+            _cache.Object,
+            _mapper,
+            _permissions.Object,
+            _connectionFactory.Object,
+            _auditWriter.Object,
+            null!);
         act.Should().Throw<ArgumentNullException>();
     }
 
@@ -89,6 +119,8 @@ public class TicketServiceTests
             _cache.Object,
             _mapper,
             null!,
+            _connectionFactory.Object,
+            _auditWriter.Object,
             NullLogger<TicketService>.Instance);
         act.Should().Throw<ArgumentNullException>();
     }
@@ -105,7 +137,9 @@ public class TicketServiceTests
             cache,
             _mapper,
             _permissions.Object,
-                NullLogger<TicketService>.Instance
+            _connectionFactory.Object,
+            _auditWriter.Object,
+            NullLogger<TicketService>.Instance
         );
 
         var result = await sut.GetAllAsync();
@@ -134,7 +168,9 @@ public class TicketServiceTests
             cache,
             _mapper,
             _permissions.Object,
-                NullLogger<TicketService>.Instance
+            _connectionFactory.Object,
+            _auditWriter.Object,
+            NullLogger<TicketService>.Instance
         );
 
         // First call: miss + set
@@ -387,5 +423,654 @@ public class TicketServiceTests
             c => c.RemoveAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()),
             Times.Never
         );
+    }
+
+    // ─── Phase 2.7 / 2.8 / 2.9 — RouteTicketAsync / ClaimTicketAsync / AssignTicketAsync ───
+    //
+    // These tests exercise the transactional, audit-writing branches added in steps 20-22.
+    // A connection + transaction pair is mocked via IDbConnectionFactory; the service is
+    // expected to call BeginTransaction once, then either Commit (success) or Rollback
+    // (zero-rows-affected race / exception). Audit payload assertions parse the captured
+    // PayloadJson string and check snake_case keys against §5.4 of the team-collaboration
+    // proposal.
+
+    private static readonly Guid SeedActorId = Guid.Parse("aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa");
+    private static readonly Guid SeedTeamId = Guid.Parse("11111111-1111-1111-1111-111111111111");
+    private static readonly Guid OtherTeamId = Guid.Parse("22222222-2222-2222-2222-222222222222");
+    private static readonly Guid TargetUserId = Guid.Parse("dddddddd-dddd-dddd-dddd-dddddddddddd");
+
+    private static Ticket TicketOnTeam(Guid teamId, Guid? assigneeId = null, int id = 7) =>
+        new()
+        {
+            Id = id,
+            Title = "T",
+            Description = "D",
+            Status = TicketStatus.Open,
+            Priority = TicketPriority.Medium,
+            ReporterId = SeedReporterId,
+            TeamId = teamId,
+            AssigneeId = assigneeId,
+            DateCreated = DateTimeOffset.UtcNow,
+            DateUpdated = DateTimeOffset.UtcNow,
+        };
+
+    /// <summary>
+    /// Wires the mock <see cref="IDbConnectionFactory"/> to hand out a fresh
+    /// <see cref="IDbConnection"/> whose <c>BeginTransaction()</c> returns a fresh
+    /// <see cref="IDbTransaction"/>. Returns the connection and transaction so
+    /// individual tests can assert <c>Commit()</c> / <c>Rollback()</c> bookkeeping.
+    /// </summary>
+    private (Mock<IDbConnection> Connection, Mock<IDbTransaction> Transaction) WireConnection()
+    {
+        var transaction = new Mock<IDbTransaction>(MockBehavior.Loose);
+        var connection = new Mock<IDbConnection>(MockBehavior.Loose);
+        connection.Setup(c => c.BeginTransaction()).Returns(transaction.Object);
+        _connectionFactory.Setup(f => f.CreateConnection()).Returns(connection.Object);
+        return (connection, transaction);
+    }
+
+    [Fact]
+    public void Should_Throw_When_ConnectionFactoryIsNull()
+    {
+        Action act = () => new TicketService(
+            _repository.Object,
+            _cache.Object,
+            _mapper,
+            _permissions.Object,
+            null!,
+            _auditWriter.Object,
+            NullLogger<TicketService>.Instance);
+        act.Should().Throw<ArgumentNullException>();
+    }
+
+    [Fact]
+    public void Should_Throw_When_AuditWriterIsNull()
+    {
+        Action act = () => new TicketService(
+            _repository.Object,
+            _cache.Object,
+            _mapper,
+            _permissions.Object,
+            _connectionFactory.Object,
+            null!,
+            NullLogger<TicketService>.Instance);
+        act.Should().Throw<ArgumentNullException>();
+    }
+
+    // ─── Happy path: route ───
+
+    [Fact]
+    public async Task RouteTicketAsync_Should_UpdateTeamAndWriteAudit_When_PermitsAllowAndTeamChanges()
+    {
+        var ticket = TicketOnTeam(SeedTeamId);
+        _repository
+            .Setup(r => r.GetByIdAsync(ticket.Id, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(ticket);
+        _permissions
+            .Setup(p => p.CanRouteTicketAsync(SeedActorId, ticket, OtherTeamId, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(true);
+
+        var (connection, transaction) = WireConnection();
+
+        _repository
+            .Setup(r => r.UpdateTeamAsync(
+                connection.Object,
+                transaction.Object,
+                ticket.Id,
+                OtherTeamId,
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync(true);
+
+        AuditEvent? captured = null;
+        _auditWriter
+            .Setup(w => w.WriteAsync(
+                connection.Object,
+                transaction.Object,
+                It.IsAny<AuditEvent>(),
+                It.IsAny<CancellationToken>()))
+            .Callback<IDbConnection, IDbTransaction, AuditEvent, CancellationToken>(
+                (_, _, e, _) => captured = e)
+            .Returns(Task.CompletedTask);
+
+        _cache
+            .Setup(c => c.RemoveAsync(CacheKeys.TicketList, It.IsAny<CancellationToken>()))
+            .Returns(Task.CompletedTask);
+
+        var sut = CreateSut();
+
+        var result = await sut.RouteTicketAsync(SeedActorId, ticket.Id, OtherTeamId);
+
+        result.Should().BeTrue();
+        _repository.Verify(
+            r => r.UpdateTeamAsync(
+                connection.Object,
+                transaction.Object,
+                ticket.Id,
+                OtherTeamId,
+                It.IsAny<CancellationToken>()),
+            Times.Once);
+        _auditWriter.Verify(
+            w => w.WriteAsync(
+                connection.Object,
+                transaction.Object,
+                It.IsAny<AuditEvent>(),
+                It.IsAny<CancellationToken>()),
+            Times.Once);
+        transaction.Verify(t => t.Commit(), Times.Once);
+        transaction.Verify(t => t.Rollback(), Times.Never);
+        _cache.Verify(
+            c => c.RemoveAsync(CacheKeys.TicketList, It.IsAny<CancellationToken>()),
+            Times.Once);
+
+        captured.Should().NotBeNull();
+        captured!.EventType.Should().Be("ticket_routed");
+        captured.ActorUserId.Should().Be(SeedActorId);
+        captured.Target.Should().Be(ticket.Id.ToString(System.Globalization.CultureInfo.InvariantCulture));
+
+        using var doc = JsonDocument.Parse(captured.PayloadJson);
+        var root = doc.RootElement;
+        root.GetProperty("ticket_id").GetInt32().Should().Be(ticket.Id);
+        root.GetProperty("from_team_id").GetGuid().Should().Be(SeedTeamId);
+        root.GetProperty("to_team_id").GetGuid().Should().Be(OtherTeamId);
+        root.GetProperty("actor_id").GetGuid().Should().Be(SeedActorId);
+    }
+
+    // ─── Happy path: claim ───
+
+    [Fact]
+    public async Task ClaimTicketAsync_Should_AssignToActorAndWriteAudit_When_TicketIsUnassigned()
+    {
+        var ticket = TicketOnTeam(SeedTeamId, assigneeId: null);
+        _repository
+            .Setup(r => r.GetByIdAsync(ticket.Id, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(ticket);
+        _permissions
+            .Setup(p => p.CanAssignTicketAsync(SeedActorId, ticket, SeedActorId, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(true);
+
+        var (connection, transaction) = WireConnection();
+
+        _repository
+            .Setup(r => r.UpdateAssigneeAsync(
+                connection.Object,
+                transaction.Object,
+                ticket.Id,
+                SeedActorId,
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync(true);
+
+        AuditEvent? captured = null;
+        _auditWriter
+            .Setup(w => w.WriteAsync(
+                connection.Object,
+                transaction.Object,
+                It.IsAny<AuditEvent>(),
+                It.IsAny<CancellationToken>()))
+            .Callback<IDbConnection, IDbTransaction, AuditEvent, CancellationToken>(
+                (_, _, e, _) => captured = e)
+            .Returns(Task.CompletedTask);
+
+        _cache
+            .Setup(c => c.RemoveAsync(CacheKeys.TicketList, It.IsAny<CancellationToken>()))
+            .Returns(Task.CompletedTask);
+
+        var sut = CreateSut();
+
+        var result = await sut.ClaimTicketAsync(SeedActorId, ticket.Id);
+
+        result.Should().BeTrue();
+        _repository.Verify(
+            r => r.UpdateAssigneeAsync(
+                connection.Object,
+                transaction.Object,
+                ticket.Id,
+                SeedActorId,
+                It.IsAny<CancellationToken>()),
+            Times.Once);
+        transaction.Verify(t => t.Commit(), Times.Once);
+
+        captured.Should().NotBeNull();
+        captured!.EventType.Should().Be("ticket_assigned");
+        using var doc = JsonDocument.Parse(captured.PayloadJson);
+        var root = doc.RootElement;
+        root.GetProperty("ticket_id").GetInt32().Should().Be(ticket.Id);
+        root.GetProperty("from_assignee_id").ValueKind.Should().Be(JsonValueKind.Null);
+        root.GetProperty("to_assignee_id").GetGuid().Should().Be(SeedActorId);
+        root.GetProperty("actor_id").GetGuid().Should().Be(SeedActorId);
+        root.GetProperty("is_self_assign").GetBoolean().Should().BeTrue();
+    }
+
+    // ─── Happy path: assign override ───
+
+    [Fact]
+    public async Task AssignTicketAsync_Should_OverrideAssigneeAndWriteAudit_When_AssigneeChanges()
+    {
+        var existingAssignee = Guid.Parse("eeeeeeee-eeee-eeee-eeee-eeeeeeeeeeee");
+        var ticket = TicketOnTeam(SeedTeamId, assigneeId: existingAssignee);
+        _repository
+            .Setup(r => r.GetByIdAsync(ticket.Id, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(ticket);
+        _permissions
+            .Setup(p => p.CanAssignTicketAsync(SeedActorId, ticket, TargetUserId, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(true);
+
+        var (connection, transaction) = WireConnection();
+
+        _repository
+            .Setup(r => r.UpdateAssigneeAsync(
+                connection.Object,
+                transaction.Object,
+                ticket.Id,
+                TargetUserId,
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync(true);
+
+        AuditEvent? captured = null;
+        _auditWriter
+            .Setup(w => w.WriteAsync(
+                connection.Object,
+                transaction.Object,
+                It.IsAny<AuditEvent>(),
+                It.IsAny<CancellationToken>()))
+            .Callback<IDbConnection, IDbTransaction, AuditEvent, CancellationToken>(
+                (_, _, e, _) => captured = e)
+            .Returns(Task.CompletedTask);
+
+        _cache
+            .Setup(c => c.RemoveAsync(CacheKeys.TicketList, It.IsAny<CancellationToken>()))
+            .Returns(Task.CompletedTask);
+
+        var sut = CreateSut();
+
+        var result = await sut.AssignTicketAsync(SeedActorId, ticket.Id, TargetUserId);
+
+        result.Should().BeTrue();
+        captured.Should().NotBeNull();
+        using var doc = JsonDocument.Parse(captured!.PayloadJson);
+        var root = doc.RootElement;
+        root.GetProperty("from_assignee_id").GetGuid().Should().Be(existingAssignee);
+        root.GetProperty("to_assignee_id").GetGuid().Should().Be(TargetUserId);
+        root.GetProperty("actor_id").GetGuid().Should().Be(SeedActorId);
+        root.GetProperty("is_self_assign").GetBoolean().Should().BeFalse();
+    }
+
+    // ─── Idempotent no-ops ───
+
+    [Fact]
+    public async Task RouteTicketAsync_Should_ReturnFalseAndSkipWrites_When_DestinationEqualsCurrentTeam()
+    {
+        var ticket = TicketOnTeam(SeedTeamId);
+        _repository
+            .Setup(r => r.GetByIdAsync(ticket.Id, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(ticket);
+        _permissions
+            .Setup(p => p.CanRouteTicketAsync(SeedActorId, ticket, SeedTeamId, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(true);
+
+        var sut = CreateSut();
+
+        var result = await sut.RouteTicketAsync(SeedActorId, ticket.Id, SeedTeamId);
+
+        result.Should().BeFalse();
+        _connectionFactory.Verify(f => f.CreateConnection(), Times.Never);
+        _auditWriter.VerifyNoOtherCalls();
+        _cache.Verify(
+            c => c.RemoveAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()),
+            Times.Never);
+    }
+
+    [Fact]
+    public async Task AssignTicketAsync_Should_ReturnFalseAndSkipWrites_When_TargetEqualsCurrentAssignee()
+    {
+        var ticket = TicketOnTeam(SeedTeamId, assigneeId: TargetUserId);
+        _repository
+            .Setup(r => r.GetByIdAsync(ticket.Id, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(ticket);
+        _permissions
+            .Setup(p => p.CanAssignTicketAsync(SeedActorId, ticket, TargetUserId, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(true);
+
+        var sut = CreateSut();
+
+        var result = await sut.AssignTicketAsync(SeedActorId, ticket.Id, TargetUserId);
+
+        result.Should().BeFalse();
+        _connectionFactory.Verify(f => f.CreateConnection(), Times.Never);
+        _auditWriter.VerifyNoOtherCalls();
+        _cache.Verify(
+            c => c.RemoveAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()),
+            Times.Never);
+    }
+
+    [Fact]
+    public async Task ClaimTicketAsync_Should_ReturnFalse_When_TicketIsAlreadyAssignedToActor()
+    {
+        var ticket = TicketOnTeam(SeedTeamId, assigneeId: SeedActorId);
+        _repository
+            .Setup(r => r.GetByIdAsync(ticket.Id, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(ticket);
+        _permissions
+            .Setup(p => p.CanAssignTicketAsync(SeedActorId, ticket, SeedActorId, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(true);
+
+        var sut = CreateSut();
+
+        var result = await sut.ClaimTicketAsync(SeedActorId, ticket.Id);
+
+        result.Should().BeFalse();
+        _connectionFactory.Verify(f => f.CreateConnection(), Times.Never);
+        _auditWriter.VerifyNoOtherCalls();
+    }
+
+    // ─── Missing ticket short-circuits before the gate ───
+
+    [Fact]
+    public async Task RouteTicketAsync_Should_ReturnFalseWithoutPermissionCheck_When_TicketDoesNotExist()
+    {
+        _repository
+            .Setup(r => r.GetByIdAsync(99, It.IsAny<CancellationToken>()))
+            .ReturnsAsync((Ticket?)null);
+
+        var sut = CreateSut();
+
+        var result = await sut.RouteTicketAsync(SeedActorId, 99, OtherTeamId);
+
+        result.Should().BeFalse();
+        _permissions.Verify(
+            p => p.CanRouteTicketAsync(
+                It.IsAny<Guid>(), It.IsAny<Ticket>(), It.IsAny<Guid>(), It.IsAny<CancellationToken>()),
+            Times.Never);
+        _connectionFactory.Verify(f => f.CreateConnection(), Times.Never);
+        _auditWriter.VerifyNoOtherCalls();
+    }
+
+    [Fact]
+    public async Task AssignTicketAsync_Should_ReturnFalseWithoutPermissionCheck_When_TicketDoesNotExist()
+    {
+        _repository
+            .Setup(r => r.GetByIdAsync(99, It.IsAny<CancellationToken>()))
+            .ReturnsAsync((Ticket?)null);
+
+        var sut = CreateSut();
+
+        var result = await sut.AssignTicketAsync(SeedActorId, 99, TargetUserId);
+
+        result.Should().BeFalse();
+        _permissions.Verify(
+            p => p.CanAssignTicketAsync(
+                It.IsAny<Guid>(), It.IsAny<Ticket>(), It.IsAny<Guid>(), It.IsAny<CancellationToken>()),
+            Times.Never);
+        _connectionFactory.Verify(f => f.CreateConnection(), Times.Never);
+    }
+
+    [Fact]
+    public async Task ClaimTicketAsync_Should_ReturnFalseWithoutPermissionCheck_When_TicketDoesNotExist()
+    {
+        _repository
+            .Setup(r => r.GetByIdAsync(99, It.IsAny<CancellationToken>()))
+            .ReturnsAsync((Ticket?)null);
+
+        var sut = CreateSut();
+
+        var result = await sut.ClaimTicketAsync(SeedActorId, 99);
+
+        result.Should().BeFalse();
+        _permissions.Verify(
+            p => p.CanAssignTicketAsync(
+                It.IsAny<Guid>(), It.IsAny<Ticket>(), It.IsAny<Guid>(), It.IsAny<CancellationToken>()),
+            Times.Never);
+    }
+
+    // ─── Permission denied ───
+
+    [Fact]
+    public async Task RouteTicketAsync_Should_ThrowUnauthorized_When_PermissionGateDenies()
+    {
+        var ticket = TicketOnTeam(SeedTeamId);
+        _repository
+            .Setup(r => r.GetByIdAsync(ticket.Id, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(ticket);
+        _permissions
+            .Setup(p => p.CanRouteTicketAsync(SeedActorId, ticket, OtherTeamId, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(false);
+
+        var sut = CreateSut();
+
+        Func<Task> act = () => sut.RouteTicketAsync(SeedActorId, ticket.Id, OtherTeamId);
+
+        var ex = await act.Should().ThrowAsync<UnauthorizedAccessException>();
+        ex.Which.Message.Should().Contain("route");
+        _connectionFactory.Verify(f => f.CreateConnection(), Times.Never);
+        _auditWriter.VerifyNoOtherCalls();
+    }
+
+    [Fact]
+    public async Task AssignTicketAsync_Should_ThrowUnauthorized_When_PermissionGateDenies()
+    {
+        var ticket = TicketOnTeam(SeedTeamId);
+        _repository
+            .Setup(r => r.GetByIdAsync(ticket.Id, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(ticket);
+        _permissions
+            .Setup(p => p.CanAssignTicketAsync(SeedActorId, ticket, TargetUserId, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(false);
+
+        var sut = CreateSut();
+
+        Func<Task> act = () => sut.AssignTicketAsync(SeedActorId, ticket.Id, TargetUserId);
+
+        var ex = await act.Should().ThrowAsync<UnauthorizedAccessException>();
+        ex.Which.Message.Should().Contain("assign");
+        _connectionFactory.Verify(f => f.CreateConnection(), Times.Never);
+    }
+
+    [Fact]
+    public async Task ClaimTicketAsync_Should_ThrowUnauthorized_When_PermissionGateDenies()
+    {
+        var ticket = TicketOnTeam(SeedTeamId);
+        _repository
+            .Setup(r => r.GetByIdAsync(ticket.Id, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(ticket);
+        _permissions
+            .Setup(p => p.CanAssignTicketAsync(SeedActorId, ticket, SeedActorId, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(false);
+
+        var sut = CreateSut();
+
+        Func<Task> act = () => sut.ClaimTicketAsync(SeedActorId, ticket.Id);
+
+        // Claim delegates to AssignTicketAsync; the exception message uses the "assign" verb.
+        var ex = await act.Should().ThrowAsync<UnauthorizedAccessException>();
+        ex.Which.Message.Should().Contain("assign");
+    }
+
+    // ─── Permission check parameter shape ───
+
+    [Fact]
+    public async Task RouteTicketAsync_Should_AskPermissionService_With_DestinationTeamId()
+    {
+        var ticket = TicketOnTeam(SeedTeamId);
+        _repository
+            .Setup(r => r.GetByIdAsync(ticket.Id, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(ticket);
+        _permissions
+            .Setup(p => p.CanRouteTicketAsync(SeedActorId, ticket, OtherTeamId, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(false);
+
+        var sut = CreateSut();
+
+        Func<Task> act = () => sut.RouteTicketAsync(SeedActorId, ticket.Id, OtherTeamId);
+        await act.Should().ThrowAsync<UnauthorizedAccessException>();
+
+        _permissions.Verify(
+            p => p.CanRouteTicketAsync(SeedActorId, ticket, OtherTeamId, It.IsAny<CancellationToken>()),
+            Times.Once);
+    }
+
+    [Fact]
+    public async Task ClaimTicketAsync_Should_AskCanAssign_WithTargetEqualsActor()
+    {
+        var ticket = TicketOnTeam(SeedTeamId, assigneeId: SeedActorId); // no-op path; we just want to observe the gate call
+        _repository
+            .Setup(r => r.GetByIdAsync(ticket.Id, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(ticket);
+        _permissions
+            .Setup(p => p.CanAssignTicketAsync(SeedActorId, ticket, SeedActorId, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(true);
+
+        var sut = CreateSut();
+
+        await sut.ClaimTicketAsync(SeedActorId, ticket.Id);
+
+        _permissions.Verify(
+            p => p.CanAssignTicketAsync(SeedActorId, ticket, SeedActorId, It.IsAny<CancellationToken>()),
+            Times.Once);
+    }
+
+    [Fact]
+    public async Task AssignTicketAsync_Should_AskCanAssign_WithTargetUserId()
+    {
+        var ticket = TicketOnTeam(SeedTeamId, assigneeId: TargetUserId);
+        _repository
+            .Setup(r => r.GetByIdAsync(ticket.Id, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(ticket);
+        _permissions
+            .Setup(p => p.CanAssignTicketAsync(SeedActorId, ticket, TargetUserId, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(true);
+
+        var sut = CreateSut();
+
+        await sut.AssignTicketAsync(SeedActorId, ticket.Id, TargetUserId);
+
+        _permissions.Verify(
+            p => p.CanAssignTicketAsync(SeedActorId, ticket, TargetUserId, It.IsAny<CancellationToken>()),
+            Times.Once);
+    }
+
+    // ─── Race: row vanished between SELECT and UPDATE ───
+
+    [Fact]
+    public async Task RouteTicketAsync_Should_RollbackAndReturnFalseWithoutAudit_When_UpdateAffectsZeroRows()
+    {
+        var ticket = TicketOnTeam(SeedTeamId);
+        _repository
+            .Setup(r => r.GetByIdAsync(ticket.Id, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(ticket);
+        _permissions
+            .Setup(p => p.CanRouteTicketAsync(SeedActorId, ticket, OtherTeamId, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(true);
+
+        var (connection, transaction) = WireConnection();
+
+        _repository
+            .Setup(r => r.UpdateTeamAsync(
+                connection.Object,
+                transaction.Object,
+                ticket.Id,
+                OtherTeamId,
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync(false);
+
+        var sut = CreateSut();
+
+        var result = await sut.RouteTicketAsync(SeedActorId, ticket.Id, OtherTeamId);
+
+        result.Should().BeFalse();
+        transaction.Verify(t => t.Commit(), Times.Never);
+        transaction.Verify(t => t.Rollback(), Times.Once);
+        _auditWriter.Verify(
+            w => w.WriteAsync(
+                It.IsAny<IDbConnection>(),
+                It.IsAny<IDbTransaction>(),
+                It.IsAny<AuditEvent>(),
+                It.IsAny<CancellationToken>()),
+            Times.Never);
+        _cache.Verify(
+            c => c.RemoveAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()),
+            Times.Never);
+    }
+
+    [Fact]
+    public async Task AssignTicketAsync_Should_RollbackAndReturnFalseWithoutAudit_When_UpdateAffectsZeroRows()
+    {
+        var ticket = TicketOnTeam(SeedTeamId);
+        _repository
+            .Setup(r => r.GetByIdAsync(ticket.Id, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(ticket);
+        _permissions
+            .Setup(p => p.CanAssignTicketAsync(SeedActorId, ticket, TargetUserId, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(true);
+
+        var (connection, transaction) = WireConnection();
+
+        _repository
+            .Setup(r => r.UpdateAssigneeAsync(
+                connection.Object,
+                transaction.Object,
+                ticket.Id,
+                TargetUserId,
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync(false);
+
+        var sut = CreateSut();
+
+        var result = await sut.AssignTicketAsync(SeedActorId, ticket.Id, TargetUserId);
+
+        result.Should().BeFalse();
+        transaction.Verify(t => t.Commit(), Times.Never);
+        transaction.Verify(t => t.Rollback(), Times.Once);
+        _auditWriter.Verify(
+            w => w.WriteAsync(
+                It.IsAny<IDbConnection>(),
+                It.IsAny<IDbTransaction>(),
+                It.IsAny<AuditEvent>(),
+                It.IsAny<CancellationToken>()),
+            Times.Never);
+    }
+
+    // ─── Cancellation token plumbing ───
+
+    [Fact]
+    public async Task RouteTicketAsync_Should_FlowCancellationToken_To_AllCollaborators()
+    {
+        using var cts = new CancellationTokenSource();
+        var token = cts.Token;
+        var ticket = TicketOnTeam(SeedTeamId);
+
+        _repository
+            .Setup(r => r.GetByIdAsync(ticket.Id, token))
+            .ReturnsAsync(ticket);
+        _permissions
+            .Setup(p => p.CanRouteTicketAsync(SeedActorId, ticket, OtherTeamId, token))
+            .ReturnsAsync(true);
+
+        var (connection, transaction) = WireConnection();
+
+        _repository
+            .Setup(r => r.UpdateTeamAsync(connection.Object, transaction.Object, ticket.Id, OtherTeamId, token))
+            .ReturnsAsync(true);
+        _auditWriter
+            .Setup(w => w.WriteAsync(connection.Object, transaction.Object, It.IsAny<AuditEvent>(), token))
+            .Returns(Task.CompletedTask);
+        _cache
+            .Setup(c => c.RemoveAsync(CacheKeys.TicketList, token))
+            .Returns(Task.CompletedTask);
+
+        var sut = CreateSut();
+
+        var result = await sut.RouteTicketAsync(SeedActorId, ticket.Id, OtherTeamId, token);
+
+        result.Should().BeTrue();
+        _repository.Verify(r => r.GetByIdAsync(ticket.Id, token), Times.Once);
+        _permissions.Verify(
+            p => p.CanRouteTicketAsync(SeedActorId, ticket, OtherTeamId, token),
+            Times.Once);
+        _repository.Verify(
+            r => r.UpdateTeamAsync(connection.Object, transaction.Object, ticket.Id, OtherTeamId, token),
+            Times.Once);
+        _auditWriter.Verify(
+            w => w.WriteAsync(connection.Object, transaction.Object, It.IsAny<AuditEvent>(), token),
+            Times.Once);
+        _cache.Verify(c => c.RemoveAsync(CacheKeys.TicketList, token), Times.Once);
     }
 }

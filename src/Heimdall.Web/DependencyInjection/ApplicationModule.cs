@@ -1,6 +1,7 @@
 using System;
 using Autofac;
 using Heimdall.BLL.Authorization;
+using Heimdall.BLL.Enrollment;
 using Heimdall.BLL.Mapping;
 using Heimdall.BLL.Services;
 using Heimdall.Core.Interfaces;
@@ -69,6 +70,20 @@ public class ApplicationModule : Autofac.Module
                     : componentContext.Resolve<NotImplementedPermissionService>();
             })
             .As<IPermissionService>()
+            .InstancePerLifetimeScope();
+
+        // User enrollment seam — docs/proposals/team-collaboration.md §8 (Phase 2.9 step 26).
+        // Captured now as an interface so the eventual implementations
+        // (AdminInviteEnrollmentService for admin-driven invites, LdapEnrollmentService
+        // for directory-backed onboarding) drop into the same shape without churning
+        // every call site. No caller in Phase 2 consumes this seam — it is bound to a
+        // fail-loud not-implemented service so any premature integration surfaces
+        // immediately as a NotImplementedException at the call site, instead of
+        // silently fabricating a user or no-op'ing. Swap this registration when the
+        // first real implementation ships.
+        builder
+            .RegisterType<NotImplementedEnrollmentService>()
+            .As<IUserEnrollmentService>()
             .InstancePerLifetimeScope();
     }
 }
