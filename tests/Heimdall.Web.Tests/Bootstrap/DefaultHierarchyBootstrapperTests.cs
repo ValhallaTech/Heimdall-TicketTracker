@@ -261,7 +261,7 @@ public class DefaultHierarchyBootstrapperTests
         var teamId = Guid.NewGuid();
         var projectId = Guid.NewGuid();
         harness.SetupAdmin(adminId);
-        harness.SetupFullyseededHierarchy(adminId, orgId, teamId, projectId);
+        harness.SetupFullySeededHierarchy(adminId, orgId, teamId, projectId);
 
         await harness.Bootstrapper.RunAsync(AdminEmail, CancellationToken.None);
 
@@ -520,7 +520,7 @@ public class DefaultHierarchyBootstrapperTests
                 .ReturnsAsync((ProjectMember?)null);
         }
 
-        public void SetupFullyseededHierarchy(Guid adminId, Guid orgId, Guid teamId, Guid projectId)
+        public void SetupFullySeededHierarchy(Guid adminId, Guid orgId, Guid teamId, Guid projectId)
         {
             OrganizationRepository
                 .Setup(r => r.GetBySlugAsync(DefaultHierarchyBootstrapper.OrganizationSlug, It.IsAny<CancellationToken>()))
