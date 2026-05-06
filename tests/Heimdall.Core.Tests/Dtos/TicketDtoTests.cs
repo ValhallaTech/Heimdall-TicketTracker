@@ -30,11 +30,10 @@ public class TicketDtoTests
     [Fact]
     public void Should_FailValidation_When_RequiredFieldsAreEmpty()
     {
-        // Title / Description are still string-required; ProjectId / TeamId /
-        // ReporterId are [Required] on the DTO post-Phase-2.5 but Guid is a
-        // value type so [Required] on a non-nullable Guid does NOT flag
-        // Guid.Empty (the framework treats default(Guid) as "present"). We
-        // therefore only assert the string members.
+        // Title / Description fail [Required]/[StringLength]; ProjectId / TeamId /
+        // ReporterId fail [NotEmptyGuid] because Guid.Empty is the all-zeroes
+        // default. (Plain [Required] on a non-nullable Guid never fires —
+        // hence the dedicated NotEmptyGuidAttribute.)
         var dto = new TicketDto();
         var ctx = new ValidationContext(dto);
         var results = new List<ValidationResult>();
@@ -44,6 +43,9 @@ public class TicketDtoTests
         ok.Should().BeFalse();
         results.Should().Contain(r => r.MemberNames.Contains(nameof(TicketDto.Title)));
         results.Should().Contain(r => r.MemberNames.Contains(nameof(TicketDto.Description)));
+        results.Should().Contain(r => r.MemberNames.Contains(nameof(TicketDto.ProjectId)));
+        results.Should().Contain(r => r.MemberNames.Contains(nameof(TicketDto.TeamId)));
+        results.Should().Contain(r => r.MemberNames.Contains(nameof(TicketDto.ReporterId)));
     }
 
     [Fact]

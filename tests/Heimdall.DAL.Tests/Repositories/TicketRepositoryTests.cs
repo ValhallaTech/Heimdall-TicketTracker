@@ -324,8 +324,11 @@ public class TicketRepositoryTests : IAsyncLifetime
             await conn.ExecuteAsync("DELETE FROM projects WHERE id = @Id;", new { Id = _projectId });
         };
 
+        // ON DELETE RESTRICT raises SQLSTATE 23503 (foreign_key_violation) in
+        // current PostgreSQL; the SQL-standard 23001 (restrict_violation) is
+        // accepted as well so the test is robust across server versions.
         await act.Should().ThrowAsync<PostgresException>()
-            .Where(e => e.SqlState == "23001");
+            .Where(e => e.SqlState == "23001" || e.SqlState == "23503");
     }
 
     [Fact]
@@ -341,7 +344,7 @@ public class TicketRepositoryTests : IAsyncLifetime
         };
 
         await act.Should().ThrowAsync<PostgresException>()
-            .Where(e => e.SqlState == "23001");
+            .Where(e => e.SqlState == "23001" || e.SqlState == "23503");
     }
 
     [Fact]
@@ -357,7 +360,7 @@ public class TicketRepositoryTests : IAsyncLifetime
         };
 
         await act.Should().ThrowAsync<PostgresException>()
-            .Where(e => e.SqlState == "23001");
+            .Where(e => e.SqlState == "23001" || e.SqlState == "23503");
     }
 
     [Fact]

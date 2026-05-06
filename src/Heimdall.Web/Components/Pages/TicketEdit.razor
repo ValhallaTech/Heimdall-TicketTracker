@@ -1,7 +1,14 @@
 @page "/tickets/new"
 @page "/tickets/{Id:int}"
 @rendermode InteractiveServer
+@using System.Security.Claims
+@using Heimdall.Core.Interfaces
+@using Heimdall.Web.Bootstrap
+@using Microsoft.AspNetCore.Components.Authorization
 @inject ITicketService TicketService
+@inject IOrganizationRepository OrganizationRepository
+@inject ITeamRepository TeamRepository
+@inject IProjectRepository ProjectRepository
 @inject NavigationManager Navigation
 
 <PageTitle>@(IsNew ? "New Ticket" : "Edit Ticket") — Heimdall TicketTracker</PageTitle>
@@ -97,6 +104,13 @@
     [Parameter] public int? Id { get; set; }
 
     /// <summary>
+    /// Cascaded authentication state — used to default <see cref="TicketDto.ReporterId"/>
+    /// to the current user's id on new tickets so the FK isn't <see cref="Guid.Empty"/>.
+    /// </summary>
+    [CascadingParameter]
+    public Task<AuthenticationState>? AuthenticationStateTask { get; set; }
+
+    /// <summary>
     /// Form-backed model. Marked with <see cref="SupplyParameterFromFormAttribute"/>
     /// so Blazor rehydrates the posted form values on submit when using enhanced
     /// navigation in a .NET 8+ Blazor Web App.
@@ -119,12 +133,67 @@
             {
                 Model = new TicketDto();
             }
+
+            await PopulateNewTicketDefaultsAsync();
             return;
         }
 
         if (Model.Id != Id!.Value)
         {
             Model = await TicketService.GetByIdAsync(Id!.Value) ?? new TicketDto { Id = Id!.Value };
+        }
+    }
+
+    /// <summary>
+    /// Pre-fills <see cref="TicketDto.ProjectId"/>, <see cref="TicketDto.TeamId"/>, and
+    /// <see cref="TicketDto.ReporterId"/> on a fresh new-ticket form so an unedited submit
+    /// doesn't violate the Phase 2.4 / 2.5 FK + NOT NULL constraints with
+    /// <see cref="Guid.Empty"/>. Defaults are resolved by the same hard-coded slug
+    /// constants that <see cref="DefaultHierarchyBootstrapper"/> creates at startup.
+    /// </summary>
+    /// <remarks>
+    /// TODO(Phase 2.8 step 24): replace these defaults with a proper team / project
+    /// picker bound to the user's memberships (see
+    /// <c>docs/proposals/team-collaboration.md</c> §7).
+    /// </remarks>
+    private async Task PopulateNewTicketDefaultsAsync()
+    {
+        if (Model.ProjectId == Guid.Empty || Model.TeamId == Guid.Empty)
+        {
+            var org = await OrganizationRepository
+                .GetBySlugAsync(DefaultHierarchyBootstrapper.OrganizationSlug);
+            if (org is not null)
+            {
+                if (Model.TeamId == Guid.Empty)
+                {
+                    var team = await TeamRepository
+                        .GetBySlugAsync(org.Id, DefaultHierarchyBootstrapper.TeamSlug);
+                    if (team is not null)
+                    {
+                        Model.TeamId = team.Id;
+
+                        if (Model.ProjectId == Guid.Empty)
+                        {
+                            var project = await ProjectRepository
+                                .GetBySlugAsync(team.Id, DefaultHierarchyBootstrapper.ProjectSlug);
+                            if (project is not null)
+                            {
+                                Model.ProjectId = project.Id;
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        if (Model.ReporterId == Guid.Empty && AuthenticationStateTask is not null)
+        {
+            var state = await AuthenticationStateTask;
+            var userId = state.User.FindFirstValue(ClaimTypes.NameIdentifier);
+            if (Guid.TryParse(userId, out var parsed))
+            {
+                Model.ReporterId = parsed;
+            }
         }
     }
 

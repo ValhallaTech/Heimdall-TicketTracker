@@ -33,6 +33,7 @@ public class TicketDto
     /// underlying column).
     /// </summary>
     [Required]
+    [NotEmptyGuid]
     public Guid ProjectId { get; set; }
 
     /// <summary>
@@ -41,6 +42,7 @@ public class TicketDto
     /// <c>docs/proposals/team-collaboration.md</c> §5.1.
     /// </summary>
     [Required]
+    [NotEmptyGuid]
     public Guid TeamId { get; set; }
 
     /// <summary>
@@ -48,6 +50,7 @@ public class TicketDto
     /// always has a reporter.
     /// </summary>
     [Required]
+    [NotEmptyGuid]
     public Guid ReporterId { get; set; }
 
     /// <summary>

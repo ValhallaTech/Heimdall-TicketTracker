@@ -15,8 +15,9 @@ namespace Heimdall.Web.Tests.Bootstrap;
 /// Unit tests for <see cref="TicketDefaultsBackfiller"/>. Covers the deny-closed
 /// skip paths, exception-handling stance, and constructor-guard contract. The
 /// happy-path UPDATE behaviour (idempotency, NULL-only updates, row-count logging,
-/// assignee_id non-touch) is exercised end-to-end against a real Postgres
-/// container in <c>TicketDefaultsBackfillerIntegrationTests</c>.
+/// assignee_id non-touch) is exercised at the SQL layer indirectly via the
+/// matching FluentMigrator NOT NULL flips and is in scope for an end-to-end
+/// integration test in a future phase (see <c>docs/implementation/phase-2-checklist.md</c>).
 /// </summary>
 public class TicketDefaultsBackfillerTests
 {

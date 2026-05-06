@@ -12,11 +12,35 @@ namespace Heimdall.Web.Tests.Components.Pages;
 
 public class TicketEditTests : BunitContext
 {
+    private static readonly Guid SeedOrganizationId = Guid.Parse("aaaaaaaa-0000-0000-0000-000000000001");
+    private static readonly Guid SeedTeamId = Guid.Parse("aaaaaaaa-0000-0000-0000-000000000002");
+    private static readonly Guid SeedProjectId = Guid.Parse("aaaaaaaa-0000-0000-0000-000000000003");
+
     private readonly Mock<ITicketService> _service = new(MockBehavior.Loose);
+    private readonly Mock<IOrganizationRepository> _organizations = new(MockBehavior.Loose);
+    private readonly Mock<ITeamRepository> _teams = new(MockBehavior.Loose);
+    private readonly Mock<IProjectRepository> _projects = new(MockBehavior.Loose);
 
     public TicketEditTests()
     {
+        // Match the runtime defaults the production DefaultHierarchyBootstrapper
+        // creates (slugs heimdall / default / default), so the new-ticket form's
+        // pre-populate path resolves real ids and the [NotEmptyGuid] validation
+        // on TicketDto.ProjectId / TeamId passes on submit.
+        _organizations
+            .Setup(r => r.GetBySlugAsync("heimdall", It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new Organization { Id = SeedOrganizationId, Slug = "heimdall", Name = "Heimdall" });
+        _teams
+            .Setup(r => r.GetBySlugAsync(SeedOrganizationId, "default", It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new Team { Id = SeedTeamId, OrganizationId = SeedOrganizationId, Slug = "default", Name = "Default" });
+        _projects
+            .Setup(r => r.GetBySlugAsync(SeedTeamId, "default", It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new Project { Id = SeedProjectId, TeamId = SeedTeamId, Slug = "default", Name = "Default" });
+
         Services.AddSingleton(_service.Object);
+        Services.AddSingleton(_organizations.Object);
+        Services.AddSingleton(_teams.Object);
+        Services.AddSingleton(_projects.Object);
     }
 
     [Fact]
@@ -115,6 +139,8 @@ public class TicketEditTests : BunitContext
             Id = 7,
             Title = "Old",
             Description = "Old",
+            ProjectId = SeedProjectId,
+            TeamId = SeedTeamId,
             ReporterId = Guid.NewGuid(),
         };
         _service
