@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Threading;
 using System.Threading.Tasks;
+using Heimdall.BLL.Authorization;
 using Heimdall.BLL.Mapping;
 using Heimdall.Core.Caching;
 using Heimdall.Core.Dtos;
@@ -24,12 +25,19 @@ public class TicketService : ITicketService
     private readonly ITicketRepository _repository;
     private readonly ICacheService _cache;
     private readonly ITicketMapper _mapper;
+    private readonly IPermissionService _permissions;
     private readonly ILogger<TicketService> _logger;
 
     /// <summary>Initializes a new instance.</summary>
     /// <param name="repository">Ticket persistence abstraction.</param>
     /// <param name="cache">Distributed cache used for read-through list caching.</param>
     /// <param name="mapper">Mapster-generated mapper used to project between entities and DTOs.</param>
+    /// <param name="permissions">
+    /// Authorization seam (<c>docs/proposals/team-collaboration.md</c> §6). Captured here in
+    /// Phase 2.6 step 19; the actual route / assign / queue-view enforcement that consumes
+    /// it lands in Phase 2.7. The dependency is wired now so the seam is in place and
+    /// existing call sites compile against the post-Phase-2.6 ctor shape.
+    /// </param>
     /// <param name="logger">Logger.</param>
     /// <exception cref="ArgumentNullException">
     /// Thrown when any required dependency is <see langword="null"/>.
@@ -38,16 +46,19 @@ public class TicketService : ITicketService
         ITicketRepository repository,
         ICacheService cache,
         ITicketMapper mapper,
+        IPermissionService permissions,
         ILogger<TicketService> logger
     )
     {
         ArgumentNullException.ThrowIfNull(repository);
         ArgumentNullException.ThrowIfNull(cache);
         ArgumentNullException.ThrowIfNull(mapper);
+        ArgumentNullException.ThrowIfNull(permissions);
         ArgumentNullException.ThrowIfNull(logger);
         _repository = repository;
         _cache = cache;
         _mapper = mapper;
+        _permissions = permissions;
         _logger = logger;
     }
 

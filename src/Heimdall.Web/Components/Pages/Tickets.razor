@@ -112,16 +112,16 @@ else
                                 Priority @SortIndicator("Priority")
                             </button>
                         </th>
-                        <th scope="col" aria-sort="@GetAriaSortValue("Reporter")">
+                        <th scope="col" aria-sort="@GetAriaSortValue("ReporterId")">
                             <button class="btn btn-link btn-sm p-0 text-body text-decoration-none fw-semibold"
-                                    @onclick='() => OnSortClick("Reporter")'>
-                                Reporter @SortIndicator("Reporter")
+                                    @onclick='() => OnSortClick("ReporterId")'>
+                                Reporter @SortIndicator("ReporterId")
                             </button>
                         </th>
-                        <th scope="col" aria-sort="@GetAriaSortValue("Assignee")">
+                        <th scope="col" aria-sort="@GetAriaSortValue("AssigneeId")">
                             <button class="btn btn-link btn-sm p-0 text-body text-decoration-none fw-semibold"
-                                    @onclick='() => OnSortClick("Assignee")'>
-                                Assignee @SortIndicator("Assignee")
+                                    @onclick='() => OnSortClick("AssigneeId")'>
+                                Assignee @SortIndicator("AssigneeId")
                             </button>
                         </th>
                         <th scope="col" aria-sort="@GetAriaSortValue("DateCreated")">
@@ -140,9 +140,11 @@ else
                             <td class="fw-medium">@ticket.Title</td>
                             <td><span class="badge @StatusBadgeClass(ticket.Status)">@ticket.Status</span></td>
                             <td><span class="badge @PriorityBadgeClass(ticket.Priority)">@ticket.Priority</span></td>
-                            <td class="text-body-secondary">@ticket.Reporter</td>
+                            @* TODO(Phase 2.8 step 24): proper user-picker / display-name resolution. *@
+                            <td class="text-body-secondary">@ticket.ReporterId</td>
                             <td class="text-body-secondary">
-                                @(string.IsNullOrWhiteSpace(ticket.Assignee) ? "—" : ticket.Assignee)
+                                @* TODO(Phase 2.8 step 24): proper user-picker / display-name resolution. *@
+                                @(ticket.AssigneeId is null ? "—" : ticket.AssigneeId.ToString())
                             </td>
                             <td class="text-body-secondary text-nowrap">
                                 @ticket.DateCreated.ToString("MMM d, yyyy")

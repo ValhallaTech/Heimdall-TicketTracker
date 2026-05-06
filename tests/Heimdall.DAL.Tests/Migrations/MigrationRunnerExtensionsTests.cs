@@ -19,7 +19,7 @@ public class MigrationRunnerExtensionsTests : IAsyncLifetime
 
     public MigrationRunnerExtensionsTests(PostgresFixture fx) => _fx = fx;
 
-    public Task InitializeAsync() => _fx.ResetTicketsTableAsync();
+    public Task InitializeAsync() => _fx.ResetTicketsAndCollaborationTablesAsync();
 
     public Task DisposeAsync() => Task.CompletedTask;
 
@@ -96,6 +96,11 @@ public class MigrationRunnerExtensionsTests : IAsyncLifetime
     [Fact]
     public async Task Should_SeedFirstRunAndSkipSecond_When_TableEmpty()
     {
+        // Phase 2.4 / 2.5: seeding now requires the default hierarchy + a system_admin user
+        // to be present (the seed SQL resolves a project_id / team_id / admin_id from those
+        // tables). Mirror what DefaultHierarchyBootstrapper would create at runtime.
+        await SeedDefaultHierarchyAsync();
+
         var cache = new Mock<ICacheService>(MockBehavior.Loose);
         cache.Setup(c => c.RemoveAsync(CacheKeys.TicketList, It.IsAny<CancellationToken>()))
              .Returns(Task.CompletedTask);
@@ -112,6 +117,31 @@ public class MigrationRunnerExtensionsTests : IAsyncLifetime
         (await conn.ExecuteScalarAsync<long>("SELECT COUNT(*) FROM tickets")).Should().Be(3);
 
         cache.Verify(c => c.RemoveAsync(CacheKeys.TicketList, It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    private async Task SeedDefaultHierarchyAsync()
+    {
+        await using var conn = new NpgsqlConnection(_fx.ConnectionString);
+        await conn.OpenAsync();
+        // Bootstrap admin user with system_admin = true so the seed SQL's admin lookup hits.
+        var adminId = await conn.QuerySingleAsync<Guid>(
+            @"INSERT INTO users (email, normalized_email, security_stamp, concurrency_stamp, system_admin, created_at, updated_at)
+              VALUES ('admin@example.com', 'ADMIN@EXAMPLE.COM', 's', 'c', true, now(), now())
+              RETURNING id;");
+        var orgId = await conn.QuerySingleAsync<Guid>(
+            @"INSERT INTO organizations (slug, name, created_by, created_at)
+              VALUES ('heimdall', 'Heimdall', @AdminId, now())
+              RETURNING id;",
+            new { AdminId = adminId });
+        var teamId = await conn.QuerySingleAsync<Guid>(
+            @"INSERT INTO teams (organization_id, slug, name, created_by, created_at)
+              VALUES (@OrgId, 'default', 'Default', @AdminId, now())
+              RETURNING id;",
+            new { OrgId = orgId, AdminId = adminId });
+        await conn.ExecuteAsync(
+            @"INSERT INTO projects (team_id, slug, name, created_by, created_at)
+              VALUES (@TeamId, 'default', 'Default', @AdminId, now());",
+            new { TeamId = teamId, AdminId = adminId });
     }
 
     private static IServiceProvider BuildLoggingServiceProvider(ICacheService? cache = null)

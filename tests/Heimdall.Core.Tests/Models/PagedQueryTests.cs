@@ -61,7 +61,10 @@ public class PagedQueryTests
     [InlineData("Title")]
     [InlineData("title")]
     [InlineData("DateUpdated")]
-    [InlineData("Assignee")]
+    [InlineData("AssigneeId")]
+    [InlineData("ReporterId")]
+    [InlineData("ProjectId")]
+    [InlineData("TeamId")]
     public void Should_AcceptKnownSortField_When_Constructed(string sortField)
     {
         var query = new PagedQuery(1, 10, null, sortField, SortDirection.Ascending);
@@ -97,7 +100,7 @@ public class PagedQueryTests
     public void Should_ExposeAllowedSortFields_When_Inspected()
     {
         PagedQuery.AllowedSortFields.Keys.Should().Contain(
-            new[] { "Title", "Status", "Priority", "Reporter", "Assignee", "DateCreated", "DateUpdated" });
+            new[] { "Title", "Status", "Priority", "ReporterId", "AssigneeId", "ProjectId", "TeamId", "DateCreated", "DateUpdated" });
         PagedQuery.AllowedSortFields["DateCreated"].Should().Be("date_created");
     }
 }

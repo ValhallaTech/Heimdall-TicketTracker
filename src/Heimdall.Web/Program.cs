@@ -337,6 +337,12 @@ builder.Services.AddScoped<SystemAdminBootstrapper>();
 // runs. Idempotent on every startup.
 builder.Services.AddScoped<DefaultHierarchyBootstrapper>();
 
+// --- Ticket-defaults backfill registration (Phase 2.4 / 2.5 steps 10–14) --
+// Populates tickets.project_id / team_id / reporter_id on legacy rows so the
+// matching NOT NULL flip migrations succeed. Resolved per-scope immediately
+// after DefaultHierarchyBootstrapper so the seed hierarchy exists first.
+builder.Services.AddScoped<TicketDefaultsBackfiller>();
+
 // --- Autofac --------------------------------------------------------------
 builder.Host.UseServiceProviderFactory(new AutofacServiceProviderFactory());
 builder.Host.ConfigureContainer<ContainerBuilder>(containerBuilder =>
@@ -395,6 +401,27 @@ try
 catch (Exception ex) when (ex is not OperationCanceledException)
 {
     Log.Error(ex, "Default-hierarchy bootstrap raised an unexpected exception; continuing startup.");
+}
+
+// --- Ticket-defaults backfill (Phase 2.4 / 2.5 steps 10–14) ---------------
+// Populates tickets.project_id / team_id / reporter_id on legacy rows so the
+// next deploy's NOT NULL flip migrations (M202605050022 / M202605050024) can
+// succeed. Sequenced immediately after DefaultHierarchyBootstrapper so the
+// seed hierarchy + bootstrap admin already exist. Idempotent: each UPDATE is
+// keyed on "… IS NULL", so re-runs against a fully-backfilled table are
+// no-ops. Failures are logged-and-swallowed (same policy as the bootstrappers
+// above); the matching NOT NULL flip migrations will fail loudly on the next
+// deploy if any row was missed, which is the intended safety net.
+try
+{
+    using var backfillScope = app.Services.CreateAsyncScope();
+    var ticketBackfiller = backfillScope.ServiceProvider.GetRequiredService<TicketDefaultsBackfiller>();
+    await ticketBackfiller.RunAsync(bootstrapEmail, app.Lifetime.ApplicationStopping).ConfigureAwait(false);
+}
+// OCE propagates so cooperative host shutdown is honoured.
+catch (Exception ex) when (ex is not OperationCanceledException)
+{
+    Log.Error(ex, "Ticket-defaults backfill raised an unexpected exception; continuing startup.");
 }
 
 // --- Email sender choice (Phase 1 step 6) ---------------------------------

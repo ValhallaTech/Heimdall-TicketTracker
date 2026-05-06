@@ -91,6 +91,31 @@ public sealed class PostgresFixture : IAsyncLifetime
             + "DELETE FROM audit_events;"
         );
     }
+
+    /// <summary>
+    /// Wipes the <c>tickets</c> table together with the Phase 2.1 collaboration
+    /// hierarchy and Phase 2.2 membership tables. Phase 2.5 added FK columns on
+    /// <c>tickets</c> that reference <c>projects</c>, <c>teams</c>, and <c>users</c>
+    /// with <c>ON DELETE RESTRICT</c> (assignee is <c>SET NULL</c>), so tickets must
+    /// be cleared before any of those parents.
+    /// </summary>
+    public async Task ResetTicketsAndCollaborationTablesAsync()
+    {
+        await using var conn = new NpgsqlConnection(ConnectionString);
+        await conn.OpenAsync();
+        await conn.ExecuteAsync(
+            "DELETE FROM tickets; "
+            + "ALTER SEQUENCE tickets_id_seq RESTART WITH 1; "
+            + "DELETE FROM project_members; "
+            + "DELETE FROM team_members; "
+            + "DELETE FROM organization_members; "
+            + "DELETE FROM projects; "
+            + "DELETE FROM teams; "
+            + "DELETE FROM organizations; "
+            + "DELETE FROM users; "
+            + "DELETE FROM audit_events;"
+        );
+    }
 }
 
 [CollectionDefinition(Name)]

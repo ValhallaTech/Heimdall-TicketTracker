@@ -1,6 +1,6 @@
 # Phase 2 — Team Collaboration Infrastructure: Implementation Checklist
 
-**Status:** Phase 2.1 complete on `main` (PR #27 merged); Phase 2.2 complete on `main` (PR #29 merged); Phase 2.3 in this PR (step 9 implemented as `DefaultHierarchyBootstrapper`); phases 2.4–2.10 in planning.
+**Status:** Phase 2.1 complete on `main` (PR #27 merged); Phase 2.2 complete on `main` (PR #29 merged); Phase 2.3 complete on `main` (PR #30 merged — step 9 implemented as `DefaultHierarchyBootstrapper`); phases 2.4 / 2.5 / 2.6 in this PR (steps 10–19 complete pending review); phases 2.7–2.10 in planning.
 **Source of truth:** [`docs/proposals/team-collaboration.md`](../proposals/team-collaboration.md) (§4 sequencing, §5 policy matrix, §6 `IPermissionService`, §7 admin panel, §8 enrollment hook).
 **Depends on:** Phase 1 ([`phase-1-checklist.md`](./phase-1-checklist.md)) — complete on `main` after PR #26.
 
@@ -33,22 +33,22 @@
 
 ## Phase 2.4 — Tickets carry their parent project **and** parent team
 
-- [ ] **10. Migration: add `tickets.project_id` (nullable).** FK → `projects(id)` `ON DELETE RESTRICT`. Backfill to default project from step 9.
-- [ ] **11. Migration: add `tickets.team_id` (nullable).** FK → `teams(id)` `ON DELETE RESTRICT`. Backfill to default team from step 9. Index on `team_id`.
-- [ ] **12. Migration: alter `tickets.project_id` and `tickets.team_id` to NOT NULL.** Separate migration so steps 10 / 11's backfill is observable mid-deploy and rollback-friendly.
+- [x] **10. Migration: add `tickets.project_id` (nullable).** FK → `projects(id)` `ON DELETE RESTRICT`. Backfill is performed by the runtime `TicketDefaultsBackfiller` (matching step 9's precedent), not at migrate-time.
+- [x] **11. Migration: add `tickets.team_id` (nullable).** FK → `teams(id)` `ON DELETE RESTRICT`. Index `ix_tickets_team_id` on `team_id`. Same runtime-backfill stance as step 10.
+- [x] **12. Migration: alter `tickets.project_id` and `tickets.team_id` to NOT NULL.** Single atomic NOT NULL flip; fails loudly if the runtime backfill has not run.
 
 ## Phase 2.5 — Tickets reference real users (replace synthetic seed strings)
 
-- [ ] **13. Migration: add `tickets.reporter_id` and `tickets.assignee_id` (nullable UUID FKs).** `reporter_id` `ON DELETE RESTRICT`; `assignee_id` `ON DELETE SET NULL`. Backfill from existing seed strings; fall back to bootstrap admin for `reporter_id`, NULL for `assignee_id`.
-- [ ] **14. Migration: alter `tickets.reporter_id` to NOT NULL.** Preserves the always-has-a-reporter invariant required by [`openfga.md`](../proposals/openfga.md) step 7.
-- [ ] **15. Migration: drop legacy `tickets.reporter` / `tickets.assignee` varchar columns.** Separate migration so steps 13–15 can be sequenced and observed.
-- [ ] **16. Update `Ticket` domain type, `ITicketRepository`, `TicketDto`, Mapster mapper.** Replace string fields with `ProjectId`, `TeamId`, `ReporterId`, `AssigneeId`. Mapster `*.g.cs` regenerated and committed (per the repo convention).
+- [x] **13. Migration: add `tickets.reporter_id` and `tickets.assignee_id` (nullable UUID FKs).** `reporter_id` `ON DELETE RESTRICT`; `assignee_id` `ON DELETE SET NULL`. Indexes on both. Runtime backfill via `TicketDefaultsBackfiller` (bootstrap admin → `reporter_id`; NULL on `assignee_id`).
+- [x] **14. Migration: alter `tickets.reporter_id` to NOT NULL.** Preserves the always-has-a-reporter invariant required by [`openfga.md`](../proposals/openfga.md) step 7.
+- [x] **15. Migration: drop legacy `tickets.reporter` / `tickets.assignee` varchar columns.** `Down()` re-creates the columns as nullable text for schema-shape reversibility (original values unrecoverable).
+- [x] **16. Update `Ticket` domain type, `ITicketRepository`, `TicketDto`, Mapster mapper.** Replace string fields with `ProjectId`, `TeamId`, `ReporterId`, `AssigneeId`. Mapster mapper updated; Razor pages get minimum compile-fix with `TODO(Phase 2.8 step 24)` markers; full UX rework deferred to Phase 2.8 step 24.
 
 ## Phase 2.6 — `IPermissionService` (the OpenFGA seam)
 
-- [ ] **17. Declare `IPermissionService`** in `Heimdall.BLL/Authorization` per [`team-collaboration.md`](../proposals/team-collaboration.md) §6. Methods cover queue-visibility, route, assign, manage-members. Deny-closed by default.
-- [ ] **18. Implement `TeamRoleBackedPermissionService`** that reads `team_members.role` + `users.system_admin` and applies §5's matrix. Registered behind `Authorization:Provider = "TeamRole"` (default). xUnit unit tests covering every cell of the §5.1 / §5.2 / §5.3 matrices, including the `system_admin == true` short-circuit and the deny-closed unknown-role case.
-- [ ] **19. Wire `IPermissionService` into the BLL ticket service.** Routing and self-assign call sites consult `IPermissionService` only — **no** direct reads of `team_members.role` from authorisation paths. Repository-level reads of the column (for the admin panel's member list) remain fine.
+- [x] **17. Declare `IPermissionService`** in `Heimdall.BLL/Authorization` per [`team-collaboration.md`](../proposals/team-collaboration.md) §6. Methods cover queue-visibility, route, assign, manage-members. Deny-closed by default.
+- [x] **18. Implement `TeamRoleBackedPermissionService`** that reads `team_members.role` + `users.system_admin` (via new `IUserLookup`) and applies §5's matrix. Registered behind `Authorization:Provider = "TeamRole"` (default). xUnit unit tests cover every cell of the §5.1 / §5.2 / §5.3 matrices, the `system_admin == true` short-circuit, and the deny-closed unknown-role case (100% line/branch coverage). `"OpenFga"` is reserved via `NotImplementedPermissionService` (fails loudly).
+- [x] **19. Wire `IPermissionService` into the BLL ticket service.** `TicketService` takes `IPermissionService` via constructor injection. No routing/claim/assign actions yet — those are Phase 2.7 steps 20–22.
 
 ## Phase 2.7 — Routing and self-assign behaviours + audit
 

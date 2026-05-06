@@ -166,8 +166,51 @@ public static class MigrationRunnerExtensions
 
         logger.LogInformation("Seeding database with {Count} tickets\u2026", count);
 
+        // Phase 2.4 / 2.5: tickets carry NOT NULL FK columns to projects, teams, and
+        // users. Resolve the default hierarchy + bootstrap admin (created by
+        // DefaultHierarchyBootstrapper) so the seed rows have a valid parent. If any
+        // prerequisite is missing — e.g. HEIMDALL_BOOTSTRAP_ADMIN_EMAIL is unset on a
+        // fresh deploy — skip seeding rather than crash startup. The runtime
+        // TicketDefaultsBackfiller logs the same condition with more detail.
+        const string defaultsSql = """
+            SELECT
+                (SELECT id FROM organizations WHERE slug = 'heimdall')                          AS org_id,
+                (SELECT id FROM teams         WHERE slug = 'default'  AND organization_id =
+                    (SELECT id FROM organizations WHERE slug = 'heimdall'))                     AS team_id,
+                (SELECT id FROM projects      WHERE slug = 'default'  AND team_id =
+                    (SELECT id FROM teams         WHERE slug = 'default' AND organization_id =
+                        (SELECT id FROM organizations WHERE slug = 'heimdall')))                AS project_id,
+                (SELECT id FROM users         WHERE system_admin = true ORDER BY created_at LIMIT 1) AS admin_id;
+            """;
+
+        var defaults = await connection
+            .QuerySingleOrDefaultAsync<(Guid? org_id, Guid? team_id, Guid? project_id, Guid? admin_id)>(
+                new CommandDefinition(defaultsSql, cancellationToken: cancellationToken)
+            )
+            .ConfigureAwait(false);
+
+        if (defaults.project_id is null
+            || defaults.team_id is null
+            || defaults.admin_id is null)
+        {
+            logger.LogWarning(
+                "Database seeding skipped: default hierarchy or bootstrap admin not present "
+                + "(project={ProjectIdPresent}, team={TeamIdPresent}, admin={AdminIdPresent}).",
+                defaults.project_id is not null,
+                defaults.team_id is not null,
+                defaults.admin_id is not null);
+            return;
+        }
+
         var seeder = new DatabaseSeeder(postgresConnectionString);
-        await seeder.SeedAsync(count, cancellationToken).ConfigureAwait(false);
+        await seeder
+            .SeedAsync(
+                defaults.project_id.Value,
+                defaults.team_id.Value,
+                defaults.admin_id.Value,
+                count,
+                cancellationToken)
+            .ConfigureAwait(false);
 
         logger.LogInformation("Database seeding complete ({Count} tickets inserted).", count);
 
