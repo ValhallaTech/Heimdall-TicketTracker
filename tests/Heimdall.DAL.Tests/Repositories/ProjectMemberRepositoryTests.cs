@@ -148,6 +148,27 @@ RETURNING id;",
         await _repo.AddAsync(new ProjectMember { UserId = dave, ProjectId = project1, Role = "viewer", AddedBy = alice });
         await _repo.AddAsync(new ProjectMember { UserId = bob, ProjectId = project2, Role = "owner", AddedBy = alice });
 
+        // Pin distinct added_at values so the ORDER BY added_at, user_id assertion is deterministic
+        // regardless of clock resolution or execution speed.
+        await using (var conn = new NpgsqlConnection(_fx.ConnectionString))
+        {
+            await conn.OpenAsync();
+            var t0 = DateTimeOffset.UtcNow.AddSeconds(-2);
+            await conn.ExecuteAsync(
+                """
+                UPDATE project_members
+                SET added_at = CASE
+                    WHEN user_id = @Bob   THEN @T0
+                    WHEN user_id = @Carol THEN @T1
+                    WHEN user_id = @Dave  THEN @T2
+                END
+                WHERE project_id = @Project
+                  AND (user_id = @Bob OR user_id = @Carol OR user_id = @Dave)
+                """,
+                new { Bob = bob, Carol = carol, Dave = dave, Project = project1,
+                      T0 = t0, T1 = t0.AddSeconds(1), T2 = t0.AddSeconds(2) });
+        }
+
         var rows = await _repo.GetByParentAsync(project1);
 
         rows.Should().HaveCount(3);

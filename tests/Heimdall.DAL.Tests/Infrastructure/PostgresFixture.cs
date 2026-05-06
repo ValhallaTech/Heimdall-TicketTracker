@@ -1,5 +1,4 @@
 using Dapper;
-using Heimdall.DAL.Extensions;
 using Heimdall.DAL.Migrations;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
