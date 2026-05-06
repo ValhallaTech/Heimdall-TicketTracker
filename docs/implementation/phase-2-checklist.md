@@ -1,6 +1,6 @@
 # Phase 2 — Team Collaboration Infrastructure: Implementation Checklist
 
-**Status:** Phase 2.1 complete on `main` (PR #27 merged); Phase 2.2 complete on `main` (PR #29 merged); Phase 2.3 complete on `main` (PR #30 merged — step 9 implemented as `DefaultHierarchyBootstrapper`); phases 2.4 / 2.5 / 2.6 in this PR (steps 10–19 complete pending review); phases 2.7–2.10 in planning.
+**Status:** Phase 2.1 complete on `main` (PR #27 merged); Phase 2.2 complete on `main` (PR #29 merged); Phase 2.3 complete on `main` (PR #30 merged — step 9 implemented as `DefaultHierarchyBootstrapper`); phases 2.4 / 2.5 / 2.6 complete on `main` (PR #31 merged); phases 2.7 / 2.8 / 2.9 in this PR (steps 20–26 in progress); phase 2.10 in planning.
 **Source of truth:** [`docs/proposals/team-collaboration.md`](../proposals/team-collaboration.md) (§4 sequencing, §5 policy matrix, §6 `IPermissionService`, §7 admin panel, §8 enrollment hook).
 **Depends on:** Phase 1 ([`phase-1-checklist.md`](./phase-1-checklist.md)) — complete on `main` after PR #26.
 
