@@ -162,24 +162,21 @@
         {
             var org = await OrganizationRepository
                 .GetBySlugAsync(DefaultHierarchyBootstrapper.OrganizationSlug);
-            if (org is not null)
+            if (org is not null && Model.TeamId == Guid.Empty)
             {
-                if (Model.TeamId == Guid.Empty)
+                var team = await TeamRepository
+                    .GetBySlugAsync(org.Id, DefaultHierarchyBootstrapper.TeamSlug);
+                if (team is not null)
                 {
-                    var team = await TeamRepository
-                        .GetBySlugAsync(org.Id, DefaultHierarchyBootstrapper.TeamSlug);
-                    if (team is not null)
-                    {
-                        Model.TeamId = team.Id;
+                    Model.TeamId = team.Id;
 
-                        if (Model.ProjectId == Guid.Empty)
+                    if (Model.ProjectId == Guid.Empty)
+                    {
+                        var project = await ProjectRepository
+                            .GetBySlugAsync(team.Id, DefaultHierarchyBootstrapper.ProjectSlug);
+                        if (project is not null)
                         {
-                            var project = await ProjectRepository
-                                .GetBySlugAsync(team.Id, DefaultHierarchyBootstrapper.ProjectSlug);
-                            if (project is not null)
-                            {
-                                Model.ProjectId = project.Id;
-                            }
+                            Model.ProjectId = project.Id;
                         }
                     }
                 }
