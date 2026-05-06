@@ -64,12 +64,15 @@ public sealed class PostgresFixture : IAsyncLifetime
 
     /// <summary>
     /// Wipes the Phase 2.1 collaboration-hierarchy tables (<c>projects</c>,
-    /// <c>teams</c>, <c>organizations</c>) along with <c>users</c> and
-    /// <c>audit_events</c> so each integration test starts from a known-empty
-    /// state. Order matters because the <c>created_by</c> FK chains use
-    /// <c>ON DELETE RESTRICT</c> — leaf-first deletes avoid having to defer
-    /// constraints. <c>audit_events</c> is also cleared so any rows written by
-    /// earlier tests in the collection don't bleed into the next assertion;
+    /// <c>teams</c>, <c>organizations</c>) together with their Phase 2.2
+    /// membership tables (<c>project_members</c>, <c>team_members</c>,
+    /// <c>organization_members</c>), plus <c>users</c> and <c>audit_events</c>,
+    /// so each integration test starts from a known-empty state. Order matters
+    /// because the <c>created_by</c> / <c>added_by</c> FK chains use
+    /// <c>ON DELETE RESTRICT</c> — leaf-first deletes (memberships before
+    /// hierarchy parents, then <c>users</c>) avoid having to defer constraints.
+    /// <c>audit_events</c> is also cleared so any rows written by earlier tests
+    /// in the collection don't bleed into the next assertion;
     /// <c>audit_events.actor_user_id</c> is <c>ON DELETE SET NULL</c>, so its
     /// position in the sequence is not load-bearing.
     /// </summary>
@@ -78,7 +81,10 @@ public sealed class PostgresFixture : IAsyncLifetime
         await using var conn = new NpgsqlConnection(ConnectionString);
         await conn.OpenAsync();
         await conn.ExecuteAsync(
-            "DELETE FROM projects; "
+            "DELETE FROM project_members; "
+            + "DELETE FROM team_members; "
+            + "DELETE FROM organization_members; "
+            + "DELETE FROM projects; "
             + "DELETE FROM teams; "
             + "DELETE FROM organizations; "
             + "DELETE FROM users; "

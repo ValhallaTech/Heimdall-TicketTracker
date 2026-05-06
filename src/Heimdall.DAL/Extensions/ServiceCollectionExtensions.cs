@@ -45,6 +45,13 @@ public static class ServiceCollectionExtensions
         services.AddScoped<IOrganizationRepository, OrganizationRepository>();
         services.AddScoped<ITeamRepository, TeamRepository>();
         services.AddScoped<IProjectRepository, ProjectRepository>();
+
+        // Phase 2.2 collaboration-membership repositories
+        // (docs/proposals/team-collaboration.md §4 step 4). Same lifetime rationale
+        // as the Phase 2.1 hierarchy block above.
+        services.AddScoped<IOrganizationMemberRepository, OrganizationMemberRepository>();
+        services.AddScoped<ITeamMemberRepository, TeamMemberRepository>();
+        services.AddScoped<IProjectMemberRepository, ProjectMemberRepository>();
         return services;
     }
 }
