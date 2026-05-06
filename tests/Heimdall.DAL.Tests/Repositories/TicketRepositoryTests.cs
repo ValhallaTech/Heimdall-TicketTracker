@@ -1,3 +1,4 @@
+using Dapper;
 using FluentAssertions;
 using Heimdall.Core.Models;
 using Heimdall.Core.Models.Pagination;
@@ -5,28 +6,76 @@ using Heimdall.DAL.Configuration;
 using Heimdall.DAL.Repositories;
 using Heimdall.DAL.Tests.Infrastructure;
 using Microsoft.Extensions.Options;
+using Npgsql;
 
 namespace Heimdall.DAL.Tests.Repositories;
 
+/// <summary>
+/// Integration tests for <see cref="TicketRepository"/> after Phase 2.5 replaced the
+/// legacy <c>reporter</c>/<c>assignee</c> string columns with FK Guid columns
+/// (<c>project_id</c>, <c>team_id</c>, <c>reporter_id</c>, <c>assignee_id</c>).
+/// Each test resets the tickets and collaboration tables, then seeds a minimum
+/// org → team → project → reporter graph so ticket inserts satisfy
+/// <c>ON DELETE RESTRICT</c> FKs.
+/// </summary>
 [Collection(PostgresCollection.Name)]
 [Trait("Category", "Integration")]
 public class TicketRepositoryTests : IAsyncLifetime
 {
     private readonly PostgresFixture _fx;
     private readonly TicketRepository _repo;
+    private readonly OrganizationRepository _orgRepo;
+    private readonly TeamRepository _teamRepo;
+    private readonly ProjectRepository _projectRepo;
+
+    private Guid _projectId;
+    private Guid _teamId;
+    private Guid _reporterId;
+    private Guid _assigneeId;
 
     public TicketRepositoryTests(PostgresFixture fx)
     {
         _fx = fx;
         var options = Options.Create(new DataOptions { PostgresConnectionString = fx.ConnectionString });
         _repo = new TicketRepository(options);
+        _orgRepo = new OrganizationRepository(options);
+        _teamRepo = new TeamRepository(options);
+        _projectRepo = new ProjectRepository(options);
     }
 
-    public Task InitializeAsync() => _fx.ResetTicketsTableAsync();
+    public async Task InitializeAsync()
+    {
+        await _fx.ResetTicketsAndCollaborationTablesAsync();
+        _reporterId = await SeedUserAsync("reporter@example.com");
+        _assigneeId = await SeedUserAsync("assignee@example.com");
+        var org = new Organization { Slug = "org", Name = "Org", CreatedBy = _reporterId };
+        await _orgRepo.CreateAsync(org);
+        var team = new Team { OrganizationId = org.Id, Slug = "team", Name = "Team", CreatedBy = _reporterId };
+        await _teamRepo.CreateAsync(team);
+        _teamId = team.Id;
+        var project = new Project { TeamId = _teamId, Slug = "proj", Name = "Proj", CreatedBy = _reporterId };
+        await _projectRepo.CreateAsync(project);
+        _projectId = project.Id;
+    }
 
     public Task DisposeAsync() => Task.CompletedTask;
 
-    private static Ticket Sample(string title = "T", string? assignee = null, TicketStatus s = TicketStatus.Open, TicketPriority p = TicketPriority.Medium)
+    private async Task<Guid> SeedUserAsync(string email)
+    {
+        await using var conn = new NpgsqlConnection(_fx.ConnectionString);
+        await conn.OpenAsync();
+        return await conn.QuerySingleAsync<Guid>(
+            @"INSERT INTO users (email, normalized_email, security_stamp, concurrency_stamp, created_at, updated_at)
+              VALUES (@Email, @NormalizedEmail, 's', 'c', now(), now())
+              RETURNING id;",
+            new { Email = email, NormalizedEmail = email.ToUpperInvariant() });
+    }
+
+    private Ticket Sample(
+        string title = "T",
+        Guid? assigneeId = null,
+        TicketStatus s = TicketStatus.Open,
+        TicketPriority p = TicketPriority.Medium)
     {
         var now = DateTimeOffset.UtcNow;
         return new Ticket
@@ -35,8 +84,10 @@ public class TicketRepositoryTests : IAsyncLifetime
             Description = $"desc {title}",
             Status = s,
             Priority = p,
-            Reporter = "reporter",
-            Assignee = assignee,
+            ProjectId = _projectId,
+            TeamId = _teamId,
+            ReporterId = _reporterId,
+            AssigneeId = assigneeId,
             DateCreated = now,
             DateUpdated = now,
         };
@@ -70,6 +121,19 @@ public class TicketRepositoryTests : IAsyncLifetime
         fetched.Should().NotBeNull();
         fetched!.Title.Should().Be("created");
         fetched.Description.Should().Be("desc created");
+        fetched.ProjectId.Should().Be(_projectId);
+        fetched.TeamId.Should().Be(_teamId);
+        fetched.ReporterId.Should().Be(_reporterId);
+        fetched.AssigneeId.Should().BeNull();
+    }
+
+    [Fact]
+    public async Task Should_PersistAssigneeId_When_CreatedWithAssignee()
+    {
+        var id = await _repo.CreateAsync(Sample("with-assignee", assigneeId: _assigneeId));
+
+        var fetched = await _repo.GetByIdAsync(id);
+        fetched!.AssigneeId.Should().Be(_assigneeId);
     }
 
     [Fact]
@@ -136,8 +200,6 @@ public class TicketRepositoryTests : IAsyncLifetime
         await _repo.CreateAsync(Sample("a"));
         await _repo.CreateAsync(Sample("b"));
 
-        // Construct via reflection to bypass PagedQuery sanitization that defaults invalid
-        // sort fields back to DateCreated. We need to test the repository's own fallback.
         var ctor = typeof(PagedQuery).GetConstructor(new[]
         {
             typeof(int), typeof(int), typeof(string), typeof(string), typeof(SortDirection),
@@ -165,7 +227,7 @@ public class TicketRepositoryTests : IAsyncLifetime
         t.Description = "new desc";
         t.Status = TicketStatus.Resolved;
         t.Priority = TicketPriority.High;
-        t.Assignee = "someone";
+        t.AssigneeId = _assigneeId;
 
         var ok = await _repo.UpdateAsync(t);
 
@@ -174,7 +236,7 @@ public class TicketRepositoryTests : IAsyncLifetime
         fetched!.Title.Should().Be("updated");
         fetched.Status.Should().Be(TicketStatus.Resolved);
         fetched.Priority.Should().Be(TicketPriority.High);
-        fetched.Assignee.Should().Be("someone");
+        fetched.AssigneeId.Should().Be(_assigneeId);
     }
 
     [Fact]
@@ -210,5 +272,128 @@ public class TicketRepositoryTests : IAsyncLifetime
     {
         var ok = await _repo.DeleteAsync(999_999);
         ok.Should().BeFalse();
+    }
+
+    // ---- Suite C — FK round-trip behaviors ----
+
+    [Fact]
+    public async Task Should_Throw_When_CreateAsyncWithUnknownProjectId()
+    {
+        var ticket = Sample("bad-fk");
+        ticket.ProjectId = Guid.NewGuid();
+
+        Func<Task> act = () => _repo.CreateAsync(ticket);
+
+        await act.Should().ThrowAsync<PostgresException>()
+            .Where(e => e.SqlState == "23503");
+    }
+
+    [Fact]
+    public async Task Should_Throw_When_CreateAsyncWithUnknownTeamId()
+    {
+        var ticket = Sample("bad-team");
+        ticket.TeamId = Guid.NewGuid();
+
+        Func<Task> act = () => _repo.CreateAsync(ticket);
+
+        await act.Should().ThrowAsync<PostgresException>()
+            .Where(e => e.SqlState == "23503");
+    }
+
+    [Fact]
+    public async Task Should_Throw_When_CreateAsyncWithUnknownReporterId()
+    {
+        var ticket = Sample("bad-reporter");
+        ticket.ReporterId = Guid.NewGuid();
+
+        Func<Task> act = () => _repo.CreateAsync(ticket);
+
+        await act.Should().ThrowAsync<PostgresException>()
+            .Where(e => e.SqlState == "23503");
+    }
+
+    [Fact]
+    public async Task Should_Throw_When_DeleteProjectStillReferencedByTicket()
+    {
+        await _repo.CreateAsync(Sample("anchor"));
+
+        Func<Task> act = async () =>
+        {
+            await using var conn = new NpgsqlConnection(_fx.ConnectionString);
+            await conn.OpenAsync();
+            await conn.ExecuteAsync("DELETE FROM projects WHERE id = @Id;", new { Id = _projectId });
+        };
+
+        await act.Should().ThrowAsync<PostgresException>()
+            .Where(e => e.SqlState == "23001");
+    }
+
+    [Fact]
+    public async Task Should_Throw_When_DeleteTeamStillReferencedByTicket()
+    {
+        await _repo.CreateAsync(Sample("anchor"));
+
+        Func<Task> act = async () =>
+        {
+            await using var conn = new NpgsqlConnection(_fx.ConnectionString);
+            await conn.OpenAsync();
+            await conn.ExecuteAsync("DELETE FROM teams WHERE id = @Id;", new { Id = _teamId });
+        };
+
+        await act.Should().ThrowAsync<PostgresException>()
+            .Where(e => e.SqlState == "23001");
+    }
+
+    [Fact]
+    public async Task Should_Throw_When_DeleteReporterStillReferencedByTicket()
+    {
+        await _repo.CreateAsync(Sample("anchor"));
+
+        Func<Task> act = async () =>
+        {
+            await using var conn = new NpgsqlConnection(_fx.ConnectionString);
+            await conn.OpenAsync();
+            await conn.ExecuteAsync("DELETE FROM users WHERE id = @Id;", new { Id = _reporterId });
+        };
+
+        await act.Should().ThrowAsync<PostgresException>()
+            .Where(e => e.SqlState == "23001");
+    }
+
+    [Fact]
+    public async Task Should_NullAssigneeId_When_AssigneeUserDeleted()
+    {
+        var id = await _repo.CreateAsync(Sample("with-assignee", assigneeId: _assigneeId));
+
+        await using (var conn = new NpgsqlConnection(_fx.ConnectionString))
+        {
+            await conn.OpenAsync();
+            await conn.ExecuteAsync("DELETE FROM users WHERE id = @Id;", new { Id = _assigneeId });
+        }
+
+        var fetched = await _repo.GetByIdAsync(id);
+        fetched.Should().NotBeNull();
+        fetched!.AssigneeId.Should().BeNull();
+    }
+
+    [Fact]
+    public async Task Should_HaveTeamIdIndex_When_SchemaQueried()
+    {
+        await using var conn = new NpgsqlConnection(_fx.ConnectionString);
+        await conn.OpenAsync();
+        var count = await conn.ExecuteScalarAsync<long>(
+            "SELECT COUNT(*) FROM pg_indexes WHERE tablename = 'tickets' AND indexname = 'ix_tickets_team_id';");
+        count.Should().Be(1);
+    }
+
+    [Fact]
+    public async Task Should_HaveDroppedLegacyReporterAndAssigneeColumns_When_SchemaQueried()
+    {
+        await using var conn = new NpgsqlConnection(_fx.ConnectionString);
+        await conn.OpenAsync();
+        var legacy = await conn.QueryAsync<string>(
+            @"SELECT column_name FROM information_schema.columns
+              WHERE table_name = 'tickets' AND column_name IN ('reporter', 'assignee');");
+        legacy.Should().BeEmpty();
     }
 }

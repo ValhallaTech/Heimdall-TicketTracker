@@ -67,8 +67,8 @@ public class TicketsPageTests : BunitContext
                 Description = "d",
                 Status = v.Item1,
                 Priority = v.Item2,
-                Reporter = $"r{i}",
-                Assignee = i % 2 == 0 ? null : $"a{i}",
+                ReporterId = Guid.NewGuid(),
+                AssigneeId = i % 2 == 0 ? null : Guid.NewGuid(),
                 DateCreated = DateTimeOffset.UtcNow.AddMinutes(-i),
                 DateUpdated = DateTimeOffset.UtcNow,
             });

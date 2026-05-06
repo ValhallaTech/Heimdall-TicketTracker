@@ -1,4 +1,5 @@
 using FluentAssertions;
+using Heimdall.BLL.Authorization;
 using Heimdall.BLL.Mapping;
 using Heimdall.BLL.Services;
 using Heimdall.Core.Caching;
@@ -15,10 +16,13 @@ public class TicketServiceTests
 {
     private readonly Mock<ITicketRepository> _repository = new(MockBehavior.Strict);
     private readonly Mock<ICacheService> _cache = new(MockBehavior.Strict);
+    private readonly Mock<IPermissionService> _permissions = new(MockBehavior.Loose);
     private readonly ITicketMapper _mapper = new TicketMapper();
 
     private TicketService CreateSut() =>
-        new(_repository.Object, _cache.Object, _mapper, NullLogger<TicketService>.Instance);
+        new(_repository.Object, _cache.Object, _mapper, _permissions.Object, NullLogger<TicketService>.Instance);
+
+    private static readonly Guid SeedReporterId = Guid.Parse("cccccccc-cccc-cccc-cccc-cccccccccccc");
 
     private static Ticket SampleTicket(int id = 1) =>
         new()
@@ -28,8 +32,8 @@ public class TicketServiceTests
             Description = $"Desc {id}",
             Status = TicketStatus.Open,
             Priority = TicketPriority.Medium,
-            Reporter = "Reporter",
-            Assignee = null,
+            ReporterId = SeedReporterId,
+            AssigneeId = null,
             DateCreated = DateTimeOffset.UtcNow,
             DateUpdated = DateTimeOffset.UtcNow,
         };
@@ -38,7 +42,7 @@ public class TicketServiceTests
     public void Should_Throw_When_RepositoryIsNull()
     {
         Action act = () =>
-            new TicketService(null!, _cache.Object, _mapper, NullLogger<TicketService>.Instance);
+            new TicketService(null!, _cache.Object, _mapper, _permissions.Object, NullLogger<TicketService>.Instance);
         act.Should().Throw<ArgumentNullException>();
     }
 
@@ -50,6 +54,7 @@ public class TicketServiceTests
                 _repository.Object,
                 null!,
                 _mapper,
+                _permissions.Object,
                 NullLogger<TicketService>.Instance
             );
         act.Should().Throw<ArgumentNullException>();
@@ -63,6 +68,7 @@ public class TicketServiceTests
                 _repository.Object,
                 _cache.Object,
                 null!,
+                _permissions.Object,
                 NullLogger<TicketService>.Instance
             );
         act.Should().Throw<ArgumentNullException>();
@@ -71,7 +77,19 @@ public class TicketServiceTests
     [Fact]
     public void Should_Throw_When_LoggerIsNull()
     {
-        Action act = () => new TicketService(_repository.Object, _cache.Object, _mapper, null!);
+        Action act = () => new TicketService(_repository.Object, _cache.Object, _mapper, _permissions.Object, null!);
+        act.Should().Throw<ArgumentNullException>();
+    }
+
+    [Fact]
+    public void Should_Throw_When_PermissionsIsNull()
+    {
+        Action act = () => new TicketService(
+            _repository.Object,
+            _cache.Object,
+            _mapper,
+            null!,
+            NullLogger<TicketService>.Instance);
         act.Should().Throw<ArgumentNullException>();
     }
 
@@ -86,7 +104,8 @@ public class TicketServiceTests
             _repository.Object,
             cache,
             _mapper,
-            NullLogger<TicketService>.Instance
+            _permissions.Object,
+                NullLogger<TicketService>.Instance
         );
 
         var result = await sut.GetAllAsync();
@@ -114,7 +133,8 @@ public class TicketServiceTests
             _repository.Object,
             cache,
             _mapper,
-            NullLogger<TicketService>.Instance
+            _permissions.Object,
+                NullLogger<TicketService>.Instance
         );
 
         // First call: miss + set
@@ -238,7 +258,7 @@ public class TicketServiceTests
         {
             Title = "T",
             Description = "D",
-            Reporter = "r",
+            ReporterId = SeedReporterId,
         };
         Ticket? saved = null;
         _repository
@@ -285,7 +305,7 @@ public class TicketServiceTests
             Id = 1,
             Title = "T",
             Description = "D",
-            Reporter = "r",
+            ReporterId = SeedReporterId,
         };
         _repository
             .Setup(r => r.UpdateAsync(It.IsAny<Ticket>(), It.IsAny<CancellationToken>()))
@@ -312,7 +332,7 @@ public class TicketServiceTests
             Id = 1,
             Title = "T",
             Description = "D",
-            Reporter = "r",
+            ReporterId = SeedReporterId,
         };
         _repository
             .Setup(r => r.UpdateAsync(It.IsAny<Ticket>(), It.IsAny<CancellationToken>()))

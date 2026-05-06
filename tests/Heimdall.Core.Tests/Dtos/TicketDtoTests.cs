@@ -7,6 +7,10 @@ namespace Heimdall.Core.Tests.Dtos;
 
 public class TicketDtoTests
 {
+    private static readonly Guid SeedProjectId = Guid.Parse("aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa");
+    private static readonly Guid SeedTeamId = Guid.Parse("bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb");
+    private static readonly Guid SeedReporterId = Guid.Parse("cccccccc-cccc-cccc-cccc-cccccccccccc");
+
     [Fact]
     public void Should_HaveDefaults_When_NewlyConstructed()
     {
@@ -17,13 +21,20 @@ public class TicketDtoTests
         dto.Description.Should().BeEmpty();
         dto.Status.Should().Be(TicketStatus.Open);
         dto.Priority.Should().Be(TicketPriority.Medium);
-        dto.Reporter.Should().BeEmpty();
-        dto.Assignee.Should().BeNull();
+        dto.ProjectId.Should().Be(Guid.Empty);
+        dto.TeamId.Should().Be(Guid.Empty);
+        dto.ReporterId.Should().Be(Guid.Empty);
+        dto.AssigneeId.Should().BeNull();
     }
 
     [Fact]
     public void Should_FailValidation_When_RequiredFieldsAreEmpty()
     {
+        // Title / Description are still string-required; ProjectId / TeamId /
+        // ReporterId are [Required] on the DTO post-Phase-2.5 but Guid is a
+        // value type so [Required] on a non-nullable Guid does NOT flag
+        // Guid.Empty (the framework treats default(Guid) as "present"). We
+        // therefore only assert the string members.
         var dto = new TicketDto();
         var ctx = new ValidationContext(dto);
         var results = new List<ValidationResult>();
@@ -33,7 +44,6 @@ public class TicketDtoTests
         ok.Should().BeFalse();
         results.Should().Contain(r => r.MemberNames.Contains(nameof(TicketDto.Title)));
         results.Should().Contain(r => r.MemberNames.Contains(nameof(TicketDto.Description)));
-        results.Should().Contain(r => r.MemberNames.Contains(nameof(TicketDto.Reporter)));
     }
 
     [Fact]
@@ -43,7 +53,9 @@ public class TicketDtoTests
         {
             Title = "Title",
             Description = "Desc",
-            Reporter = "Me",
+            ProjectId = SeedProjectId,
+            TeamId = SeedTeamId,
+            ReporterId = SeedReporterId,
         };
         var ctx = new ValidationContext(dto);
         var results = new List<ValidationResult>();
@@ -61,7 +73,9 @@ public class TicketDtoTests
         {
             Title = new string('x', 201),
             Description = "Desc",
-            Reporter = "Me",
+            ProjectId = SeedProjectId,
+            TeamId = SeedTeamId,
+            ReporterId = SeedReporterId,
         };
         var ctx = new ValidationContext(dto);
         var results = new List<ValidationResult>();

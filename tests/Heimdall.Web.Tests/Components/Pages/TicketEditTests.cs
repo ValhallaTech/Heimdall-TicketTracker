@@ -31,6 +31,8 @@ public class TicketEditTests : BunitContext
     [Fact]
     public void Should_RenderEditHeadingAndPopulateForm_When_TicketExists()
     {
+        var reporter = Guid.Parse("11111111-1111-1111-1111-111111111111");
+        var assignee = Guid.Parse("22222222-2222-2222-2222-222222222222");
         var dto = new TicketDto
         {
             Id = 42,
@@ -38,8 +40,8 @@ public class TicketEditTests : BunitContext
             Description = "Existing Desc",
             Status = TicketStatus.InProgress,
             Priority = TicketPriority.High,
-            Reporter = "alice",
-            Assignee = "bob",
+            ReporterId = reporter,
+            AssigneeId = assignee,
         };
         _service
             .Setup(s => s.GetByIdAsync(42, It.IsAny<CancellationToken>()))
@@ -51,8 +53,8 @@ public class TicketEditTests : BunitContext
         {
             cut.Markup.Should().Contain("Edit Ticket");
             cut.Find("#title").GetAttribute("value").Should().Be("Existing Title");
-            cut.Find("#reporter").GetAttribute("value").Should().Be("alice");
-            cut.Find("#assignee").GetAttribute("value").Should().Be("bob");
+            cut.Find("#reporter").GetAttribute("value").Should().Be(reporter.ToString());
+            cut.Find("#assignee").GetAttribute("value").Should().Be(assignee.ToString());
         });
     }
 
@@ -90,7 +92,7 @@ public class TicketEditTests : BunitContext
 
         cut.Find("#title").Change("My Title");
         cut.Find("#description").Change("Some description");
-        cut.Find("#reporter").Change("alice");
+        cut.Find("#reporter").Change(Guid.NewGuid().ToString());
         cut.Find("form").Submit();
 
         cut.WaitForAssertion(() =>
@@ -113,7 +115,7 @@ public class TicketEditTests : BunitContext
             Id = 7,
             Title = "Old",
             Description = "Old",
-            Reporter = "alice",
+            ReporterId = Guid.NewGuid(),
         };
         _service
             .Setup(s => s.GetByIdAsync(7, It.IsAny<CancellationToken>()))

@@ -11,17 +11,25 @@ namespace Heimdall.BLL.Tests.Mapping;
 /// (<c>src/Heimdall.BLL/Mappers/TicketMapper.cs</c>) is produced by Mapster.Tool from
 /// <see cref="ITicketMapper"/> and <see cref="TicketMappingRegister"/>. These tests pin
 /// the generated behavior — including the <c>DateCreated</c>/<c>DateUpdated</c> ignore
-/// contract — so a stale regeneration is caught at CI time.
+/// contract — so a stale regeneration is caught at CI time. Phase 2.5 replaced the
+/// legacy <c>Reporter</c>/<c>Assignee</c> string columns with FK Guid columns; the
+/// assertions below reflect that schema.
 /// </summary>
 public class TicketMapperTests
 {
+    private static readonly Guid SeedProjectId = Guid.Parse("aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa");
+    private static readonly Guid SeedTeamId = Guid.Parse("bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb");
+    private static readonly Guid SeedReporterId = Guid.Parse("cccccccc-cccc-cccc-cccc-cccccccccccc");
+    private static readonly Guid SeedAssigneeId = Guid.Parse("dddddddd-dddd-dddd-dddd-dddddddddddd");
+
     private static ITicketMapper CreateMapper() => new TicketMapper();
 
     [Fact]
     public void Should_RegisterApplyIgnoreRules_When_TypeAdapterConfigCompiled()
     {
-        // Sanity check that the IRegister source-of-truth is internally consistent —
-        // Compile() throws if any NewConfig is unmappable.
+        // Sanity check that the IRegister source-of-truth is internally consistent:
+        // applying TicketMappingRegister to a fresh TypeAdapterConfig must produce
+        // a configuration that compiles successfully (no missing/ambiguous mappings).
         var config = new TypeAdapterConfig();
         new TicketMappingRegister().Register(config);
 
@@ -52,8 +60,10 @@ public class TicketMapperTests
             Description = "D",
             Status = TicketStatus.Resolved,
             Priority = TicketPriority.High,
-            Reporter = "r",
-            Assignee = "a",
+            ProjectId = SeedProjectId,
+            TeamId = SeedTeamId,
+            ReporterId = SeedReporterId,
+            AssigneeId = SeedAssigneeId,
             DateCreated = now,
             DateUpdated = now.AddMinutes(1),
         };
@@ -74,8 +84,10 @@ public class TicketMapperTests
             Description = "D",
             Status = TicketStatus.InProgress,
             Priority = TicketPriority.Critical,
-            Reporter = "r",
-            Assignee = "a",
+            ProjectId = SeedProjectId,
+            TeamId = SeedTeamId,
+            ReporterId = SeedReporterId,
+            AssigneeId = SeedAssigneeId,
             DateCreated = DateTimeOffset.UtcNow,
             DateUpdated = DateTimeOffset.UtcNow,
         };
@@ -87,8 +99,10 @@ public class TicketMapperTests
         ticket.Description.Should().Be(dto.Description);
         ticket.Status.Should().Be(dto.Status);
         ticket.Priority.Should().Be(dto.Priority);
-        ticket.Reporter.Should().Be(dto.Reporter);
-        ticket.Assignee.Should().Be(dto.Assignee);
+        ticket.ProjectId.Should().Be(dto.ProjectId);
+        ticket.TeamId.Should().Be(dto.TeamId);
+        ticket.ReporterId.Should().Be(dto.ReporterId);
+        ticket.AssigneeId.Should().Be(dto.AssigneeId);
         ticket.DateCreated.Should().Be(default);
         ticket.DateUpdated.Should().Be(default);
     }
@@ -107,8 +121,10 @@ public class TicketMapperTests
                 Description = "DA",
                 Status = TicketStatus.Open,
                 Priority = TicketPriority.Low,
-                Reporter = "r1",
-                Assignee = null,
+                ProjectId = SeedProjectId,
+                TeamId = SeedTeamId,
+                ReporterId = SeedReporterId,
+                AssigneeId = null,
                 DateCreated = now,
                 DateUpdated = now,
             },
@@ -119,8 +135,10 @@ public class TicketMapperTests
                 Description = "DB",
                 Status = TicketStatus.Closed,
                 Priority = TicketPriority.High,
-                Reporter = "r2",
-                Assignee = "a2",
+                ProjectId = SeedProjectId,
+                TeamId = SeedTeamId,
+                ReporterId = SeedReporterId,
+                AssigneeId = SeedAssigneeId,
                 DateCreated = now.AddMinutes(-5),
                 DateUpdated = now,
             },
