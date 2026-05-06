@@ -1,8 +1,8 @@
+using System.Text.Json;
 using FluentAssertions;
 using Heimdall.DAL.Caching;
 using Microsoft.Extensions.Logging.Abstractions;
 using Moq;
-using Newtonsoft.Json;
 using StackExchange.Redis;
 
 namespace Heimdall.DAL.Tests.Caching;
@@ -44,7 +44,9 @@ public class RedisCacheServiceTests
     public async Task Should_ReturnDeserializedValue_When_GetAsyncHits()
     {
         var (sut, _, db) = CreateSut();
-        var json = JsonConvert.SerializeObject(new Box { Id = 1, Name = "n" });
+        var json = JsonSerializer.Serialize(
+            new Box { Id = 1, Name = "n" },
+            new JsonSerializerOptions { PropertyNamingPolicy = JsonNamingPolicy.CamelCase });
         db.Setup(d => d.StringGetAsync("k", CommandFlags.None)).ReturnsAsync(json);
 
         var result = await sut.GetAsync<Box>("k");
@@ -106,7 +108,9 @@ public class RedisCacheServiceTests
 
         capturedTtl.Should().Be(TimeSpan.FromMinutes(2));
         captured.HasValue.Should().BeTrue();
-        var deserialized = JsonConvert.DeserializeObject<Box>((string)captured!);
+        var deserialized = JsonSerializer.Deserialize<Box>(
+            (string)captured!,
+            new JsonSerializerOptions { PropertyNameCaseInsensitive = true });
         deserialized!.Id.Should().Be(7);
         deserialized.Name.Should().Be("n");
     }

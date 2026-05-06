@@ -1,0 +1,151 @@
+@*
+    Phase 2.8 step 23 (docs/proposals/team-collaboration.md §5.1, §7) — shared
+    table that renders a list of TicketDto rows with per-row Route / Claim /
+    Assign action buttons. Used by both the per-team queue (/teams/{slug}/queue)
+    and the cross-team admin queue view (/admin/queues).
+
+    The hosting page is responsible for:
+      • computing per-ticket permission flags (the table only renders what's
+        passed in, so the deny-closed authorization decision lives one layer
+        higher next to IPermissionService);
+      • surfacing the per-action modal/dialog UX (route picker, assign picker)
+        — the table just raises EventCallbacks when an action is invoked.
+*@
+
+@using Heimdall.Core.Dtos
+@using Heimdall.Core.Models
+
+<div class="card shadow-sm">
+    <div class="table-responsive">
+        <table class="table table-hover align-middle mb-0">
+            <thead class="table-group-divider">
+                <tr>
+                    <th scope="col">Title</th>
+                    <th scope="col">Status</th>
+                    <th scope="col">Priority</th>
+                    <th scope="col">Assignee</th>
+                    <th scope="col" class="text-nowrap">Created</th>
+                    <th scope="col" class="text-end">Actions</th>
+                </tr>
+            </thead>
+            <tbody>
+            @if (Tickets is null || Tickets.Count == 0)
+            {
+                <tr>
+                    <td colspan="6" class="text-center text-body-secondary py-4">
+                        No tickets in this queue.
+                    </td>
+                </tr>
+            }
+            else
+            {
+                @foreach (var ticket in Tickets)
+                {
+                    <tr @key="ticket.Id">
+                        <td class="fw-medium">
+                            <a class="text-decoration-none" href="@($"/tickets/{ticket.Id}")">@ticket.Title</a>
+                        </td>
+                        <td><span class="badge @StatusBadgeClass(ticket.Status)">@ticket.Status</span></td>
+                        <td><span class="badge @PriorityBadgeClass(ticket.Priority)">@ticket.Priority</span></td>
+                        <td class="text-body-secondary">
+                            @(ticket.AssigneeId is null
+                                ? "—"
+                                : DisplayNames?.GetValueOrDefault(ticket.AssigneeId.Value) ?? ticket.AssigneeId.Value.ToString())
+                        </td>
+                        <td class="text-body-secondary text-nowrap">
+                            @ticket.DateCreated.ToString("MMM d, yyyy")
+                        </td>
+                        <td class="text-end">
+                            <div class="d-inline-flex gap-1" role="group" aria-label="Ticket actions">
+                                @if (CanRoute(ticket))
+                                {
+                                    <button type="button"
+                                            class="btn btn-sm btn-outline-primary"
+                                            title="Route ticket @ticket.Id to a different team"
+                                            @onclick="() => OnRouteRequested.InvokeAsync(ticket)">
+                                        <i class="fa-solid fa-share-from-square me-1" aria-hidden="true"></i> Route
+                                    </button>
+                                }
+                                @if (CanClaim(ticket))
+                                {
+                                    <button type="button"
+                                            class="btn btn-sm btn-outline-success"
+                                            title="Claim ticket @ticket.Id"
+                                            @onclick="() => OnClaimRequested.InvokeAsync(ticket)">
+                                        <i class="fa-solid fa-hand me-1" aria-hidden="true"></i> Claim
+                                    </button>
+                                }
+                                @if (CanAssign(ticket))
+                                {
+                                    <button type="button"
+                                            class="btn btn-sm btn-outline-secondary"
+                                            title="Assign ticket @ticket.Id to a teammate"
+                                            @onclick="() => OnAssignRequested.InvokeAsync(ticket)">
+                                        <i class="fa-solid fa-user-plus me-1" aria-hidden="true"></i> Assign
+                                    </button>
+                                }
+                            </div>
+                        </td>
+                    </tr>
+                }
+            }
+            </tbody>
+        </table>
+    </div>
+</div>
+
+@code {
+    /// <summary>The list of tickets to render.</summary>
+    [Parameter, EditorRequired] public IReadOnlyList<TicketDto>? Tickets { get; set; }
+
+    /// <summary>
+    /// Optional display-name map keyed by user id. When present, the assignee
+    /// column renders the email / display label; otherwise it falls back to the
+    /// raw <see cref="Guid"/>. Reporter is not rendered here — the team queue
+    /// page is assignee-centric per <c>docs/proposals/team-collaboration.md</c> §5.3.
+    /// </summary>
+    [Parameter] public IReadOnlyDictionary<Guid, string>? DisplayNames { get; set; }
+
+    /// <summary>
+    /// Per-ticket permission flag: may the current actor route this ticket?
+    /// Pre-computed by the host page so the table renders synchronously.
+    /// </summary>
+    [Parameter] public IReadOnlyDictionary<int, bool>? RoutePermissions { get; set; }
+
+    /// <summary>Per-ticket permission flag: may the current actor claim this ticket?</summary>
+    [Parameter] public IReadOnlyDictionary<int, bool>? ClaimPermissions { get; set; }
+
+    /// <summary>Per-ticket permission flag: may the current actor assign this ticket to anyone?</summary>
+    [Parameter] public IReadOnlyDictionary<int, bool>? AssignPermissions { get; set; }
+
+    /// <summary>Raised when the user clicks the Route button on a row.</summary>
+    [Parameter] public EventCallback<TicketDto> OnRouteRequested { get; set; }
+
+    /// <summary>Raised when the user clicks the Claim button on a row.</summary>
+    [Parameter] public EventCallback<TicketDto> OnClaimRequested { get; set; }
+
+    /// <summary>Raised when the user clicks the Assign button on a row.</summary>
+    [Parameter] public EventCallback<TicketDto> OnAssignRequested { get; set; }
+
+    private bool CanRoute(TicketDto t) => RoutePermissions?.GetValueOrDefault(t.Id) ?? false;
+    private bool CanClaim(TicketDto t) => ClaimPermissions?.GetValueOrDefault(t.Id) ?? false;
+    private bool CanAssign(TicketDto t) => AssignPermissions?.GetValueOrDefault(t.Id) ?? false;
+
+    private static string StatusBadgeClass(TicketStatus status) => status switch
+    {
+        TicketStatus.Open       => "text-bg-primary",
+        TicketStatus.InProgress => "text-bg-info",
+        TicketStatus.Resolved   => "text-bg-success",
+        TicketStatus.Closed     => "text-bg-secondary",
+        _                       => "text-bg-secondary",
+    };
+
+    private static string PriorityBadgeClass(TicketPriority priority) => priority switch
+    {
+        TicketPriority.Low      => "text-bg-secondary",
+        TicketPriority.Medium   => "text-bg-info",
+        TicketPriority.High     => "text-bg-warning",
+        TicketPriority.Critical => "text-bg-danger",
+        _                       => "text-bg-secondary",
+    };
+}

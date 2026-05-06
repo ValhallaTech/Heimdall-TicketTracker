@@ -12,7 +12,7 @@ A small, modern ticket-tracking web application built on **.NET 10**, **Blazor (
 - **Data access:** Dapper + `Dapper.Extensions.PostgreSQL`
 - **Migrations:** FluentMigrator
 - **Database:** PostgreSQL
-- **Cache:** Redis (StackExchange.Redis + Newtonsoft.Json)
+- **Cache:** Redis (StackExchange.Redis + System.Text.Json)
 - **Logging:** Serilog (console sink)
 - **Frontend:** Bootstrap 5.3 + Font Awesome 7, vendored via [Yarn](https://yarnpkg.com) (`build-assets.mjs`)
 - **Containerisation:** Multi-stage `Dockerfile`, `docker-compose.yml`, and `render.yaml` blueprint

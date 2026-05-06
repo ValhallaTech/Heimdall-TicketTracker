@@ -52,4 +52,20 @@ public sealed class UserLookup : IUserLookup
             .ConfigureAwait(false);
         return flag == true;
     }
+
+    /// <inheritdoc />
+    public async Task<UserSummary?> GetByIdAsync(
+        Guid userId,
+        CancellationToken cancellationToken = default)
+    {
+        await using var connection = new NpgsqlConnection(_connectionString);
+        var command = new CommandDefinition(
+            "SELECT id AS Id, email AS Email FROM users WHERE id = @Id",
+            new { Id = userId },
+            cancellationToken: cancellationToken
+        );
+        return await connection
+            .QuerySingleOrDefaultAsync<UserSummary>(command)
+            .ConfigureAwait(false);
+    }
 }

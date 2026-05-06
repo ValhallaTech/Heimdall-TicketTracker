@@ -51,6 +51,40 @@ public sealed class TeamRepository : ITeamRepository
     }
 
     /// <inheritdoc />
+    public async Task<IReadOnlyList<Team>> GetAllAsync(
+        CancellationToken cancellationToken = default
+    )
+    {
+        await using var connection = new NpgsqlConnection(_connectionString);
+        var command = new CommandDefinition(
+            $"SELECT {SelectColumns} FROM teams ORDER BY name ASC, slug ASC",
+            cancellationToken: cancellationToken
+        );
+        var rows = await connection.QueryAsync<Team>(command).ConfigureAwait(false);
+        return [.. rows];
+    }
+
+    /// <inheritdoc />
+    public async Task<Team?> GetBySlugAsync(
+        string slug,
+        CancellationToken cancellationToken = default
+    )
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(slug);
+        await using var connection = new NpgsqlConnection(_connectionString);
+        // ::citext cast — see OrganizationRepository.GetBySlugAsync for rationale.
+        // ORDER BY created_at gives a deterministic resolution if (at some future
+        // point) two organizations register a team with the same slug.
+        var command = new CommandDefinition(
+            $"SELECT {SelectColumns} FROM teams WHERE slug = @Slug::citext "
+                + "ORDER BY created_at ASC LIMIT 1",
+            new { Slug = slug },
+            cancellationToken: cancellationToken
+        );
+        return await connection.QuerySingleOrDefaultAsync<Team>(command).ConfigureAwait(false);
+    }
+
+    /// <inheritdoc />
     public async Task<Team?> GetByIdAsync(
         Guid id,
         CancellationToken cancellationToken = default

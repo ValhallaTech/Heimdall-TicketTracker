@@ -15,11 +15,15 @@ public class TicketEditTests : BunitContext
     private static readonly Guid SeedOrganizationId = Guid.Parse("aaaaaaaa-0000-0000-0000-000000000001");
     private static readonly Guid SeedTeamId = Guid.Parse("aaaaaaaa-0000-0000-0000-000000000002");
     private static readonly Guid SeedProjectId = Guid.Parse("aaaaaaaa-0000-0000-0000-000000000003");
+    private static readonly Guid SeedReporterId = Guid.Parse("11111111-1111-1111-1111-111111111111");
+    private static readonly Guid SeedAssigneeId = Guid.Parse("22222222-2222-2222-2222-222222222222");
 
     private readonly Mock<ITicketService> _service = new(MockBehavior.Loose);
     private readonly Mock<IOrganizationRepository> _organizations = new(MockBehavior.Loose);
     private readonly Mock<ITeamRepository> _teams = new(MockBehavior.Loose);
     private readonly Mock<IProjectRepository> _projects = new(MockBehavior.Loose);
+    private readonly Mock<ITeamMemberRepository> _teamMembers = new(MockBehavior.Loose);
+    private readonly Mock<IUserLookup> _userLookup = new(MockBehavior.Loose);
 
     public TicketEditTests()
     {
@@ -30,17 +34,41 @@ public class TicketEditTests : BunitContext
         _organizations
             .Setup(r => r.GetBySlugAsync("heimdall", It.IsAny<CancellationToken>()))
             .ReturnsAsync(new Organization { Id = SeedOrganizationId, Slug = "heimdall", Name = "Heimdall" });
+        var seedTeam = new Team { Id = SeedTeamId, OrganizationId = SeedOrganizationId, Slug = "default", Name = "Default" };
         _teams
             .Setup(r => r.GetBySlugAsync(SeedOrganizationId, "default", It.IsAny<CancellationToken>()))
-            .ReturnsAsync(new Team { Id = SeedTeamId, OrganizationId = SeedOrganizationId, Slug = "default", Name = "Default" });
+            .ReturnsAsync(seedTeam);
+        _teams
+            .Setup(r => r.GetAllAsync(It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new[] { seedTeam });
         _projects
             .Setup(r => r.GetBySlugAsync(SeedTeamId, "default", It.IsAny<CancellationToken>()))
             .ReturnsAsync(new Project { Id = SeedProjectId, TeamId = SeedTeamId, Slug = "default", Name = "Default" });
+        _projects
+            .Setup(r => r.GetByTeamAsync(SeedTeamId, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new[] { new Project { Id = SeedProjectId, TeamId = SeedTeamId, Slug = "default", Name = "Default" } });
+
+        // Phase 2.8 step 24: TicketEdit's reporter / assignee pickers populate
+        // their <option> list from team membership. Register a default member set
+        // covering the well-known guids used by the existing test cases so
+        // .Change("<guid>") still succeeds on the <select> elements.
+        _teamMembers
+            .Setup(r => r.GetByParentAsync(SeedTeamId, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new[]
+            {
+                new TeamMember { TeamId = SeedTeamId, UserId = SeedReporterId, Role = TeamMemberRole.Member },
+                new TeamMember { TeamId = SeedTeamId, UserId = SeedAssigneeId, Role = TeamMemberRole.Member },
+            });
+        _userLookup
+            .Setup(u => u.GetByIdAsync(It.IsAny<Guid>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync((Guid id, CancellationToken _) => new UserSummary(id, id.ToString()));
 
         Services.AddSingleton(_service.Object);
         Services.AddSingleton(_organizations.Object);
         Services.AddSingleton(_teams.Object);
         Services.AddSingleton(_projects.Object);
+        Services.AddSingleton(_teamMembers.Object);
+        Services.AddSingleton(_userLookup.Object);
     }
 
     [Fact]
@@ -55,8 +83,8 @@ public class TicketEditTests : BunitContext
     [Fact]
     public void Should_RenderEditHeadingAndPopulateForm_When_TicketExists()
     {
-        var reporter = Guid.Parse("11111111-1111-1111-1111-111111111111");
-        var assignee = Guid.Parse("22222222-2222-2222-2222-222222222222");
+        var reporter = SeedReporterId;
+        var assignee = SeedAssigneeId;
         var dto = new TicketDto
         {
             Id = 42,
@@ -64,6 +92,8 @@ public class TicketEditTests : BunitContext
             Description = "Existing Desc",
             Status = TicketStatus.InProgress,
             Priority = TicketPriority.High,
+            ProjectId = SeedProjectId,
+            TeamId = SeedTeamId,
             ReporterId = reporter,
             AssigneeId = assignee,
         };
@@ -77,8 +107,15 @@ public class TicketEditTests : BunitContext
         {
             cut.Markup.Should().Contain("Edit Ticket");
             cut.Find("#title").GetAttribute("value").Should().Be("Existing Title");
-            cut.Find("#reporter").GetAttribute("value").Should().Be(reporter.ToString());
-            cut.Find("#assignee").GetAttribute("value").Should().Be(assignee.ToString());
+            // Phase 2.8 step 24: reporter / assignee are now <select> elements,
+            // populated from team membership. The current value is reflected on
+            // the selected <option>.
+            var reporterSelect = cut.Find("#reporter");
+            var assigneeSelect = cut.Find("#assignee");
+            reporterSelect.QuerySelector("option[selected]")?.GetAttribute("value")
+                .Should().Be(reporter.ToString());
+            assigneeSelect.QuerySelector("option[selected]")?.GetAttribute("value")
+                .Should().Be(assignee.ToString());
         });
     }
 
@@ -116,7 +153,10 @@ public class TicketEditTests : BunitContext
 
         cut.Find("#title").Change("My Title");
         cut.Find("#description").Change("Some description");
-        cut.Find("#reporter").Change(Guid.NewGuid().ToString());
+        // Phase 2.8 step 24: reporter is now a <select> populated from team
+        // membership. SeedReporterId was registered as a member of SeedTeamId
+        // in the fixture so the option exists.
+        cut.Find("#reporter").Change(SeedReporterId.ToString());
         cut.Find("form").Submit();
 
         cut.WaitForAssertion(() =>
@@ -141,7 +181,7 @@ public class TicketEditTests : BunitContext
             Description = "Old",
             ProjectId = SeedProjectId,
             TeamId = SeedTeamId,
-            ReporterId = Guid.NewGuid(),
+            ReporterId = SeedReporterId,
         };
         _service
             .Setup(s => s.GetByIdAsync(7, It.IsAny<CancellationToken>()))

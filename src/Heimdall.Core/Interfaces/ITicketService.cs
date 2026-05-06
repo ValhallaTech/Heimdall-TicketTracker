@@ -1,3 +1,4 @@
+using System;
 using System.Collections.Generic;
 using System.Threading;
 using System.Threading.Tasks;
@@ -13,6 +14,19 @@ public interface ITicketService
 {
     /// <summary>Lists all tickets (may be served from cache).</summary>
     Task<IReadOnlyList<TicketDto>> GetAllAsync(
+        CancellationToken cancellationToken = default
+    );
+
+    /// <summary>
+    /// Returns the queue (tickets routed to the team) for the given <paramref name="teamId"/>.
+    /// Not cached — team-queue cardinality is high and cache invalidation on every
+    /// route / claim / assign would thrash. Drives the per-team queue page
+    /// (Phase 2.8 step 23 of <c>docs/proposals/team-collaboration.md</c> §5.1 / §7).
+    /// </summary>
+    /// <param name="teamId">The team whose queue is being read.</param>
+    /// <param name="cancellationToken">Cooperative cancellation token.</param>
+    Task<IReadOnlyList<TicketDto>> GetByTeamAsync(
+        Guid teamId,
         CancellationToken cancellationToken = default
     );
 
@@ -43,4 +57,91 @@ public interface ITicketService
 
     /// <summary>Deletes a ticket by id.</summary>
     Task<bool> DeleteAsync(int id, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Routes <paramref name="ticketId"/> to <paramref name="destinationTeamId"/> on
+    /// behalf of <paramref name="actorId"/>. Implements
+    /// <c>docs/proposals/team-collaboration.md</c> §5.2 / §5.4: the permission gate is
+    /// <see cref="Heimdall.BLL.Authorization.IPermissionService.CanRouteTicketAsync"/>;
+    /// the <c>tickets.team_id</c> UPDATE and the <c>ticket_routed</c>
+    /// <see cref="Heimdall.Core.Auditing.AuditEvent"/> INSERT are committed atomically
+    /// in a single transaction.
+    /// </summary>
+    /// <remarks>
+    /// Returns <see langword="false"/> (no audit row written) when the ticket id does
+    /// not exist, when the row vanished between the load and the UPDATE, or when the
+    /// ticket is already on <paramref name="destinationTeamId"/> (idempotent no-op —
+    /// keeps the audit feed signal-clean).
+    /// </remarks>
+    /// <param name="actorId">The acting user's id.</param>
+    /// <param name="ticketId">The ticket primary key.</param>
+    /// <param name="destinationTeamId">The team the ticket is being routed to.</param>
+    /// <param name="cancellationToken">Cooperative cancellation token.</param>
+    /// <returns><see langword="true"/> if the route was applied; otherwise <see langword="false"/>.</returns>
+    /// <exception cref="UnauthorizedAccessException">
+    /// Thrown when the actor is not permitted to route the ticket per
+    /// <c>docs/proposals/team-collaboration.md</c> §5.2.
+    /// </exception>
+    Task<bool> RouteTicketAsync(
+        Guid actorId,
+        int ticketId,
+        Guid destinationTeamId,
+        CancellationToken cancellationToken = default
+    );
+
+    /// <summary>
+    /// Self-assigns <paramref name="ticketId"/> to <paramref name="actorId"/> (a "claim").
+    /// Implements <c>docs/proposals/team-collaboration.md</c> §5.3 / §5.4 with the
+    /// permission gate keyed on self-assignment
+    /// (<see cref="Heimdall.BLL.Authorization.IPermissionService.CanAssignTicketAsync"/>
+    /// with <c>targetUserId == actorId</c>); the <c>tickets.assignee_id</c> UPDATE and
+    /// the <c>ticket_assigned</c> audit row are committed atomically.
+    /// </summary>
+    /// <remarks>
+    /// Returns <see langword="false"/> (no audit row) when the ticket does not exist,
+    /// when the row vanished mid-flight, or when the ticket is already assigned to the
+    /// actor (idempotent no-op).
+    /// </remarks>
+    /// <param name="actorId">The acting user's id; also the new assignee.</param>
+    /// <param name="ticketId">The ticket primary key.</param>
+    /// <param name="cancellationToken">Cooperative cancellation token.</param>
+    /// <returns><see langword="true"/> if the claim was applied; otherwise <see langword="false"/>.</returns>
+    /// <exception cref="UnauthorizedAccessException">
+    /// Thrown when the actor is not permitted to claim the ticket.
+    /// </exception>
+    Task<bool> ClaimTicketAsync(
+        Guid actorId,
+        int ticketId,
+        CancellationToken cancellationToken = default
+    );
+
+    /// <summary>
+    /// Assigns <paramref name="ticketId"/> to <paramref name="targetUserId"/> on behalf
+    /// of <paramref name="actorId"/>. Implements
+    /// <c>docs/proposals/team-collaboration.md</c> §5.3 / §5.4. The permission gate is
+    /// <see cref="Heimdall.BLL.Authorization.IPermissionService.CanAssignTicketAsync"/>;
+    /// the <c>tickets.assignee_id</c> UPDATE and the <c>ticket_assigned</c> audit row
+    /// are committed atomically. Pass <c>actorId == targetUserId</c> to self-assign
+    /// (equivalent to <see cref="ClaimTicketAsync"/>).
+    /// </summary>
+    /// <remarks>
+    /// Returns <see langword="false"/> (no audit row) when the ticket does not exist,
+    /// when the row vanished mid-flight, or when the ticket is already assigned to
+    /// <paramref name="targetUserId"/> (idempotent no-op).
+    /// </remarks>
+    /// <param name="actorId">The acting user's id.</param>
+    /// <param name="ticketId">The ticket primary key.</param>
+    /// <param name="targetUserId">The user the ticket is being assigned to.</param>
+    /// <param name="cancellationToken">Cooperative cancellation token.</param>
+    /// <returns><see langword="true"/> if the assignment was applied; otherwise <see langword="false"/>.</returns>
+    /// <exception cref="UnauthorizedAccessException">
+    /// Thrown when the actor is not permitted to assign the ticket per
+    /// <c>docs/proposals/team-collaboration.md</c> §5.3.
+    /// </exception>
+    Task<bool> AssignTicketAsync(
+        Guid actorId,
+        int ticketId,
+        Guid targetUserId,
+        CancellationToken cancellationToken = default
+    );
 }

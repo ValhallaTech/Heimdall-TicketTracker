@@ -2,6 +2,7 @@
 @rendermode InteractiveServer
 @implements IDisposable
 @inject ITicketService TicketService
+@inject IUserLookup UserLookup
 @inject NavigationManager Navigation
 
 <PageTitle>Tickets — Heimdall TicketTracker</PageTitle>
@@ -140,11 +141,13 @@ else
                             <td class="fw-medium">@ticket.Title</td>
                             <td><span class="badge @StatusBadgeClass(ticket.Status)">@ticket.Status</span></td>
                             <td><span class="badge @PriorityBadgeClass(ticket.Priority)">@ticket.Priority</span></td>
-                            @* TODO(Phase 2.8 step 24): proper user-picker / display-name resolution. *@
-                            <td class="text-body-secondary">@ticket.ReporterId</td>
+                            @* Phase 2.8 step 24: display-name lookup via IUserLookup,
+                               cached in _userNames so each unique user id costs one
+                               round-trip per page load. Fallback to the raw guid keeps
+                               the cell non-empty if the user was deleted. *@
+                            <td class="text-body-secondary">@DisplayName(ticket.ReporterId)</td>
                             <td class="text-body-secondary">
-                                @* TODO(Phase 2.8 step 24): proper user-picker / display-name resolution. *@
-                                @(ticket.AssigneeId is null ? "—" : ticket.AssigneeId.ToString())
+                                @(ticket.AssigneeId is null ? "—" : DisplayName(ticket.AssigneeId.Value))
                             </td>
                             <td class="text-body-secondary text-nowrap">
                                 @ticket.DateCreated.ToString("MMM d, yyyy")
@@ -244,6 +247,13 @@ else
     // Cancellation token for the in-flight LoadPageAsync call.
     private CancellationTokenSource? _loadCts;
 
+    // Phase 2.8 step 24 — display-name cache for reporter / assignee cells. Keyed
+    // by user id and populated after each LoadPageAsync via parallel IUserLookup
+    // calls. The cache is intentionally per-page-render: it grows as the user
+    // pages / filters but is cleared on Dispose, so memory stays bounded for
+    // long-lived circuits.
+    private readonly Dictionary<Guid, string> _userNames = [];
+
     protected override async Task OnInitializedAsync()
     {
         await LoadPageAsync();
@@ -276,6 +286,7 @@ else
             if (!token.IsCancellationRequested)
             {
                 pagedResult = result;
+                await PopulateUserNamesAsync(result, token);
                 StateHasChanged();
             }
         }
@@ -284,6 +295,52 @@ else
             // A newer load superseded this one — intentional, do nothing.
         }
     }
+
+    /// <summary>
+    /// Resolves any reporter / assignee ids that aren't already in the
+    /// <see cref="_userNames"/> cache via parallel <see cref="IUserLookup.GetByIdAsync"/>
+    /// calls. Failures (deleted users, lookup errors) are tolerated silently — the
+    /// display falls back to the raw guid in <see cref="DisplayName"/>.
+    /// </summary>
+    private async Task PopulateUserNamesAsync(PagedResult<TicketDto> page, CancellationToken token)
+    {
+        var missing = new HashSet<Guid>();
+        foreach (var t in page.Items)
+        {
+            if (!_userNames.ContainsKey(t.ReporterId)) missing.Add(t.ReporterId);
+            if (t.AssigneeId is { } a && !_userNames.ContainsKey(a)) missing.Add(a);
+        }
+
+        if (missing.Count == 0) return;
+
+        var lookups = missing.Select(async id =>
+        {
+            try
+            {
+                var user = await UserLookup.GetByIdAsync(id, token);
+                return (id, name: user?.Email);
+            }
+            catch (OperationCanceledException) { throw; }
+            catch
+            {
+                // Display-name resolution is best-effort; never let a transient
+                // lookup error take the page down.
+                return (id, name: (string?)null);
+            }
+        }).ToList();
+
+        var results = await Task.WhenAll(lookups);
+        foreach (var (id, name) in results)
+        {
+            if (!string.IsNullOrWhiteSpace(name))
+            {
+                _userNames[id] = name!;
+            }
+        }
+    }
+
+    private string DisplayName(Guid id) =>
+        _userNames.TryGetValue(id, out var name) ? name : id.ToString();
 
     private async Task GoToPageAsync(int page)
     {
@@ -453,5 +510,6 @@ else
         _searchDebounce?.Dispose();
         _loadCts?.Cancel();
         _loadCts?.Dispose();
+        _userNames.Clear();
     }
 }

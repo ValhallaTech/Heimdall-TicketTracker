@@ -1,6 +1,6 @@
 # Phase 2 — Team Collaboration Infrastructure: Implementation Checklist
 
-**Status:** Phase 2.1 complete on `main` (PR #27 merged); Phase 2.2 complete on `main` (PR #29 merged); Phase 2.3 complete on `main` (PR #30 merged — step 9 implemented as `DefaultHierarchyBootstrapper`); phases 2.4 / 2.5 / 2.6 in this PR (steps 10–19 complete pending review); phases 2.7–2.10 in planning.
+**Status:** Phase 2.1 complete on `main` (PR #27 merged); Phase 2.2 complete on `main` (PR #29 merged); Phase 2.3 complete on `main` (PR #30 merged — step 9 implemented as `DefaultHierarchyBootstrapper`); phases 2.4 / 2.5 / 2.6 complete on `main` (PR #31 merged); phases 2.7 / 2.8 / 2.9 in this PR (steps 20–26 complete pending review); phase 2.10 in planning.
 **Source of truth:** [`docs/proposals/team-collaboration.md`](../proposals/team-collaboration.md) (§4 sequencing, §5 policy matrix, §6 `IPermissionService`, §7 admin panel, §8 enrollment hook).
 **Depends on:** Phase 1 ([`phase-1-checklist.md`](./phase-1-checklist.md)) — complete on `main` after PR #26.
 
@@ -52,19 +52,19 @@
 
 ## Phase 2.7 — Routing and self-assign behaviours + audit
 
-- [ ] **20. `RouteTicketAsync(actorId, ticketId, destinationTeamId)`** in the BLL ticket service. Gated by `IPermissionService.CanRouteTicketAsync`. Writes `audit_events` row `event_type = 'ticket_routed'` in the same DB transaction as the `UPDATE`.
-- [ ] **21. `ClaimTicketAsync(actorId, ticketId)`** in the BLL ticket service. Gated by `IPermissionService.CanAssignTicketAsync(actor, ticket, actor)`. Writes `audit_events` row `event_type = 'ticket_assigned'` (`is_self_assign = true`) in the same transaction.
-- [ ] **22. `AssignTicketAsync(actorId, ticketId, targetUserId)`** for manager/team_lead/admin overrides. Same gate, same audit row (`is_self_assign = false`).
+- [x] **20. `RouteTicketAsync(actorId, ticketId, destinationTeamId)`** in the BLL ticket service. Gated by `IPermissionService.CanRouteTicketAsync`. Writes `audit_events` row `event_type = 'ticket_routed'` in the same DB transaction as the `UPDATE`.
+- [x] **21. `ClaimTicketAsync(actorId, ticketId)`** in the BLL ticket service. Gated by `IPermissionService.CanAssignTicketAsync(actor, ticket, actor)`. Writes `audit_events` row `event_type = 'ticket_assigned'` (`is_self_assign = true`) in the same transaction.
+- [x] **22. `AssignTicketAsync(actorId, ticketId, targetUserId)`** for manager/team_lead/admin overrides. Same gate, same audit row (`is_self_assign = false`).
 
 ## Phase 2.8 — UI
 
-- [ ] **23. Team-queue page.** `/teams/{slug}/queue` (or similar). Lists tickets `WHERE team_id = :team_id`. Visibility per §5.1; route / claim / assign actions per §5.2 / §5.3 calling `IPermissionService` from the page-component layer (defence-in-depth alongside service-layer gates).
-- [ ] **24. Update existing ticket pages** (`Tickets.razor`, `TicketEdit.razor`) to read/write `project_id`, `team_id`, `reporter_id`, `assignee_id` instead of the dropped string columns.
-- [ ] **25. Admin panel skeleton at `/admin`.** Gated by `system_admin == true` only. Sub-pages per [`team-collaboration.md`](../proposals/team-collaboration.md) §7: hierarchy CRUD, membership management, cross-team queue browser, audit-event feed (read-only). Org/team/project write pages from the original step 14 are placed **under `/admin`**, not at top level, so Phase 3 can replace gates wholesale.
+- [x] **23. Team-queue page.** `/teams/{slug}/queue` (or similar). Lists tickets `WHERE team_id = :team_id`. Visibility per §5.1; route / claim / assign actions per §5.2 / §5.3 calling `IPermissionService` from the page-component layer (defence-in-depth alongside service-layer gates).
+- [x] **24. Update existing ticket pages** (`Tickets.razor`, `TicketEdit.razor`) to read/write `project_id`, `team_id`, `reporter_id`, `assignee_id` instead of the dropped string columns.
+- [x] **25. Admin panel skeleton at `/admin`.** Gated by `system_admin == true` only. Sub-pages per [`team-collaboration.md`](../proposals/team-collaboration.md) §7: hierarchy CRUD, membership management, cross-team queue browser, audit-event feed (read-only). Org/team/project write pages from the original step 14 are placed **under `/admin`**, not at top level, so Phase 3 can replace gates wholesale.
 
 ## Phase 2.9 — Auto-enrollment future hook (declaration only)
 
-- [ ] **26. Declare `IUserEnrollmentService`** + `EnrollmentRequest` record in `Heimdall.BLL/Enrollment` per [`team-collaboration.md`](../proposals/team-collaboration.md) §8. Bind `INotImplementedEnrollmentService` (throws on call) so misuse fails loudly. **No** caller is wired to it in this phase — this is the futureproofing seam, not a feature.
+- [x] **26. Declare `IUserEnrollmentService`** + `EnrollmentRequest` record in `Heimdall.BLL/Enrollment` per [`team-collaboration.md`](../proposals/team-collaboration.md) §8. Bind `INotImplementedEnrollmentService` (throws on call) so misuse fails loudly. **No** caller is wired to it in this phase — this is the futureproofing seam, not a feature.
 
 ## Phase 2.10 — Tests, contract handshake, and acceptance
 

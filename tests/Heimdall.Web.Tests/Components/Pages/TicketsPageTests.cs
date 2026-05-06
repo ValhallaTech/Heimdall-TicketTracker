@@ -13,11 +13,20 @@ namespace Heimdall.Web.Tests.Components.Pages;
 public class TicketsPageTests : BunitContext
 {
     private readonly Mock<ITicketService> _service = new(MockBehavior.Loose);
+    private readonly Mock<IUserLookup> _userLookup = new(MockBehavior.Loose);
     private readonly List<TicketDto> _store = new();
 
     public TicketsPageTests()
     {
         Services.AddSingleton(_service.Object);
+        Services.AddSingleton(_userLookup.Object);
+
+        // Phase 2.8 step 24: Tickets.razor resolves reporter / assignee display
+        // names via IUserLookup.GetByIdAsync. Default to a stable email-shaped
+        // string so the existing render assertions pass without per-test setup.
+        _userLookup
+            .Setup(u => u.GetByIdAsync(It.IsAny<Guid>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync((Guid id, CancellationToken _) => new UserSummary(id, $"{id:N}@example.test"));
 
         _service
             .Setup(s => s.GetPagedAsync(It.IsAny<PagedQuery>(), It.IsAny<CancellationToken>()))

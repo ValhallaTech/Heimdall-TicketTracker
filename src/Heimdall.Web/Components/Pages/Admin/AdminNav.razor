@@ -1,0 +1,42 @@
+@*
+    Phase 2.8 step 25 — left-side admin nav rendered above the page heading on
+    every /admin/* page. Active tab is highlighted via the Active parameter.
+*@
+
+<nav class="mb-4" aria-label="Admin sections">
+    <ul class="nav nav-pills flex-row flex-wrap gap-1">
+        <li class="nav-item">
+            <a class="nav-link @(Active == "hierarchy" ? "active" : "")"
+               aria-current="@(Active == "hierarchy" ? "page" : null)"
+               href="/admin/hierarchy">
+                <i class="fa-solid fa-sitemap me-1" aria-hidden="true"></i> Hierarchy
+            </a>
+        </li>
+        <li class="nav-item">
+            <a class="nav-link @(Active == "memberships" ? "active" : "")"
+               aria-current="@(Active == "memberships" ? "page" : null)"
+               href="/admin/memberships">
+                <i class="fa-solid fa-user-group me-1" aria-hidden="true"></i> Memberships
+            </a>
+        </li>
+        <li class="nav-item">
+            <a class="nav-link @(Active == "queues" ? "active" : "")"
+               aria-current="@(Active == "queues" ? "page" : null)"
+               href="/admin/queues">
+                <i class="fa-solid fa-list-check me-1" aria-hidden="true"></i> Queues
+            </a>
+        </li>
+        <li class="nav-item">
+            <a class="nav-link @(Active == "audit" ? "active" : "")"
+               aria-current="@(Active == "audit" ? "page" : null)"
+               href="/admin/audit">
+                <i class="fa-solid fa-scroll me-1" aria-hidden="true"></i> Audit
+            </a>
+        </li>
+    </ul>
+</nav>
+
+@code {
+    /// <summary>One of: <c>hierarchy</c>, <c>memberships</c>, <c>queues</c>, <c>audit</c>.</summary>
+    [Parameter] public string Active { get; set; } = string.Empty;
+}

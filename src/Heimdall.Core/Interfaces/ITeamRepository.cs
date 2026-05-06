@@ -18,12 +18,34 @@ public interface ITeamRepository
         CancellationToken cancellationToken = default
     );
 
+    /// <summary>
+    /// Returns every team across every organization, ordered by name ascending. Used
+    /// by admin / queue UIs (Phase 2.8) where the caller has not yet narrowed by
+    /// organization. Phase 2 ships a single seed organization, so the unscoped read
+    /// is bounded; revisit when multi-org support lands.
+    /// </summary>
+    Task<IReadOnlyList<Team>> GetAllAsync(
+        CancellationToken cancellationToken = default
+    );
+
     /// <summary>Returns a single team by id, or <c>null</c> if not found.</summary>
     Task<Team?> GetByIdAsync(Guid id, CancellationToken cancellationToken = default);
 
     /// <summary>Returns a single team by parent-org id and slug (case-insensitive), or <c>null</c> if not found.</summary>
     Task<Team?> GetBySlugAsync(
         Guid organizationId,
+        string slug,
+        CancellationToken cancellationToken = default
+    );
+
+    /// <summary>
+    /// Returns the first team in any organization with the given slug
+    /// (case-insensitive), ordered by created_at ascending. Phase 2 ships a single
+    /// seed organization, so the unscoped lookup is unambiguous; once multi-org
+    /// hosting lands the queue route should switch to <c>/orgs/{org}/teams/{slug}/queue</c>
+    /// and this overload should be removed in favour of the org-scoped variant.
+    /// </summary>
+    Task<Team?> GetBySlugAsync(
         string slug,
         CancellationToken cancellationToken = default
     );

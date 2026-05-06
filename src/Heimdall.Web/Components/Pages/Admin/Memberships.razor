@@ -1,0 +1,86 @@
+@page "/admin/memberships"
+@rendermode InteractiveServer
+@using System.Security.Claims
+@using Microsoft.AspNetCore.Components.Authorization
+@inject IUserLookup UserLookup
+@inject ITeamRepository Teams
+@inject ITeamMemberRepository TeamMembers
+@inject NavigationManager Nav
+
+@*
+    Phase 2.8 step 25 read-only memberships view. Phase 3 adds add/remove flows.
+    TODO(Phase 3): replace AdminGate with [Authorize(Policy = "SystemAdmin")]
+    once the OpenFGA policy framework lands (docs/proposals/openfga.md step 6).
+*@
+
+<PageTitle>Memberships — Admin — Heimdall TicketTracker</PageTitle>
+
+@if (!_authorized)
+{
+    <p class="text-body-secondary">Checking permissions…</p>
+}
+else
+{
+    <AdminNav Active="memberships" />
+    <h1 class="h3 fw-semibold mb-3">Team memberships</h1>
+    <p class="text-body-secondary">Read-only view of every team and its members.</p>
+
+    @if (_loading)
+    {
+        <div class="spinner-border text-primary" role="status"><span class="visually-hidden">Loading…</span></div>
+    }
+    else
+    {
+        @foreach (var team in _teams)
+        {
+            <div class="card shadow-sm mb-3">
+                <div class="card-header bg-transparent">
+                    <strong>@team.Name</strong>
+                    <span class="text-body-secondary small ms-2">/@team.Slug</span>
+                </div>
+                <ul class="list-group list-group-flush">
+                    @if (!_membersByTeam.TryGetValue(team.Id, out var members) || members.Count == 0)
+                    {
+                        <li class="list-group-item text-body-secondary">No members.</li>
+                    }
+                    else
+                    {
+                        @foreach (var m in members)
+                        {
+                            <li class="list-group-item d-flex justify-content-between">
+                                <span>@m.UserId</span>
+                                <span class="badge text-bg-secondary">@m.Role</span>
+                            </li>
+                        }
+                    }
+                </ul>
+            </div>
+        }
+    }
+}
+
+@code {
+    [CascadingParameter] public Task<AuthenticationState>? AuthenticationStateTask { get; set; }
+
+    private bool _authorized;
+    private bool _loading = true;
+    private IReadOnlyList<Team> _teams = [];
+    private readonly Dictionary<Guid, IReadOnlyList<TeamMember>> _membersByTeam = [];
+
+    protected override async Task OnInitializedAsync()
+    {
+        if (!await AdminGate.IsSystemAdminAsync(AuthenticationStateTask, UserLookup))
+        {
+            Nav.NavigateTo("/access-denied");
+            return;
+        }
+        _authorized = true;
+
+        _teams = await Teams.GetAllAsync();
+        foreach (var team in _teams)
+        {
+            _membersByTeam[team.Id] = await TeamMembers.GetByParentAsync(team.Id);
+        }
+        _loading = false;
+    }
+}

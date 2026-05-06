@@ -93,6 +93,23 @@ public class TicketRepository : ITicketRepository
     }
 
     /// <inheritdoc />
+    public async Task<IReadOnlyList<Ticket>> GetByTeamAsync(
+        Guid teamId,
+        CancellationToken cancellationToken = default
+    )
+    {
+        using var connection = CreateConnection();
+        var command = new CommandDefinition(
+            $"SELECT {ListSelectColumns} FROM tickets WHERE team_id = @TeamId "
+                + $"ORDER BY date_created DESC, id DESC LIMIT {GetAllRowCap}",
+            new { TeamId = teamId },
+            cancellationToken: cancellationToken
+        );
+        var rows = await connection.QueryAsync<Ticket>(command).ConfigureAwait(false);
+        return [.. rows];
+    }
+
+    /// <inheritdoc />
     public async Task<(IReadOnlyList<Ticket> Items, int TotalCount)> GetPagedAsync(
         PagedQuery query,
         CancellationToken cancellationToken = default
@@ -251,6 +268,68 @@ WHERE id = @Id;";
         var command = new CommandDefinition(
             "DELETE FROM tickets WHERE id = @Id",
             new { Id = id },
+            cancellationToken: cancellationToken
+        );
+        var rows = await connection.ExecuteAsync(command).ConfigureAwait(false);
+        return rows > 0;
+    }
+
+    /// <inheritdoc />
+    public async Task<bool> UpdateTeamAsync(
+        IDbConnection connection,
+        IDbTransaction transaction,
+        int ticketId,
+        Guid newTeamId,
+        CancellationToken cancellationToken = default
+    )
+    {
+        ArgumentNullException.ThrowIfNull(connection);
+        ArgumentNullException.ThrowIfNull(transaction);
+        cancellationToken.ThrowIfCancellationRequested();
+
+        // Narrow UPDATE — only team_id is touched; date_updated is sourced from the
+        // database clock for the same reason as UpdateAsync above. The caller-supplied
+        // transaction enlists this UPDATE alongside the audit-event INSERT (see
+        // docs/proposals/team-collaboration.md §5.4).
+        const string sql = @"
+UPDATE tickets SET
+    team_id      = @TeamId,
+    date_updated = now()
+WHERE id = @Id;";
+        var command = new CommandDefinition(
+            sql,
+            new { Id = ticketId, TeamId = newTeamId },
+            transaction: transaction,
+            cancellationToken: cancellationToken
+        );
+        var rows = await connection.ExecuteAsync(command).ConfigureAwait(false);
+        return rows > 0;
+    }
+
+    /// <inheritdoc />
+    public async Task<bool> UpdateAssigneeAsync(
+        IDbConnection connection,
+        IDbTransaction transaction,
+        int ticketId,
+        Guid? newAssigneeId,
+        CancellationToken cancellationToken = default
+    )
+    {
+        ArgumentNullException.ThrowIfNull(connection);
+        ArgumentNullException.ThrowIfNull(transaction);
+        cancellationToken.ThrowIfCancellationRequested();
+
+        // Narrow UPDATE — only assignee_id is touched. assignee_id is nullable
+        // (ON DELETE SET NULL); a null parameter unassigns the ticket.
+        const string sql = @"
+UPDATE tickets SET
+    assignee_id  = @AssigneeId,
+    date_updated = now()
+WHERE id = @Id;";
+        var command = new CommandDefinition(
+            sql,
+            new { Id = ticketId, AssigneeId = newAssigneeId },
+            transaction: transaction,
             cancellationToken: cancellationToken
         );
         var rows = await connection.ExecuteAsync(command).ConfigureAwait(false);

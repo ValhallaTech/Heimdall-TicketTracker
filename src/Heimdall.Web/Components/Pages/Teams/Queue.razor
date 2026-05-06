@@ -1,0 +1,438 @@
+@page "/teams/{Slug}/queue"
+@rendermode InteractiveServer
+@implements IDisposable
+@using System.Security.Claims
+@using Heimdall.BLL.Authorization
+@using Heimdall.Core.Dtos
+@using Heimdall.Core.Interfaces
+@using Heimdall.Core.Models
+@using Microsoft.AspNetCore.Components.Authorization
+@inject ITeamRepository TeamRepository
+@inject ITicketService TicketService
+@inject IPermissionService PermissionService
+@inject ITeamMemberRepository TeamMemberRepository
+@inject IUserLookup UserLookup
+@inject NavigationManager Navigation
+
+@*
+    Phase 2.8 step 23 (docs/proposals/team-collaboration.md §5.1, §7) — per-team
+    queue page. Resolves the team by slug, gates view via
+    IPermissionService.CanViewTeamQueueAsync, then renders the shared
+    <TicketQueueTable> with per-row Route / Claim / Assign actions. The action
+    handlers wrap the ITicketService calls in try/catch for
+    UnauthorizedAccessException so a deny-closed permission decision surfaces as
+    an inline alert rather than tearing down the SignalR circuit.
+*@
+
+<PageTitle>@(_team?.Name ?? Slug) Queue — Heimdall TicketTracker</PageTitle>
+
+@if (_loading)
+{
+    <div class="card shadow-sm">
+        <div class="card-body text-center py-5">
+            <div class="spinner-border text-primary mb-3" role="status">
+                <span class="visually-hidden">Loading…</span>
+            </div>
+            <p class="text-body-secondary mb-0">Loading queue…</p>
+        </div>
+    </div>
+}
+else if (_team is null)
+{
+    <div class="alert alert-warning d-flex align-items-center" role="alert">
+        <i class="fa-solid fa-triangle-exclamation me-2" aria-hidden="true"></i>
+        <div>No team with slug <code>@Slug</code> was found.</div>
+    </div>
+}
+else
+{
+    <div class="d-flex justify-content-between align-items-center mb-4">
+        <div>
+            <h1 class="h3 mb-0 fw-semibold">@_team.Name <span class="text-body-secondary fw-normal">queue</span></h1>
+            <p class="text-body-secondary mb-0 small">Tickets routed to this team</p>
+        </div>
+    </div>
+
+    @if (!string.IsNullOrEmpty(_actionError))
+    {
+        <div class="alert alert-danger d-flex align-items-center" role="alert">
+            <i class="fa-solid fa-circle-exclamation me-2" aria-hidden="true"></i>
+            <div>@_actionError</div>
+            <button type="button"
+                    class="btn-close ms-auto"
+                    aria-label="Dismiss"
+                    @onclick="() => _actionError = null"></button>
+        </div>
+    }
+
+    <TicketQueueTable Tickets="_tickets"
+                      DisplayNames="_displayNames"
+                      RoutePermissions="_routePerms"
+                      ClaimPermissions="_claimPerms"
+                      AssignPermissions="_assignPerms"
+                      OnRouteRequested="OpenRouteModalAsync"
+                      OnClaimRequested="ClaimAsync"
+                      OnAssignRequested="OpenAssignModalAsync" />
+}
+
+@* Route modal — surfaced when _routeTarget is non-null. *@
+@if (_routeTarget is not null)
+{
+    <div class="modal d-block" tabindex="-1" role="dialog" aria-modal="true" aria-labelledby="routeModalTitle">
+        <div class="modal-dialog">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h2 class="modal-title h5" id="routeModalTitle">Route ticket #@_routeTarget.Id</h2>
+                    <button type="button" class="btn-close" aria-label="Close" @onclick="CloseRouteModal"></button>
+                </div>
+                <div class="modal-body">
+                    <label for="routeTeam" class="form-label">Destination team</label>
+                    <select id="routeTeam" class="form-select" @bind="_routeDestinationId">
+                        <option value="@Guid.Empty" disabled>Select a team…</option>
+                        @foreach (var t in _allTeams.Where(t => t.Id != _team!.Id))
+                        {
+                            <option value="@t.Id">@t.Name</option>
+                        }
+                    </select>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-outline-secondary" @onclick="CloseRouteModal">Cancel</button>
+                    <button type="button"
+                            class="btn btn-primary"
+                            disabled="@(_routeDestinationId == Guid.Empty)"
+                            @onclick="ConfirmRouteAsync">
+                        Route
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+    <div class="modal-backdrop fade show"></div>
+}
+
+@* Assign modal — surfaced when _assignTarget is non-null. *@
+@if (_assignTarget is not null)
+{
+    <div class="modal d-block" tabindex="-1" role="dialog" aria-modal="true" aria-labelledby="assignModalTitle">
+        <div class="modal-dialog">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h2 class="modal-title h5" id="assignModalTitle">Assign ticket #@_assignTarget.Id</h2>
+                    <button type="button" class="btn-close" aria-label="Close" @onclick="CloseAssignModal"></button>
+                </div>
+                <div class="modal-body">
+                    <label for="assignUser" class="form-label">Assignee</label>
+                    <select id="assignUser" class="form-select" @bind="_assignTargetUserId">
+                        <option value="@Guid.Empty" disabled>Select a teammate…</option>
+                        @foreach (var m in _members)
+                        {
+                            <option value="@m.UserId">@(_displayNames.GetValueOrDefault(m.UserId, m.UserId.ToString()))</option>
+                        }
+                    </select>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-outline-secondary" @onclick="CloseAssignModal">Cancel</button>
+                    <button type="button"
+                            class="btn btn-primary"
+                            disabled="@(_assignTargetUserId == Guid.Empty)"
+                            @onclick="ConfirmAssignAsync">
+                        Assign
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+    <div class="modal-backdrop fade show"></div>
+}
+
+@code {
+    /// <summary>Route segment: team slug.</summary>
+    [Parameter] public string Slug { get; set; } = string.Empty;
+
+    [CascadingParameter]
+    public Task<AuthenticationState>? AuthenticationStateTask { get; set; }
+
+    private CancellationTokenSource? _cts;
+
+    private bool _loading = true;
+    private Team? _team;
+    private Guid _actorId;
+    private string? _actionError;
+
+    private IReadOnlyList<TicketDto> _tickets = [];
+    private IReadOnlyList<Team> _allTeams = [];
+    private IReadOnlyList<TeamMember> _members = [];
+
+    private readonly Dictionary<Guid, string> _displayNames = [];
+    private readonly Dictionary<int, bool> _routePerms = [];
+    private readonly Dictionary<int, bool> _claimPerms = [];
+    private readonly Dictionary<int, bool> _assignPerms = [];
+
+    // Modal state.
+    private TicketDto? _routeTarget;
+    private Guid _routeDestinationId;
+    private TicketDto? _assignTarget;
+    private Guid _assignTargetUserId;
+
+    protected override async Task OnParametersSetAsync()
+    {
+        _cts?.Cancel();
+        _cts?.Dispose();
+        _cts = new CancellationTokenSource();
+        var token = _cts.Token;
+
+        _loading = true;
+        _team = null;
+        _tickets = [];
+        _routePerms.Clear();
+        _claimPerms.Clear();
+        _assignPerms.Clear();
+        _actionError = null;
+
+        try
+        {
+            // Resolve the actor id from the cascaded auth state. Phase 2 ships
+            // a global authenticated-only fallback policy, so a null /
+            // unparseable id here means a misconfiguration upstream — redirect
+            // to /access-denied rather than silently rendering an empty queue.
+            if (AuthenticationStateTask is null)
+            {
+                Navigation.NavigateTo("/access-denied");
+                return;
+            }
+            var state = await AuthenticationStateTask;
+            if (!Guid.TryParse(state.User.FindFirstValue(ClaimTypes.NameIdentifier), out _actorId))
+            {
+                Navigation.NavigateTo("/access-denied");
+                return;
+            }
+
+            var team = await TeamRepository.GetBySlugAsync(Slug, token);
+            if (team is null)
+            {
+                _loading = false;
+                return; // surfaced via the "no team" alert above.
+            }
+
+            // Gate the entire page behind CanViewTeamQueueAsync.
+            if (!await PermissionService.CanViewTeamQueueAsync(_actorId, team.Id, token))
+            {
+                Navigation.NavigateTo("/access-denied");
+                return;
+            }
+
+            _team = team;
+            await LoadQueueAsync(token);
+        }
+        catch (OperationCanceledException)
+        {
+            // Newer parameter set superseded this one.
+        }
+        finally
+        {
+            _loading = false;
+        }
+    }
+
+    private async Task LoadQueueAsync(CancellationToken token)
+    {
+        if (_team is null) return;
+
+        var ticketsTask = TicketService.GetByTeamAsync(_team.Id, token);
+        var teamsTask = TeamRepository.GetAllAsync(token);
+        var membersTask = TeamMemberRepository.GetByParentAsync(_team.Id, token);
+        await Task.WhenAll(ticketsTask, teamsTask, membersTask);
+
+        _tickets = ticketsTask.Result;
+        _allTeams = teamsTask.Result;
+        _members = membersTask.Result;
+
+        await PopulateDisplayNamesAsync(token);
+        await PopulatePermissionsAsync(token);
+    }
+
+    private async Task PopulateDisplayNamesAsync(CancellationToken token)
+    {
+        var ids = new HashSet<Guid>();
+        foreach (var t in _tickets)
+        {
+            if (t.AssigneeId is { } a) ids.Add(a);
+        }
+        foreach (var m in _members) ids.Add(m.UserId);
+
+        var missing = ids.Where(id => !_displayNames.ContainsKey(id)).ToList();
+        if (missing.Count == 0) return;
+
+        var lookups = missing.Select(async id =>
+        {
+            try
+            {
+                var user = await UserLookup.GetByIdAsync(id, token);
+                return (id, name: user?.Email);
+            }
+            catch (OperationCanceledException) { throw; }
+            catch
+            {
+                return (id, name: (string?)null);
+            }
+        });
+
+        foreach (var (id, name) in await Task.WhenAll(lookups))
+        {
+            if (!string.IsNullOrWhiteSpace(name))
+            {
+                _displayNames[id] = name!;
+            }
+        }
+    }
+
+    /// <summary>
+    /// Pre-computes per-row Route / Claim / Assign permission flags so the
+    /// table renders synchronously. Each call is a permission-service round-trip;
+    /// the calls fan out via <see cref="Task.WhenAll(Task[])"/> to keep the page
+    /// load a single fan-out wave.
+    /// </summary>
+    private async Task PopulatePermissionsAsync(CancellationToken token)
+    {
+        if (_team is null) return;
+
+        // Build the (ticketId, model) reconstructions used by IPermissionService.
+        // The service contract takes the full Ticket so it can read Source / Assignee
+        // for the deny-closed assignee branch — see CanRouteTicketAsync / CanAssignTicketAsync.
+        var work = _tickets.Select(async dto =>
+        {
+            var ticket = ToTicket(dto);
+            var routeTask = PermissionService.CanRouteTicketAsync(_actorId, ticket, _team.Id, token);
+            var claimTask = PermissionService.CanAssignTicketAsync(_actorId, ticket, _actorId, token);
+            // CanAssign for "any teammate" — pass a sentinel non-self target so the
+            // member-only "self only" branch evaluates false. Picking the first
+            // non-actor team-member id is sufficient and avoids leaking an extra
+            // signal to the service.
+            var probeTarget = _members.Select(m => m.UserId).FirstOrDefault(id => id != _actorId);
+            var assignTask = probeTarget == Guid.Empty
+                ? Task.FromResult(false)
+                : PermissionService.CanAssignTicketAsync(_actorId, ticket, probeTarget, token);
+            await Task.WhenAll(routeTask, claimTask, assignTask);
+            return (dto.Id, route: routeTask.Result, claim: claimTask.Result, assign: assignTask.Result);
+        });
+
+        foreach (var (id, route, claim, assign) in await Task.WhenAll(work))
+        {
+            _routePerms[id] = route;
+            _claimPerms[id] = claim;
+            _assignPerms[id] = assign;
+        }
+    }
+
+    /// <summary>
+    /// Reconstitutes a <see cref="Ticket"/> from a <see cref="TicketDto"/> for
+    /// permission-checking purposes only. The fields the BLL permission service
+    /// reads — <c>Id</c>, <c>TeamId</c>, <c>AssigneeId</c> — are mirrored 1:1.
+    /// </summary>
+    private static Ticket ToTicket(TicketDto dto) => new()
+    {
+        Id = dto.Id,
+        Title = dto.Title,
+        Description = dto.Description,
+        Status = dto.Status,
+        Priority = dto.Priority,
+        ProjectId = dto.ProjectId,
+        TeamId = dto.TeamId,
+        ReporterId = dto.ReporterId,
+        AssigneeId = dto.AssigneeId,
+        DateCreated = dto.DateCreated,
+        DateUpdated = dto.DateUpdated,
+    };
+
+    private void OpenRouteModalAsync(TicketDto t)
+    {
+        _routeTarget = t;
+        _routeDestinationId = Guid.Empty;
+    }
+
+    private void CloseRouteModal()
+    {
+        _routeTarget = null;
+        _routeDestinationId = Guid.Empty;
+    }
+
+    private async Task ConfirmRouteAsync()
+    {
+        if (_routeTarget is null || _routeDestinationId == Guid.Empty) return;
+        var ticket = _routeTarget;
+        var destination = _routeDestinationId;
+        CloseRouteModal();
+        try
+        {
+            await TicketService.RouteTicketAsync(_actorId, ticket.Id, destination, _cts?.Token ?? default);
+            await ReloadAfterMutationAsync();
+        }
+        catch (UnauthorizedAccessException)
+        {
+            _actionError = "You don't have permission to route that ticket.";
+        }
+        catch (OperationCanceledException) { }
+    }
+
+    private async Task ClaimAsync(TicketDto t)
+    {
+        try
+        {
+            await TicketService.ClaimTicketAsync(_actorId, t.Id, _cts?.Token ?? default);
+            await ReloadAfterMutationAsync();
+        }
+        catch (UnauthorizedAccessException)
+        {
+            _actionError = "You don't have permission to claim that ticket.";
+        }
+        catch (OperationCanceledException) { }
+    }
+
+    private void OpenAssignModalAsync(TicketDto t)
+    {
+        _assignTarget = t;
+        _assignTargetUserId = Guid.Empty;
+    }
+
+    private void CloseAssignModal()
+    {
+        _assignTarget = null;
+        _assignTargetUserId = Guid.Empty;
+    }
+
+    private async Task ConfirmAssignAsync()
+    {
+        if (_assignTarget is null || _assignTargetUserId == Guid.Empty) return;
+        var ticket = _assignTarget;
+        var target = _assignTargetUserId;
+        CloseAssignModal();
+        try
+        {
+            await TicketService.AssignTicketAsync(_actorId, ticket.Id, target, _cts?.Token ?? default);
+            await ReloadAfterMutationAsync();
+        }
+        catch (UnauthorizedAccessException)
+        {
+            _actionError = "You don't have permission to assign that ticket.";
+        }
+        catch (OperationCanceledException) { }
+    }
+
+    private async Task ReloadAfterMutationAsync()
+    {
+        if (_team is null) return;
+        var token = _cts?.Token ?? default;
+        try
+        {
+            await LoadQueueAsync(token);
+            StateHasChanged();
+        }
+        catch (OperationCanceledException) { }
+    }
+
+    public void Dispose()
+    {
+        _cts?.Cancel();
+        _cts?.Dispose();
+    }
+}
