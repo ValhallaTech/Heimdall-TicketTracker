@@ -1,6 +1,6 @@
 # Phase 2 — Team Collaboration Infrastructure: Implementation Checklist
 
-**Status:** Phase 2.1 complete on `main` (PR #27 merged); Phase 2.2 complete on `main` (PR #29 merged); Phase 2.3 in this PR; phases 2.4–2.10 in planning.
+**Status:** Phase 2.1 complete on `main` (PR #27 merged); Phase 2.2 complete on `main` (PR #29 merged); Phase 2.3 in this PR (step 9 implemented as `DefaultHierarchyBootstrapper`); phases 2.4–2.10 in planning.
 **Source of truth:** [`docs/proposals/team-collaboration.md`](../proposals/team-collaboration.md) (§4 sequencing, §5 policy matrix, §6 `IPermissionService`, §7 admin panel, §8 enrollment hook).
 **Depends on:** Phase 1 ([`phase-1-checklist.md`](./phase-1-checklist.md)) — complete on `main` after PR #26.
 
@@ -29,7 +29,7 @@
 
 ## Phase 2.3 — Default-row backfill (so existing seed tickets keep working)
 
-- [ ] **9. Backfill migration** — insert one `heimdall` org, one `default` team, one `default` project, all `created_by = bootstrap_admin.id`. **Also insert `*_members` rows** for the bootstrap admin: `organization_members.role = 'owner'`, `team_members.role = 'manager'`, `project_members.role = 'owner'`. Idempotent (insert-if-not-exists keyed on slug / `(user_id, parent_id)`).
+- [x] **9. Backfill migration** — insert one `heimdall` org, one `default` team, one `default` project, all `created_by = bootstrap_admin.id`. **Also insert `*_members` rows** for the bootstrap admin: `organization_members.role = 'owner'`, `team_members.role = 'manager'`, `project_members.role = 'owner'`. Idempotent (insert-if-not-exists keyed on slug / `(user_id, parent_id)`). Implemented as a runtime `DefaultHierarchyBootstrapper` invoked after `SystemAdminBootstrapper` in `Program.cs` (a FluentMigrator migration would not work on a fresh DB — `bootstrap_admin.id` does not exist at migrate-time).
 
 ## Phase 2.4 — Tickets carry their parent project **and** parent team
 
