@@ -23,6 +23,14 @@
 
   <ItemGroup>
     <ProjectReference Include="..\..\src\Heimdall.DAL\Heimdall.DAL.csproj" />
+    <!--
+      Phase 2.10 step 28: PolicyMatrixIntegrationTests instantiates the BLL
+      TicketService against a real Postgres so the §5 policy matrix is
+      exercised through the real permission-service + repository + audit-writer
+      stack. No new package reference — the BLL already transitively pulls in
+      the same Postgres driver via Heimdall.DAL.
+    -->
+    <ProjectReference Include="..\..\src\Heimdall.BLL\Heimdall.BLL.csproj" />
   </ItemGroup>
 
 </Project>
