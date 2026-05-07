@@ -52,6 +52,11 @@ EOF
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --output)
+      if [[ $# -lt 2 || -z "${2:-}" || "$2" == --* ]]; then
+        echo "ERROR: --output requires a path argument" >&2
+        usage >&2
+        exit 2
+      fi
       OUTPUT_PATH="$2"
       shift 2
       ;;
@@ -93,9 +98,16 @@ export FGA_API_TOKEN="$OPENFGA_PRESHARED_KEY"
 echo "Looking up store '${STORE_NAME}' at ${OPENFGA_API_URL}..." >&2
 
 # `fga store list` emits JSON by default; the `--format` flag is not supported
-# on this subcommand (verified against fga CLI). Swallow errors so a freshly
-# bootstrapped server with zero stores still falls through to the create path.
-STORE_LIST_JSON="$(fga store list 2>/dev/null || echo '{"stores":[]}')"
+# on this subcommand (verified against fga CLI). Let auth/connectivity
+# failures surface (so a misconfigured token doesn't get misread as "no
+# stores" and trigger a spurious create); only an empty store list on a
+# successful call should fall through to the create path.
+if ! STORE_LIST_JSON="$(fga store list 2>&1)"; then
+  echo "ERROR: 'fga store list' failed against ${OPENFGA_API_URL}:" >&2
+  printf '%s\n' "$STORE_LIST_JSON" >&2
+  echo "ERROR: check OPENFGA_API_URL, OPENFGA_PRESHARED_KEY, and network reachability." >&2
+  exit 1
+fi
 
 STORE_ID="$(
   printf '%s' "$STORE_LIST_JSON" \
