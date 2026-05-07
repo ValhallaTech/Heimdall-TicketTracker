@@ -1,6 +1,6 @@
 # Phase 2 — Team Collaboration Infrastructure: Implementation Checklist
 
-**Status:** Phase 2.1 complete on `main` (PR #27 merged); Phase 2.2 complete on `main` (PR #29 merged); Phase 2.3 complete on `main` (PR #30 merged — step 9 implemented as `DefaultHierarchyBootstrapper`); phases 2.4 / 2.5 / 2.6 complete on `main` (PR #31 merged); phases 2.7 / 2.8 / 2.9 in this PR (steps 20–26 complete pending review); phase 2.10 in planning.
+**Status:** Phase 2.1 complete on `main` (PR #27 merged); Phase 2.2 complete on `main` (PR #29 merged); Phase 2.3 complete on `main` (PR #30 merged — step 9 implemented as `DefaultHierarchyBootstrapper`); phases 2.4 / 2.5 / 2.6 complete on `main` (PR #31 merged); phases 2.7 / 2.8 / 2.9 complete on `main` (PR #32 merged); phase 2.10 in this PR (steps 27–30 complete pending review).
 **Source of truth:** [`docs/proposals/team-collaboration.md`](../proposals/team-collaboration.md) (§4 sequencing, §5 policy matrix, §6 `IPermissionService`, §7 admin panel, §8 enrollment hook).
 **Depends on:** Phase 1 ([`phase-1-checklist.md`](./phase-1-checklist.md)) — complete on `main` after PR #26.
 
@@ -68,17 +68,19 @@
 
 ## Phase 2.10 — Tests, contract handshake, and acceptance
 
-- [ ] **27. pgTAP — schema invariants.** FK integrity, slug uniqueness within parent, cascade rules (`organizations` → `teams` → `projects` → membership), team-role enum values, `tickets.reporter_id IS NOT NULL` invariant, `tickets.team_id IS NOT NULL` invariant.
-- [ ] **28. xUnit + Testcontainers — integration tests.** Repository round-trips for every new repo; full §5 policy matrix exercised end-to-end via the BLL `RouteTicketAsync` / `ClaimTicketAsync` / `AssignTicketAsync` paths; `audit_events` rows asserted in the same transaction as ticket writes.
-- [ ] **29. xUnit — `Phase2AcceptanceTests`.** Boots the real `Program` via `WebApplicationFactory` + `postgres:18-alpine` Testcontainer, signs in as the bootstrap admin, exercises end-to-end: create org → team → project, add three users with different team roles, post a ticket, route it, claim it, verify audit feed in the admin panel.
-- [ ] **30. Document the OpenFGA input contract.** Confirm [`team-collaboration.md`](../proposals/team-collaboration.md) §4 step 17's mapping is implemented as written (in particular: `team_members.role IN ('manager', 'team_lead')` → `team#admin`). [`openfga.md`](../proposals/openfga.md) step 7's tuple-write hook and step 8's backfill job consume this contract directly.
+- [x] **27. pgTAP — schema invariants.** [`tests/pgtap/10_tickets.sql`](../../tests/pgtap/10_tickets.sql) — 32-assertion plan covering `tickets` column existence + types, NOT NULL invariants on `project_id` / `team_id` / `reporter_id` (and nullable `assignee_id`), the four FK targets, supporting indexes, and `ON DELETE` behaviour exercised end-to-end (RESTRICT for project / team / reporter; SET NULL for assignee; CASCADE for the `organizations → teams → projects → *_members` chain). The team-role enum value list is covered by [`tests/pgtap/08_team_members.sql`](../../tests/pgtap/08_team_members.sql); slug-uniqueness invariants are covered by the per-table org/team/project pgTAP files.
+- [x] **28. xUnit + Testcontainers — integration tests.** [`tests/Heimdall.DAL.Tests/Acceptance/PolicyMatrixIntegrationTests.cs`](../../tests/Heimdall.DAL.Tests/Acceptance/PolicyMatrixIntegrationTests.cs) — 19 tests exercising the full §5 policy matrix end-to-end against `postgres:18-alpine` Testcontainers, including `audit_events` write-in-same-transaction assertions.
+- [x] **29. xUnit — `Phase2AcceptanceTests`.** [`tests/Heimdall.Web.Tests/Acceptance/Phase2AcceptanceTests.cs`](../../tests/Heimdall.Web.Tests/Acceptance/Phase2AcceptanceTests.cs) — single end-to-end test that shares the `Phase1Acceptance` xUnit collection because the `WebApplicationFactory` mutates process-wide environment variables.
+- [x] **30. OpenFGA input contract.** [`docs/proposals/openfga-input-contract.md`](../proposals/openfga-input-contract.md) — confirms [`team-collaboration.md`](../proposals/team-collaboration.md) §4 step 17's mapping is implemented as written (no discrepancies).
 
-## Phase 2 sign-off
+## Phase 2 sign-off (this branch / PR #33 — flips to merged on `main`)
 
+- [x] All 30 steps complete on this branch.
 - [ ] All 30 steps merged on `main`.
-- [ ] Coverage targets met across every new file (consistent with Phase 1).
-- [ ] No regressions on the Phase 1 acceptance test (`Phase1AcceptanceTests` keeps passing as-is).
-- [ ] `Authorization:Provider` configuration flag defaults to `"TeamRole"`; the OpenFGA value is reserved (not implemented) for Phase 3.
+- [x] Coverage targets met across every new file (consistent with Phase 1).
+- [x] No regressions on the Phase 1 acceptance test (`Phase1AcceptanceTests` keeps passing as-is).
+- [x] `Authorization:Provider` configuration flag defaults to `"TeamRole"`; the OpenFGA value is reserved (not implemented) for Phase 3.
+- [x] Two production-code gaps flagged in PR description (visibility-service-layer parity; WAF env-var seam) — explicitly deferred to Phase 3+.
 
 ## Out of scope for Phase 2
 

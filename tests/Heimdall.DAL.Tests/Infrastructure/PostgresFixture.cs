@@ -51,15 +51,30 @@ public sealed class PostgresFixture : IAsyncLifetime
 
     /// <summary>
     /// Wipes the <c>users</c> and <c>audit_events</c> tables so each test starts from a
-    /// clean, deterministic state. The <c>audit_events.actor_user_id</c> FK is
-    /// <c>ON DELETE SET NULL</c>, so the order is not strictly required, but both are
-    /// cleared for cleanliness.
+    /// clean, deterministic state. Phase 2.1+ added <c>ON DELETE RESTRICT</c> FKs from
+    /// the collaboration hierarchy + membership tables back to <c>users</c>
+    /// (e.g. <c>organizations.created_by</c>, <c>*_members.added_by</c>), so this method
+    /// must also clear those tables first — otherwise tests sharing
+    /// <see cref="PostgresCollection"/> with suites that create org/team/project rows
+    /// will fail with <c>23001</c> when an earlier suite leaves orphan rows referencing
+    /// users. The <c>audit_events.actor_user_id</c> FK is <c>ON DELETE SET NULL</c>, so
+    /// its position in the sequence is not load-bearing.
     /// </summary>
     public async Task ResetUsersTableAsync()
     {
         await using var conn = new NpgsqlConnection(ConnectionString);
         await conn.OpenAsync();
-        await conn.ExecuteAsync("DELETE FROM users; DELETE FROM audit_events;");
+        await conn.ExecuteAsync(
+            "DELETE FROM tickets; "
+            + "DELETE FROM project_members; "
+            + "DELETE FROM team_members; "
+            + "DELETE FROM organization_members; "
+            + "DELETE FROM projects; "
+            + "DELETE FROM teams; "
+            + "DELETE FROM organizations; "
+            + "DELETE FROM users; "
+            + "DELETE FROM audit_events;"
+        );
     }
 
     /// <summary>
