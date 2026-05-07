@@ -1,0 +1,389 @@
+# Heimdall-TicketTracker OpenFGA model tests.
+#
+# Run with:  fga model test --tests authz/store.fga.yaml
+#
+# Coverage matches docs/proposals/openfga.md §3 step 2 / phase-3-checklist.md
+# Phase 3.1 step 2:
+#   1. Org-admin inherits permissions on every descendant ticket.
+#   2. Team-admin scope is bounded to their own team's projects/tickets.
+#   3. Project-viewer is read-only (view + comment, no edit/delete/assign).
+#   4. Reporter and assignee self-grants (view/edit on their own ticket
+#      regardless of project membership).
+#   5. Deny-closed: a non-member is denied every permission on every object
+#      (proves there are no implicit grants and no `[user:*]` wildcards).
+# Plus one list_objects assertion (queue filtering) and one list_users
+# assertion (admin "who has access" view).
+
+name: heimdall-authz-model-tests
+model_file: ./model.fga
+
+# Hierarchy seed:
+#   organization:org-1
+#     team:team-1     (parent_org=org-1)
+#       project:proj-1  (parent_team=team-1)
+#         ticket:t-1    (reporter=kate, assignee=leo)
+#     team:team-2     (parent_org=org-1)  -- sibling team for scope test
+#       project:proj-2  (parent_team=team-2)
+#         ticket:t-2    (reporter=mike, no assignee)
+#
+# User cast:
+#   alice   = organization:org-1#admin       (case 1)
+#   bob     = organization:org-1#member
+#   charlie = team:team-1#admin              (case 2)
+#   dave    = team:team-1#member
+#   eve     = team:team-1#viewer
+#   frank   = team:team-2#admin              (sibling-team admin)
+#   grace   = project:proj-1#admin
+#   henry   = project:proj-1#member
+#   iris    = project:proj-1#viewer          (case 3)
+#   jack    = project:proj-2#admin
+#   kate    = ticket:t-1#reporter            (case 4 — reporter)
+#   leo     = ticket:t-1#assignee            (case 4 — assignee)
+#   mike    = ticket:t-2#reporter
+#   nina    = no membership anywhere         (case 5 — deny-closed)
+tuples:
+  # Hierarchy parent pointers.
+  - user: organization:org-1
+    relation: parent_org
+    object: team:team-1
+  - user: organization:org-1
+    relation: parent_org
+    object: team:team-2
+  - user: team:team-1
+    relation: parent_team
+    object: project:proj-1
+  - user: team:team-2
+    relation: parent_team
+    object: project:proj-2
+  - user: project:proj-1
+    relation: parent_project
+    object: ticket:t-1
+  - user: project:proj-2
+    relation: parent_project
+    object: ticket:t-2
+
+  # Organization memberships.
+  - user: user:alice
+    relation: admin
+    object: organization:org-1
+  - user: user:bob
+    relation: member
+    object: organization:org-1
+
+  # Team memberships.
+  - user: user:charlie
+    relation: admin
+    object: team:team-1
+  - user: user:dave
+    relation: member
+    object: team:team-1
+  - user: user:eve
+    relation: viewer
+    object: team:team-1
+  - user: user:frank
+    relation: admin
+    object: team:team-2
+
+  # Project memberships.
+  - user: user:grace
+    relation: admin
+    object: project:proj-1
+  - user: user:henry
+    relation: member
+    object: project:proj-1
+  - user: user:iris
+    relation: viewer
+    object: project:proj-1
+  - user: user:jack
+    relation: admin
+    object: project:proj-2
+
+  # Ticket reporter/assignee tuples.
+  - user: user:kate
+    relation: reporter
+    object: ticket:t-1
+  - user: user:leo
+    relation: assignee
+    object: ticket:t-1
+  - user: user:mike
+    relation: reporter
+    object: ticket:t-2
+
+tests:
+  # ---------------------------------------------------------------------
+  # Case 1: org-admin inherits everything on every descendant.
+  # ---------------------------------------------------------------------
+  - name: org-admin-inherits-everything-on-descendant-ticket
+    check:
+      - user: user:alice
+        object: ticket:t-1
+        assertions:
+          view: true
+          edit: true
+          delete: true
+          comment: true
+          assign: true
+      - user: user:alice
+        object: ticket:t-2
+        assertions:
+          view: true
+          edit: true
+          delete: true
+          comment: true
+          assign: true
+      - user: user:alice
+        object: organization:org-1
+        assertions:
+          manage_members: true
+          view: true
+          edit: true
+          delete: true
+      - user: user:alice
+        object: team:team-1
+        assertions:
+          manage_members: true
+          view: true
+          edit: true
+          delete: true
+      - user: user:alice
+        object: team:team-2
+        assertions:
+          manage_members: true
+          view: true
+          edit: true
+          delete: true
+      - user: user:alice
+        object: project:proj-1
+        assertions:
+          manage_members: true
+          view: true
+          edit: true
+          delete: true
+
+  # ---------------------------------------------------------------------
+  # Case 2: team-admin scope is bounded to their own team.
+  # Charlie is admin of team-1; he can edit tickets in team-1's projects
+  # but NOT tickets in team-2's projects (sibling team in same org).
+  # ---------------------------------------------------------------------
+  - name: team-admin-scoped-to-own-team
+    check:
+      - user: user:charlie
+        object: ticket:t-1
+        assertions:
+          view: true
+          edit: true
+          delete: true
+          comment: true
+          assign: true
+      - user: user:charlie
+        object: ticket:t-2
+        assertions:
+          view: false
+          edit: false
+          delete: false
+          comment: false
+          assign: false
+      - user: user:charlie
+        object: team:team-1
+        assertions:
+          manage_members: true
+      - user: user:charlie
+        object: team:team-2
+        assertions:
+          manage_members: false
+      - user: user:charlie
+        object: project:proj-1
+        assertions:
+          manage_members: true
+          view: true
+          edit: true
+          delete: true
+      - user: user:charlie
+        object: project:proj-2
+        assertions:
+          manage_members: false
+          view: false
+          edit: false
+          delete: false
+
+  # ---------------------------------------------------------------------
+  # Case 3: project-viewer is read-only — view + comment, no edit /
+  # delete / assign / manage_members.
+  # ---------------------------------------------------------------------
+  - name: project-viewer-is-read-only
+    check:
+      - user: user:iris
+        object: ticket:t-1
+        assertions:
+          view: true
+          comment: true
+          edit: false
+          delete: false
+          assign: false
+      - user: user:iris
+        object: project:proj-1
+        assertions:
+          view: true
+          edit: false
+          delete: false
+          manage_members: false
+      - user: user:iris
+        object: ticket:t-2
+        assertions:
+          view: false
+          comment: false
+          edit: false
+          delete: false
+          assign: false
+
+  # ---------------------------------------------------------------------
+  # Case 4: reporter and assignee self-grants.
+  # Kate (reporter of t-1) and Leo (assignee of t-1) each get view/edit
+  # on t-1 even though neither is a project, team, or org member.
+  # Neither has any access to t-2.
+  # ---------------------------------------------------------------------
+  - name: reporter-self-grants-on-own-ticket
+    check:
+      - user: user:kate
+        object: ticket:t-1
+        assertions:
+          view: true
+          edit: true
+          comment: true
+          assign: true
+          delete: false
+      - user: user:kate
+        object: ticket:t-2
+        assertions:
+          view: false
+          edit: false
+          comment: false
+          assign: false
+          delete: false
+      - user: user:kate
+        object: project:proj-1
+        assertions:
+          view: false
+          edit: false
+          manage_members: false
+
+  - name: assignee-self-grants-on-own-ticket
+    check:
+      - user: user:leo
+        object: ticket:t-1
+        assertions:
+          view: true
+          edit: true
+          comment: true
+          assign: true
+          delete: false
+      - user: user:leo
+        object: ticket:t-2
+        assertions:
+          view: false
+          edit: false
+          comment: false
+          assign: false
+          delete: false
+      - user: user:leo
+        object: project:proj-1
+        assertions:
+          view: false
+          edit: false
+          manage_members: false
+
+  # ---------------------------------------------------------------------
+  # Case 5: deny-closed — a user with no membership tuple anywhere is
+  # denied every permission on every object. Proves no implicit grants
+  # exist (no `[user:*]` wildcards leak access).
+  # ---------------------------------------------------------------------
+  - name: non-member-is-denied-everywhere
+    check:
+      - user: user:nina
+        object: organization:org-1
+        assertions:
+          view: false
+          edit: false
+          delete: false
+          manage_members: false
+      - user: user:nina
+        object: team:team-1
+        assertions:
+          view: false
+          edit: false
+          delete: false
+          manage_members: false
+      - user: user:nina
+        object: project:proj-1
+        assertions:
+          view: false
+          edit: false
+          delete: false
+          manage_members: false
+      - user: user:nina
+        object: ticket:t-1
+        assertions:
+          view: false
+          edit: false
+          delete: false
+          comment: false
+          assign: false
+      - user: user:nina
+        object: ticket:t-2
+        assertions:
+          view: false
+          edit: false
+          delete: false
+          comment: false
+          assign: false
+
+  # ---------------------------------------------------------------------
+  # ListObjects: queue filtering — "which tickets can user X view?"
+  # Alice (org-admin) sees both. Iris (proj-1 viewer) sees only t-1.
+  # Nina (non-member) sees nothing.
+  # ---------------------------------------------------------------------
+  - name: list-objects-tickets-user-can-view
+    list_objects:
+      - user: user:alice
+        type: ticket
+        assertions:
+          view:
+            - ticket:t-1
+            - ticket:t-2
+      - user: user:iris
+        type: ticket
+        assertions:
+          view:
+            - ticket:t-1
+      - user: user:nina
+        type: ticket
+        assertions:
+          view: []
+      - user: user:kate
+        type: ticket
+        assertions:
+          view:
+            - ticket:t-1
+
+  # ---------------------------------------------------------------------
+  # ListUsers: admin "who has access" view — "which users can view t-1?"
+  # Must include alice (org-admin), charlie (team-1 admin), grace
+  # (proj-1 admin), henry (proj-1 member), iris (proj-1 viewer),
+  # kate (reporter), leo (assignee). Must NOT include frank (team-2
+  # admin), jack (proj-2 admin), mike (t-2 reporter), or nina.
+  # ---------------------------------------------------------------------
+  - name: list-users-who-can-view-ticket-t1
+    list_users:
+      - object: ticket:t-1
+        user_filter:
+          - type: user
+        assertions:
+          view:
+            users:
+              - user:alice
+              - user:charlie
+              - user:grace
+              - user:henry
+              - user:iris
+              - user:kate
+              - user:leo
