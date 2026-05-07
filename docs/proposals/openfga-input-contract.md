@@ -6,7 +6,7 @@
 **Purpose:** Lock down — as a single, machine-readable document — the row-by-row mapping from production database columns to OpenFGA tuple shapes, so [`openfga.md`](./openfga.md) step 7 (tuple-write hooks) and step 8 (idempotent backfill job) have one unambiguous spec to read against.
 **Depends on:** [`team-collaboration.md`](./team-collaboration.md) §4 step 17 (the canonical mapping) and Phase 2.4 / 2.5 / 2.6 migrations + domain types implementing it. This document is the **output** of [`team-collaboration.md`](./team-collaboration.md) Phase 2.10 step 30 and the **input** to [`openfga.md`](./openfga.md) Phase 3.4 (steps 7–8).
 
-> This document is **research and planning only**. **No code, package, configuration, or DI changes are made in this PR.** A separate, follow-up PR (or series of PRs) will implement the design once approved.
+> This document is **research and planning only** — the OpenFGA implementation (model file, sidecar, SDK wiring, DI, tuple-write hooks, backfill job) lands in **Phase 3**. The Phase 2.10 PR that publishes this document also adds verification artifacts (pgTAP, integration matrix, acceptance test) and project-reference / fixture wiring needed to support them, but introduces **no OpenFGA code, packages, configuration, or DI changes**.
 
 ---
 

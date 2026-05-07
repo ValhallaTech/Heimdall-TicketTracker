@@ -19,13 +19,15 @@ using Npgsql;
 namespace Heimdall.Web.Tests.Acceptance;
 
 /// <summary>
-/// Phase 2.10 step 29 — end-to-end acceptance test for the route → claim →
+/// Phase 2.10 step 29 — end-to-end acceptance test for the route → assign →
 /// audit-feed loop introduced in Phase 2.7 / 2.8. Boots the real
 /// <c>Heimdall.Web</c> host via <see cref="HeimdallWebApplicationFactory"/>
 /// against a Testcontainers Postgres, signs in as the bootstrap system admin,
 /// seeds an <c>organization → team → project → ticket</c> graph plus three
 /// non-admin team members at distinct roles, and exercises the routing and
-/// assignment surfaces of <see cref="ITicketService"/> end-to-end.
+/// assignment surfaces of <see cref="ITicketService"/> end-to-end. The
+/// claim-ticket surface is covered separately by the §5 policy matrix in
+/// <see cref="Heimdall.DAL.Tests.Acceptance.PolicyMatrixIntegrationTests"/>.
 /// </summary>
 /// <remarks>
 /// <para>
@@ -37,7 +39,7 @@ namespace Heimdall.Web.Tests.Acceptance;
 /// with the existing pattern in
 /// <see cref="Phase1AcceptanceTests"/> /
 /// <see cref="Heimdall.DAL.Tests.Acceptance.PolicyMatrixIntegrationTests"/>.
-/// The page itself is exercised separately by a HEAD request that asserts the
+/// The page itself is exercised separately by a GET request that asserts the
 /// admin gate accepts the seeded system-admin cookie.
 /// </para>
 /// <para>

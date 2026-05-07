@@ -1,6 +1,6 @@
 # Phase 3 — OpenFGA / ReBAC Cutover: Implementation Checklist
 
-**Status:** Planning. No steps started. Phase 2 complete on this branch (steps 27–30 in PR #<this PR>); merge before opening any Phase 3 PR.
+**Status:** Planning. No steps started. Phase 2 complete on this branch ([PR #33](https://github.com/ValhallaTech/Heimdall-TicketTracker/pull/33), steps 27–30); merge before opening any Phase 3 PR.
 **Source of truth:** [`docs/proposals/openfga.md`](../proposals/openfga.md) (§3 sequencing, §4 open questions and decision log).
 **Upstream:** [`openfga/openfga`](https://github.com/openfga/openfga) — server, model storage, gRPC + HTTP API.
 **Input contract:** [`docs/proposals/openfga-input-contract.md`](../proposals/openfga-input-contract.md) — the row-by-row mapping from production columns to OpenFGA tuple shapes. Steps 7 and 8 below consume this contract directly.

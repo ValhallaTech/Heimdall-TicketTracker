@@ -68,14 +68,15 @@
 
 ## Phase 2.10 — Tests, contract handshake, and acceptance
 
-- [x] **27. pgTAP — schema invariants.** [`tests/pgtap/10_tickets.sql`](../../tests/pgtap/10_tickets.sql) — 32-assertion plan covering FK integrity, slug uniqueness, cascade rules, team-role enum values, and the `reporter_id` / `team_id` NOT NULL invariants.
+- [x] **27. pgTAP — schema invariants.** [`tests/pgtap/10_tickets.sql`](../../tests/pgtap/10_tickets.sql) — 32-assertion plan covering `tickets` column existence + types, NOT NULL invariants on `project_id` / `team_id` / `reporter_id` (and nullable `assignee_id`), the four FK targets, supporting indexes, and `ON DELETE` behaviour exercised end-to-end (RESTRICT for project / team / reporter; SET NULL for assignee; CASCADE for the `organizations → teams → projects → *_members` chain). The team-role enum value list is covered by [`tests/pgtap/08_team_members.sql`](../../tests/pgtap/08_team_members.sql); slug-uniqueness invariants are covered by the per-table org/team/project pgTAP files.
 - [x] **28. xUnit + Testcontainers — integration tests.** [`tests/Heimdall.DAL.Tests/Acceptance/PolicyMatrixIntegrationTests.cs`](../../tests/Heimdall.DAL.Tests/Acceptance/PolicyMatrixIntegrationTests.cs) — 19 tests exercising the full §5 policy matrix end-to-end against `postgres:18-alpine` Testcontainers, including `audit_events` write-in-same-transaction assertions.
 - [x] **29. xUnit — `Phase2AcceptanceTests`.** [`tests/Heimdall.Web.Tests/Acceptance/Phase2AcceptanceTests.cs`](../../tests/Heimdall.Web.Tests/Acceptance/Phase2AcceptanceTests.cs) — single end-to-end test that shares the `Phase1Acceptance` xUnit collection because the `WebApplicationFactory` mutates process-wide environment variables.
 - [x] **30. OpenFGA input contract.** [`docs/proposals/openfga-input-contract.md`](../proposals/openfga-input-contract.md) — confirms [`team-collaboration.md`](../proposals/team-collaboration.md) §4 step 17's mapping is implemented as written (no discrepancies).
 
-## Phase 2 sign-off
+## Phase 2 sign-off (this branch / PR #33 — flips to merged on `main`)
 
-- [x] All 30 steps merged on `main`.
+- [x] All 30 steps complete on this branch.
+- [ ] All 30 steps merged on `main`.
 - [x] Coverage targets met across every new file (consistent with Phase 1).
 - [x] No regressions on the Phase 1 acceptance test (`Phase1AcceptanceTests` keeps passing as-is).
 - [x] `Authorization:Provider` configuration flag defaults to `"TeamRole"`; the OpenFGA value is reserved (not implemented) for Phase 3.
