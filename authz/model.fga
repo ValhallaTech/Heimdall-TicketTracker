@@ -1,0 +1,94 @@
+model
+  schema 1.1
+
+# Heimdall-TicketTracker OpenFGA authorization model.
+#
+# Source of truth:
+#   - docs/proposals/openfga.md §3 step 1 (object types, relations, computed
+#     permissions, inheritance walks)
+#   - docs/proposals/openfga-input-contract.md §2 (every tuple shape this
+#     model must accept)
+#   - docs/proposals/team-collaboration.md §4 step 17 (the prose mapping)
+#
+# Hierarchy: organization -> team -> project -> ticket.
+# Deny-closed by default: only the relations declared below grant access.
+# No `[user:*]` wildcards — every direct user grant is `[user]` so ListObjects
+# and ListUsers work for queue filtering and the admin "who has access" view
+# (phase-3-checklist Phase 3.1 step 1).
+
+type user
+
+type organization
+  relations
+    # Direct relations (input-contract row 4: organization_members).
+    define admin: [user]
+    define member: [user] or admin
+
+    # Computed permissions.
+    define manage_members: admin
+    define view: admin or member
+    define edit: admin
+    define delete: admin
+
+type team
+  relations
+    # Parent pointer (input-contract row 1).
+    define parent_org: [organization]
+
+    # Direct relations. `team#viewer` is required by the input contract
+    # (team_members.role = 'viewer' -> team#viewer). Org-admins inherit
+    # team-admin via `admin from parent_org` per openfga.md §3 step 1.
+    define admin: [user] or admin from parent_org
+    define member: [user] or admin
+    define viewer: [user] or member
+
+    # Computed permissions.
+    define manage_members: admin
+    define view: viewer
+    define edit: admin
+    define delete: admin
+
+type project
+  relations
+    # Parent pointer (input-contract row 2).
+    define parent_team: [team]
+
+    # Direct relations (input-contract row 6: project_members).
+    # Team-admins (and transitively org-admins) inherit project-admin.
+    define admin: [user] or admin from parent_team
+    define member: [user] or admin
+    define viewer: [user] or member
+
+    # Computed permissions.
+    define manage_members: admin
+    define view: viewer
+    define edit: admin or member
+    define delete: admin
+
+type ticket
+  relations
+    # Parent pointer (input-contract row 3).
+    define parent_project: [project]
+
+    # Direct relations (input-contract rows 7 and 8). Single-subject:
+    # `[user]` only — NOT `[user, user:*]`.
+    define reporter: [user]
+    define assignee: [user]
+
+    # Computed permissions — inheritance walk per openfga.md §3 step 1.
+    # The OpenFGA DSL only allows a single `from` per term, so the
+    # ancestor walk is collapsed transitively through the project's
+    # `admin: [user] or admin from parent_team` chain (which itself
+    # already pulls in `admin from parent_org` via team#admin). Net
+    # effect:
+    #   - `viewer from parent_project` => project viewer/member/admin,
+    #     team admin (including team-admin-via-org-admin), org admin.
+    #   - `member from parent_project` => project member/admin and the
+    #     same ancestor-admin chain.
+    #   - `admin from parent_project`  => project admin and the same
+    #     ancestor-admin chain.
+    define view: reporter or assignee or viewer from parent_project
+    define comment: reporter or assignee or viewer from parent_project
+    define edit: reporter or assignee or member from parent_project
+    define assign: reporter or assignee or admin from parent_project
+    define delete: admin from parent_project
