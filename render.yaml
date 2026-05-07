@@ -1,5 +1,9 @@
 # Render blueprint for Heimdall TicketTracker.
 # Docs: https://render.com/docs/blueprint-spec
+#
+# OpenFGA sidecar wiring lives in this file as well; see:
+#   - docs/proposals/openfga.md §3 step 3 (Render blueprint update)
+#   - docs/runbooks/openfga-bootstrap.md (one-time bootstrap + redeploy flow)
 services:
   - type: web
     name: heimdall-ticket-tracker-web
@@ -21,12 +25,103 @@ services:
           type: keyvalue
           name: heimdall-ticket-tracker-redis
           property: connectionString
+      # --- OpenFGA client wiring (see docs/proposals/openfga.md §3 step 5) ---
+      # Private DNS name on Render's private network: <service-name>:<port>.
+      # The OpenFGA service exposes HTTP on 8080 (see OPENFGA_HTTP_ADDR below).
+      # TODO: confirm against Render blueprint spec — fromService/property:host
+      # is not documented for pserv; hardcoding the internal hostname is the
+      # documented private-network pattern.
+      - key: OPENFGA_API_URL
+        value: http://heimdall-ticket-tracker-openfga:8080
+      # Pull the preshared key directly from the OpenFGA service's generated
+      # value so client and server can never drift.
+      - key: OPENFGA_PRESHARED_KEY
+        fromService:
+          type: pserv
+          name: heimdall-ticket-tracker-openfga
+          envVarKey: OPENFGA_AUTHN_PRESHARED_KEYS
+      # Populated by the operator after running scripts/openfga-bootstrap.sh.
+      # See docs/runbooks/openfga-bootstrap.md. sync:false keeps these out of
+      # the blueprint and managed as Render dashboard secrets.
+      - key: OPENFGA_STORE_ID
+        sync: false
+      - key: OPENFGA_AUTHORIZATION_MODEL_ID
+        sync: false
 
   - type: keyvalue
     name: heimdall-ticket-tracker-redis
     plan: free
     region: ohio
     ipAllowList: []
+
+  # --- OpenFGA sidecar (private service, no public ingress) ---
+  # See docs/proposals/openfga.md §3 step 3 and
+  # https://openfga.dev/docs/getting-started/running-in-production
+  - type: pserv
+    name: heimdall-ticket-tracker-openfga
+    runtime: image
+    plan: free
+    region: ohio
+    image:
+      # Renovate Bot manages the tag (see renovate.json); :latest is a
+      # placeholder so the blueprint deploys before Renovate's first PR.
+      # Tradeoff: an unpinned tag is non-repeatable across redeploys until
+      # Renovate replaces it with a digest-pinned version.
+      # TODO: confirm against Render blueprint spec — image.url is the
+      # documented field for public Docker Hub images on pserv.
+      url: docker.io/openfga/openfga:latest
+    # Run the datastore migration once per deploy, then exec into `openfga run`.
+    # Render's pserv type does not expose a separate preDeployCommand for
+    # image-based services, so we wrap migrate+run in dockerCommand. The
+    # migrate step is idempotent — safe to re-run on every deploy.
+    # TODO: confirm against Render blueprint spec — dockerCommand is the
+    # documented override for image-based services.
+    dockerCommand: >-
+      /bin/sh -c "openfga migrate
+      --datastore-engine postgres
+      --datastore-uri \"$OPENFGA_DATASTORE_URI\"
+      && exec openfga run"
+    healthCheckPath: /healthz
+    envVars:
+      - key: OPENFGA_DATASTORE_ENGINE
+        value: postgres
+      # OPENFGA_DATASTORE_URI must point at a SEPARATE logical DB named
+      # `heimdall_authz` on the same Postgres instance as Heimdall.Web.
+      # Render's blueprint cannot provision a second logical DB on the same
+      # instance, so the operator MUST create `heimdall_authz` once before
+      # the first deploy of this service. See
+      # docs/runbooks/openfga-bootstrap.md step 1.
+      #
+      # The simplest path here is to manage the URI as an unsynced secret on
+      # the Render dashboard, derived from DATABASE_URL with the database
+      # name swapped to `heimdall_authz` (and the same credentials).
+      # TODO: confirm against Render blueprint spec — there is no documented
+      # way to string-substitute a fromDatabase connectionString in YAML.
+      - key: OPENFGA_DATASTORE_URI
+        sync: false
+      - key: OPENFGA_HTTP_ADDR
+        value: 0.0.0.0:8080
+      - key: OPENFGA_GRPC_ADDR
+        value: 0.0.0.0:8081
+      - key: OPENFGA_AUTHN_METHOD
+        value: preshared
+      # Render auto-generates this on first deploy; the web service reads it
+      # back via fromService above. Never commit a literal value.
+      - key: OPENFGA_AUTHN_PRESHARED_KEYS
+        generateValue: true
+      # --- Performance tuning placeholders (Phase 3.4 step 13) -----------
+      # Server-side check / iterator caches per
+      # https://openfga.dev/docs/getting-started/setup-openfga/configuration .
+      # Leave commented until step 13 measures the workload; turning these on
+      # before there is real traffic just hides correctness bugs.
+      # - key: OPENFGA_CHECK_QUERY_CACHE_ENABLED
+      #   value: "true"
+      # - key: OPENFGA_CHECK_QUERY_CACHE_TTL
+      #   value: 10s
+      # - key: OPENFGA_CHECK_ITERATOR_CACHE_ENABLED
+      #   value: "true"
+      # - key: OPENFGA_CHECK_ITERATOR_CACHE_TTL
+      #   value: 10s
 
 databases:
   - name: heimdall-ticket-tracker-postgres
