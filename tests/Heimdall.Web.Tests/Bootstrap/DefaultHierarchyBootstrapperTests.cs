@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Threading;
 using System.Threading.Tasks;
 using FluentAssertions;
@@ -286,6 +287,77 @@ public class DefaultHierarchyBootstrapperTests
             r => r.AddAsync(It.IsAny<TeamMember>(), It.IsAny<CancellationToken>()), Times.Never);
         harness.ProjectMemberRepository.Verify(
             r => r.AddAsync(It.IsAny<ProjectMember>(), It.IsAny<CancellationToken>()), Times.Never);
+    }
+
+    [Fact]
+    public async Task Should_EmitFiveSeedTuples_When_FreshDatabase()
+    {
+        var harness = new TestHarness();
+        var adminId = Guid.NewGuid();
+        var orgId = Guid.NewGuid();
+        var teamId = Guid.NewGuid();
+        var projectId = Guid.NewGuid();
+        harness.SetupAdmin(adminId);
+        harness.SetupFreshHierarchy(orgId, teamId, projectId);
+
+        IReadOnlyList<TupleKey>? capturedWrites = null;
+        IReadOnlyList<TupleKey>? capturedDeletes = null;
+        harness.TupleWriter
+            .Setup(w => w.WriteAsync(
+                It.IsAny<IReadOnlyList<TupleKey>>(),
+                It.IsAny<IReadOnlyList<TupleKey>>(),
+                It.IsAny<CancellationToken>()))
+            .Callback<IReadOnlyList<TupleKey>, IReadOnlyList<TupleKey>, CancellationToken>(
+                (writes, deletes, _) =>
+                {
+                    capturedWrites = writes;
+                    capturedDeletes = deletes;
+                })
+            .Returns(Task.CompletedTask);
+
+        await harness.Bootstrapper.RunAsync(AdminEmail, CancellationToken.None);
+
+        harness.TupleWriter.Verify(
+            w => w.WriteAsync(
+                It.IsAny<IReadOnlyList<TupleKey>>(),
+                It.IsAny<IReadOnlyList<TupleKey>>(),
+                It.IsAny<CancellationToken>()),
+            Times.Once);
+        capturedWrites.Should().NotBeNull();
+        capturedWrites!.Should().HaveCount(5);
+        capturedDeletes.Should().BeEmpty();
+
+        capturedWrites!.Should().BeEquivalentTo(new[]
+        {
+            TupleShapes.TeamParentOrg(teamId, orgId),
+            TupleShapes.ProjectParentTeam(projectId, teamId),
+            TupleShapes.OrgMemberFromRole(orgId, adminId, DefaultHierarchyBootstrapper.OwnerRole),
+            TupleShapes.TeamAdminFromRole(teamId, adminId, TeamMemberRole.Manager),
+            TupleShapes.ProjectMemberFromRole(projectId, adminId, DefaultHierarchyBootstrapper.OwnerRole),
+        });
+    }
+
+    [Fact]
+    public async Task Should_StillEmitSeedTuples_When_FullySeeded()
+    {
+        // The seed-tuple write is unconditional — it must run on every boot so a
+        // missing OpenFGA tuple after a manual SQL fix-up gets re-emitted.
+        var harness = new TestHarness();
+        var adminId = Guid.NewGuid();
+        var orgId = Guid.NewGuid();
+        var teamId = Guid.NewGuid();
+        var projectId = Guid.NewGuid();
+        harness.SetupAdmin(adminId);
+        harness.SetupFullySeededHierarchy(adminId, orgId, teamId, projectId);
+
+        await harness.Bootstrapper.RunAsync(AdminEmail, CancellationToken.None);
+
+        harness.TupleWriter.Verify(
+            w => w.WriteAsync(
+                It.Is<IReadOnlyList<TupleKey>>(c => c.Count == 5),
+                It.Is<IReadOnlyList<TupleKey>>(c => c.Count == 0),
+                It.IsAny<CancellationToken>()),
+            Times.Once);
     }
 
     [Fact]
