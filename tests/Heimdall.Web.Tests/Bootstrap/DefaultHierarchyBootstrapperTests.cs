@@ -2,6 +2,7 @@ using System;
 using System.Threading;
 using System.Threading.Tasks;
 using FluentAssertions;
+using Heimdall.BLL.Authorization.OpenFga;
 using Heimdall.Core.Interfaces;
 using Heimdall.Core.Models;
 using Heimdall.Web.Bootstrap;
@@ -27,6 +28,7 @@ public class DefaultHierarchyBootstrapperTests
             harness.OrganizationMemberRepository.Object,
             harness.TeamMemberRepository.Object,
             harness.ProjectMemberRepository.Object,
+            harness.TupleWriter.Object,
             harness.Logger.Object);
         act.Should().Throw<ArgumentNullException>();
     }
@@ -43,6 +45,7 @@ public class DefaultHierarchyBootstrapperTests
             harness.OrganizationMemberRepository.Object,
             harness.TeamMemberRepository.Object,
             harness.ProjectMemberRepository.Object,
+            harness.TupleWriter.Object,
             harness.Logger.Object);
         act.Should().Throw<ArgumentNullException>();
     }
@@ -59,6 +62,7 @@ public class DefaultHierarchyBootstrapperTests
             harness.OrganizationMemberRepository.Object,
             harness.TeamMemberRepository.Object,
             harness.ProjectMemberRepository.Object,
+            harness.TupleWriter.Object,
             harness.Logger.Object);
         act.Should().Throw<ArgumentNullException>();
     }
@@ -75,6 +79,7 @@ public class DefaultHierarchyBootstrapperTests
             harness.OrganizationMemberRepository.Object,
             harness.TeamMemberRepository.Object,
             harness.ProjectMemberRepository.Object,
+            harness.TupleWriter.Object,
             harness.Logger.Object);
         act.Should().Throw<ArgumentNullException>();
     }
@@ -91,6 +96,7 @@ public class DefaultHierarchyBootstrapperTests
             null!,
             harness.TeamMemberRepository.Object,
             harness.ProjectMemberRepository.Object,
+            harness.TupleWriter.Object,
             harness.Logger.Object);
         act.Should().Throw<ArgumentNullException>();
     }
@@ -107,6 +113,7 @@ public class DefaultHierarchyBootstrapperTests
             harness.OrganizationMemberRepository.Object,
             null!,
             harness.ProjectMemberRepository.Object,
+            harness.TupleWriter.Object,
             harness.Logger.Object);
         act.Should().Throw<ArgumentNullException>();
     }
@@ -123,6 +130,7 @@ public class DefaultHierarchyBootstrapperTests
             harness.OrganizationMemberRepository.Object,
             harness.TeamMemberRepository.Object,
             null!,
+            harness.TupleWriter.Object,
             harness.Logger.Object);
         act.Should().Throw<ArgumentNullException>();
     }
@@ -139,6 +147,7 @@ public class DefaultHierarchyBootstrapperTests
             harness.OrganizationMemberRepository.Object,
             harness.TeamMemberRepository.Object,
             harness.ProjectMemberRepository.Object,
+            harness.TupleWriter.Object,
             null!);
         act.Should().Throw<ArgumentNullException>();
     }
@@ -440,6 +449,7 @@ public class DefaultHierarchyBootstrapperTests
             OrganizationMemberRepository = new Mock<IOrganizationMemberRepository>();
             TeamMemberRepository = new Mock<ITeamMemberRepository>();
             ProjectMemberRepository = new Mock<IProjectMemberRepository>();
+            TupleWriter = new Mock<ITupleWriter>();
             Logger = new Mock<ILogger<DefaultHierarchyBootstrapper>>();
             Logger.Setup(l => l.IsEnabled(It.IsAny<LogLevel>())).Returns(true);
             Bootstrapper = new DefaultHierarchyBootstrapper(
@@ -450,6 +460,7 @@ public class DefaultHierarchyBootstrapperTests
                 OrganizationMemberRepository.Object,
                 TeamMemberRepository.Object,
                 ProjectMemberRepository.Object,
+                TupleWriter.Object,
                 Logger.Object);
         }
 
@@ -468,6 +479,8 @@ public class DefaultHierarchyBootstrapperTests
         public Mock<ITeamMemberRepository> TeamMemberRepository { get; }
 
         public Mock<IProjectMemberRepository> ProjectMemberRepository { get; }
+
+        public Mock<ITupleWriter> TupleWriter { get; }
 
         public Mock<ILogger<DefaultHierarchyBootstrapper>> Logger { get; }
 

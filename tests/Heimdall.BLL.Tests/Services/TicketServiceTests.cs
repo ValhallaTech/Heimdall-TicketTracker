@@ -2,6 +2,7 @@ using System.Data;
 using System.Text.Json;
 using FluentAssertions;
 using Heimdall.BLL.Authorization;
+using Heimdall.BLL.Authorization.OpenFga;
 using Heimdall.BLL.Mapping;
 using Heimdall.BLL.Services;
 using Heimdall.Core.Auditing;
@@ -22,6 +23,7 @@ public class TicketServiceTests
     private readonly Mock<IPermissionService> _permissions = new(MockBehavior.Loose);
     private readonly Mock<IDbConnectionFactory> _connectionFactory = new(MockBehavior.Loose);
     private readonly Mock<IAuditEventWriter> _auditWriter = new(MockBehavior.Loose);
+    private readonly Mock<ITupleWriter> _tupleWriter = new(MockBehavior.Loose);
     private readonly ITicketMapper _mapper = new TicketMapper();
 
     private TicketService CreateSut() =>
@@ -32,6 +34,7 @@ public class TicketServiceTests
             _permissions.Object,
             _connectionFactory.Object,
             _auditWriter.Object,
+            _tupleWriter.Object,
             NullLogger<TicketService>.Instance);
 
     private static readonly Guid SeedReporterId = Guid.Parse("cccccccc-cccc-cccc-cccc-cccccccccccc");
@@ -61,7 +64,8 @@ public class TicketServiceTests
                 _permissions.Object,
                 _connectionFactory.Object,
                 _auditWriter.Object,
-                NullLogger<TicketService>.Instance);
+                _tupleWriter.Object,
+            NullLogger<TicketService>.Instance);
         act.Should().Throw<ArgumentNullException>();
     }
 
@@ -76,7 +80,8 @@ public class TicketServiceTests
                 _permissions.Object,
                 _connectionFactory.Object,
                 _auditWriter.Object,
-                NullLogger<TicketService>.Instance
+                _tupleWriter.Object,
+            NullLogger<TicketService>.Instance
             );
         act.Should().Throw<ArgumentNullException>();
     }
@@ -92,7 +97,8 @@ public class TicketServiceTests
                 _permissions.Object,
                 _connectionFactory.Object,
                 _auditWriter.Object,
-                NullLogger<TicketService>.Instance
+                _tupleWriter.Object,
+            NullLogger<TicketService>.Instance
             );
         act.Should().Throw<ArgumentNullException>();
     }
@@ -107,6 +113,7 @@ public class TicketServiceTests
             _permissions.Object,
             _connectionFactory.Object,
             _auditWriter.Object,
+            _tupleWriter.Object,
             null!);
         act.Should().Throw<ArgumentNullException>();
     }
@@ -121,6 +128,7 @@ public class TicketServiceTests
             null!,
             _connectionFactory.Object,
             _auditWriter.Object,
+            _tupleWriter.Object,
             NullLogger<TicketService>.Instance);
         act.Should().Throw<ArgumentNullException>();
     }
@@ -139,6 +147,7 @@ public class TicketServiceTests
             _permissions.Object,
             _connectionFactory.Object,
             _auditWriter.Object,
+            _tupleWriter.Object,
             NullLogger<TicketService>.Instance
         );
 
@@ -170,6 +179,7 @@ public class TicketServiceTests
             _permissions.Object,
             _connectionFactory.Object,
             _auditWriter.Object,
+            _tupleWriter.Object,
             NullLogger<TicketService>.Instance
         );
 
@@ -479,6 +489,7 @@ public class TicketServiceTests
             _permissions.Object,
             null!,
             _auditWriter.Object,
+            _tupleWriter.Object,
             NullLogger<TicketService>.Instance);
         act.Should().Throw<ArgumentNullException>();
     }
@@ -492,6 +503,22 @@ public class TicketServiceTests
             _mapper,
             _permissions.Object,
             _connectionFactory.Object,
+            null!,
+            _tupleWriter.Object,
+            NullLogger<TicketService>.Instance);
+        act.Should().Throw<ArgumentNullException>();
+    }
+
+    [Fact]
+    public void Should_Throw_When_TupleWriterIsNull()
+    {
+        Action act = () => new TicketService(
+            _repository.Object,
+            _cache.Object,
+            _mapper,
+            _permissions.Object,
+            _connectionFactory.Object,
+            _auditWriter.Object,
             null!,
             NullLogger<TicketService>.Instance);
         act.Should().Throw<ArgumentNullException>();

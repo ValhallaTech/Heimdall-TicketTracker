@@ -3,6 +3,7 @@ using System.Threading.RateLimiting;
 using AspNetCore.DataProtection.CustomStorage.Dapper.PostgreSQL;
 using Autofac;
 using Autofac.Extensions.DependencyInjection;
+using Heimdall.BLL.Authorization.OpenFga;
 using Heimdall.BLL.Email;
 using Heimdall.Core.Models;
 using Heimdall.DAL.Caching;
@@ -343,6 +344,20 @@ builder.Services.AddScoped<DefaultHierarchyBootstrapper>();
 // after DefaultHierarchyBootstrapper so the seed hierarchy exists first.
 builder.Services.AddScoped<TicketDefaultsBackfiller>();
 
+// --- OpenFGA registration (Phase 3.3 + 3.4) -------------------------------
+// Registers the OpenFga.Sdk client, IOptions<OpenFgaOptions> bound to the
+// "Authorization:OpenFga" config section with env-var post-binding per
+// render.yaml, and the in-memory cache used by the check adapter. The
+// IOpenFgaAuthorizationService / ITupleWriter / OpenFgaBackfillJob bindings
+// live in ApplicationModule (Autofac) so they share a lifetime with the rest
+// of the BLL surface.
+builder.Services.AddHeimdallOpenFga(builder.Configuration);
+
+// Health probe + backfill runner for the OpenFGA sidecar. Both are scoped so
+// they participate in the per-startup bootstrap scope below.
+builder.Services.AddScoped<OpenFgaHealthProbe>();
+builder.Services.AddScoped<OpenFgaBackfillRunner>();
+
 // --- Autofac --------------------------------------------------------------
 builder.Host.UseServiceProviderFactory(new AutofacServiceProviderFactory());
 builder.Host.ConfigureContainer<ContainerBuilder>(containerBuilder =>
@@ -422,6 +437,37 @@ try
 catch (Exception ex) when (ex is not OperationCanceledException)
 {
     Log.Error(ex, "Ticket-defaults backfill raised an unexpected exception; continuing startup.");
+}
+
+// --- OpenFGA health probe (Phase 3.3 step 9) ------------------------------
+// When OPENFGA_HEALTH_PROBE_ENABLED=true (or the corresponding config flag is
+// set), validate the configured sidecar + store + authorization-model triplet
+// before any traffic is served. A failure here is intentional: hard-fail
+// startup so misconfiguration is loud, not silent. When disabled the probe is
+// a no-op so dev environments and pre-cutover deploys do not need a reachable
+// sidecar.
+using (var openFgaProbeScope = app.Services.CreateAsyncScope())
+{
+    var openFgaProbe = openFgaProbeScope.ServiceProvider.GetRequiredService<OpenFgaHealthProbe>();
+    await openFgaProbe.RunAsync(app.Lifetime.ApplicationStopping).ConfigureAwait(false);
+}
+
+// --- OpenFGA backfill runner (Phase 3.4 step 8) ---------------------------
+// Gated on HEIMDALL_OPENFGA_BACKFILL=1. Idempotent across runs (per-tuple
+// "already exists" errors are absorbed by ITupleWriter as audit events). Logs
+// a structured BackfillResult on success. Failures are swallowed: the backfill
+// can be retried by re-running the deploy with the env var set, so a transient
+// sidecar outage during one rollout does not block the app from coming up.
+try
+{
+    using var openFgaBackfillScope = app.Services.CreateAsyncScope();
+    var openFgaBackfillRunner = openFgaBackfillScope.ServiceProvider.GetRequiredService<OpenFgaBackfillRunner>();
+    await openFgaBackfillRunner.RunAsync(app.Lifetime.ApplicationStopping).ConfigureAwait(false);
+}
+// OCE propagates so cooperative host shutdown is honoured.
+catch (Exception ex) when (ex is not OperationCanceledException)
+{
+    Log.Error(ex, "OpenFGA backfill runner raised an unexpected exception; continuing startup.");
 }
 
 // --- Email sender choice (Phase 1 step 6) ---------------------------------
