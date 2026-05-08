@@ -67,7 +67,7 @@ public static class OpenFgaServiceCollectionExtensions
         configuration.GetSection(OpenFgaOptions.SectionName).Bind(resolvedOptions);
         ApplyEnvironmentOverrides(resolvedOptions);
 
-        services
+        OptionsBuilder<OpenFgaOptions> optionsBuilder = services
             .AddOptions<OpenFgaOptions>()
             .Bind(configuration.GetSection(OpenFgaOptions.SectionName))
             .Configure(ApplyEnvironmentOverrides);
@@ -86,10 +86,20 @@ public static class OpenFgaServiceCollectionExtensions
             // can resolve normally without a live OpenFGA endpoint. The startup
             // probe is gated by HealthProbeEnabled and the backfill runner by an
             // env var, so neither will hit the SDK in this mode.
+            //
+            // Validation is intentionally NOT enabled here: the [Required] members
+            // on OpenFgaOptions are empty by design in no-op mode, and turning on
+            // ValidateDataAnnotations would crash startup for unconfigured envs.
             services.AddSingleton<IOpenFgaAuthorizationService, NoOpOpenFgaAuthorizationService>();
             services.AddSingleton<ITupleWriter, NoOpTupleWriter>();
             return services;
         }
+
+        // Sidecar is configured — turn on data-annotations validation and fail
+        // startup loudly if a required value is missing or whitespace.
+        optionsBuilder
+            .ValidateDataAnnotations()
+            .ValidateOnStart();
 
         // OpenFga SDK client — singleton; thread-safe per the SDK README.
         services.AddSingleton(provider =>

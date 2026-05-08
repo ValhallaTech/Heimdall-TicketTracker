@@ -101,6 +101,7 @@ public sealed class OpenFgaBackfillJob
         int memberships = 0;
         int tickets = 0;
         int written = 0;
+        int failed = 0;
 
         List<TupleKey> buffer = new(MaxTuplesPerWrite);
 
@@ -119,7 +120,9 @@ public sealed class OpenFgaBackfillJob
             {
                 memberships++;
                 buffer.Add(TupleShapes.OrgMemberFromRole(org.Id, member.UserId, member.Role));
-                written += await FlushIfFullAsync(buffer, cancellationToken).ConfigureAwait(false);
+                (int w, int f) = await FlushIfFullAsync(buffer, cancellationToken).ConfigureAwait(false);
+                written += w;
+                failed += f;
             }
         }
 
@@ -131,7 +134,11 @@ public sealed class OpenFgaBackfillJob
         {
             teams++;
             buffer.Add(TupleShapes.TeamParentOrg(team.Id, team.OrganizationId));
-            written += await FlushIfFullAsync(buffer, cancellationToken).ConfigureAwait(false);
+            {
+                (int w, int f) = await FlushIfFullAsync(buffer, cancellationToken).ConfigureAwait(false);
+                written += w;
+                failed += f;
+            }
 
             IReadOnlyList<TeamMember> teamMembers = await _teamMemberRepository
                 .GetByParentAsync(team.Id, cancellationToken)
@@ -140,7 +147,9 @@ public sealed class OpenFgaBackfillJob
             {
                 memberships++;
                 buffer.Add(TupleShapes.TeamAdminFromRole(team.Id, member.UserId, member.Role));
-                written += await FlushIfFullAsync(buffer, cancellationToken).ConfigureAwait(false);
+                (int w, int f) = await FlushIfFullAsync(buffer, cancellationToken).ConfigureAwait(false);
+                written += w;
+                failed += f;
             }
 
             IReadOnlyList<Project> teamProjects = await _projectRepository
@@ -150,7 +159,11 @@ public sealed class OpenFgaBackfillJob
             {
                 projects++;
                 buffer.Add(TupleShapes.ProjectParentTeam(project.Id, team.Id));
-                written += await FlushIfFullAsync(buffer, cancellationToken).ConfigureAwait(false);
+                {
+                    (int w, int f) = await FlushIfFullAsync(buffer, cancellationToken).ConfigureAwait(false);
+                    written += w;
+                    failed += f;
+                }
 
                 IReadOnlyList<ProjectMember> projectMembers = await _projectMemberRepository
                     .GetByParentAsync(project.Id, cancellationToken)
@@ -160,7 +173,9 @@ public sealed class OpenFgaBackfillJob
                     memberships++;
                     buffer.Add(
                         TupleShapes.ProjectMemberFromRole(project.Id, member.UserId, member.Role));
-                    written += await FlushIfFullAsync(buffer, cancellationToken).ConfigureAwait(false);
+                    (int w, int f) = await FlushIfFullAsync(buffer, cancellationToken).ConfigureAwait(false);
+                    written += w;
+                    failed += f;
                 }
             }
         }
@@ -179,11 +194,15 @@ public sealed class OpenFgaBackfillJob
                 buffer.Add(TupleShapes.TicketAssignee(ticket.Id, ticket.AssigneeId.Value));
             }
 
-            written += await FlushIfFullAsync(buffer, cancellationToken).ConfigureAwait(false);
+            (int wt, int ft) = await FlushIfFullAsync(buffer, cancellationToken).ConfigureAwait(false);
+            written += wt;
+            failed += ft;
         }
 
         // Final flush.
-        written += await FlushAsync(buffer, cancellationToken).ConfigureAwait(false);
+        (int finalWritten, int finalFailed) = await FlushAsync(buffer, cancellationToken).ConfigureAwait(false);
+        written += finalWritten;
+        failed += finalFailed;
 
         BackfillResult result = new(
             OrganizationsScanned: orgs,
@@ -192,38 +211,47 @@ public sealed class OpenFgaBackfillJob
             MembershipsScanned: memberships,
             TicketsScanned: tickets,
             TuplesWritten: written,
-            TuplesFailed: 0);
+            TuplesFailed: failed);
 
         _logger.LogInformation(
-            "OpenFGA backfill completed. Orgs={Orgs} Teams={Teams} Projects={Projects} Memberships={Memberships} Tickets={Tickets} TuplesWritten={Tuples}",
+            "OpenFGA backfill completed. Orgs={Orgs} Teams={Teams} Projects={Projects} Memberships={Memberships} Tickets={Tickets} TuplesWritten={Tuples} TuplesFailed={Failed}",
             orgs,
             teams,
             projects,
             memberships,
             tickets,
-            written);
+            written,
+            failed);
 
         await WriteCompletionAuditAsync(result, cancellationToken).ConfigureAwait(false);
         return result;
     }
 
-    private async Task<int> FlushIfFullAsync(
+    private async Task<(int Written, int Failed)> FlushIfFullAsync(
         List<TupleKey> buffer,
         CancellationToken cancellationToken)
     {
         if (buffer.Count < MaxTuplesPerWrite)
         {
-            return 0;
+            return (0, 0);
         }
 
         return await FlushAsync(buffer, cancellationToken).ConfigureAwait(false);
     }
 
-    private async Task<int> FlushAsync(List<TupleKey> buffer, CancellationToken cancellationToken)
+    /// <summary>
+    /// Flushes the buffered tuples through <see cref="ITupleWriter"/>.
+    /// Returns the per-chunk (written, failed) tuple — written counts the
+    /// tuples successfully accepted by the writer, failed counts tuples in a
+    /// chunk whose underlying write threw a non-cancellation exception.
+    /// </summary>
+    private async Task<(int Written, int Failed)> FlushAsync(
+        List<TupleKey> buffer,
+        CancellationToken cancellationToken)
     {
         if (buffer.Count == 0)
         {
-            return 0;
+            return (0, 0);
         }
 
         TupleKey[] writes = buffer.ToArray();
@@ -234,6 +262,7 @@ public sealed class OpenFgaBackfillJob
             await _tupleWriter
                 .WriteAsync(writes, Array.Empty<TupleKey>(), cancellationToken)
                 .ConfigureAwait(false);
+            return (writes.Length, 0);
         }
         catch (OperationCanceledException)
         {
@@ -247,9 +276,8 @@ public sealed class OpenFgaBackfillJob
                 ex,
                 "OpenFGA backfill chunk failed; continuing. ChunkSize={ChunkSize}",
                 writes.Length);
+            return (0, writes.Length);
         }
-
-        return writes.Length;
     }
 
     private async Task WriteCompletionAuditAsync(

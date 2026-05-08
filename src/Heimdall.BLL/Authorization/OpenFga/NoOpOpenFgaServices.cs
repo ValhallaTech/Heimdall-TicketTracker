@@ -1,3 +1,4 @@
+using System;
 using System.Collections.Generic;
 using System.Threading;
 using System.Threading.Tasks;
@@ -22,11 +23,13 @@ internal sealed class NoOpOpenFgaAuthorizationService : IOpenFgaAuthorizationSer
 
     public NoOpOpenFgaAuthorizationService(ILogger<NoOpOpenFgaAuthorizationService> logger)
     {
+        ArgumentNullException.ThrowIfNull(logger);
         _logger = logger;
     }
 
     public Task<bool> CheckAsync(FgaCheckRequest request, CancellationToken cancellationToken)
     {
+        ArgumentNullException.ThrowIfNull(request);
         _logger.LogDebug("OpenFGA not configured; CheckAsync returning deny-closed for {User} {Relation} {Object}.",
             request.User, request.Relation, request.Object);
         return Task.FromResult(false);
@@ -36,14 +39,18 @@ internal sealed class NoOpOpenFgaAuthorizationService : IOpenFgaAuthorizationSer
         IReadOnlyList<FgaCheckRequest> requests,
         CancellationToken cancellationToken)
     {
+        ArgumentNullException.ThrowIfNull(requests);
         bool[] results = new bool[requests.Count];
         return Task.FromResult<IReadOnlyList<bool>>(results);
     }
 
     public Task<IReadOnlyList<string>> ListObjectsAsync(
         FgaListObjectsRequest request,
-        CancellationToken cancellationToken) =>
-        Task.FromResult<IReadOnlyList<string>>(System.Array.Empty<string>());
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+        return Task.FromResult<IReadOnlyList<string>>(Array.Empty<string>());
+    }
 }
 
 /// <summary>
@@ -54,13 +61,21 @@ internal sealed class NoOpOpenFgaAuthorizationService : IOpenFgaAuthorizationSer
 /// </summary>
 internal sealed class NoOpTupleWriter : ITupleWriter
 {
-    public Task WriteAsync(TupleKey single, CancellationToken cancellationToken) =>
-        Task.CompletedTask;
+    public Task WriteAsync(TupleKey single, CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(single);
+        return Task.CompletedTask;
+    }
 
     public Task WriteAsync(
         IReadOnlyList<TupleKey> writes,
         IReadOnlyList<TupleKey> deletes,
-        CancellationToken cancellationToken) => Task.CompletedTask;
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(writes);
+        ArgumentNullException.ThrowIfNull(deletes);
+        return Task.CompletedTask;
+    }
 
     public Task ReplaceAsync(
         TupleKey? delete,
