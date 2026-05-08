@@ -198,7 +198,7 @@ public sealed class OpenFgaAuthorizationService : IOpenFgaAuthorizationService
                 User = req.User,
                 Relation = req.Relation,
                 Object = req.Object,
-                CorrelationId = i.ToString(System.Globalization.CultureInfo.InvariantCulture),
+                CorrelationId = FormattableString.Invariant($"{i}"),
             });
         }
 

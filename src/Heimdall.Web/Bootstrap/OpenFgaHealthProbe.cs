@@ -99,6 +99,11 @@ public sealed class OpenFgaHealthProbe
 
         try
         {
+            // options: null is intentional — the SDK falls back to the
+            // AuthorizationModelId pinned globally on ClientConfiguration, so
+            // this single call exercises both the configured StoreId and the
+            // pinned model id, failing fast on either an unreachable sidecar
+            // or a model-id typo.
             await client
                 .ReadAuthorizationModel(options: null, linkedCts.Token)
                 .ConfigureAwait(false);
