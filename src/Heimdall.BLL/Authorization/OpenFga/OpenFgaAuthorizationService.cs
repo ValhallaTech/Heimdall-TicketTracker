@@ -80,6 +80,18 @@ public sealed class OpenFgaAuthorizationService : IOpenFgaAuthorizationService
     private static readonly Counter<long> ListObjectsErrors =
         MeterInstance.CreateCounter<long>("heimdall.openfga.list_objects.errors");
 
+    private static readonly Histogram<double> ListUsersLatency =
+        MeterInstance.CreateHistogram<double>("heimdall.openfga.list_users.latency_ms");
+    private static readonly Counter<long> ListUsersResults =
+        MeterInstance.CreateCounter<long>("heimdall.openfga.list_users.results");
+    private static readonly Counter<long> ListUsersErrors =
+        MeterInstance.CreateCounter<long>("heimdall.openfga.list_users.errors");
+
+    private static readonly Histogram<double> ExpandLatency =
+        MeterInstance.CreateHistogram<double>("heimdall.openfga.expand.latency_ms");
+    private static readonly Counter<long> ExpandErrors =
+        MeterInstance.CreateCounter<long>("heimdall.openfga.expand.errors");
+
     private readonly OpenFgaClient _client;
     private readonly IMemoryCache _cache;
     private readonly OpenFgaOptions _options;
@@ -340,6 +352,212 @@ public sealed class OpenFgaAuthorizationService : IOpenFgaAuthorizationService
         {
             ListObjectsLatency.Record(GetElapsedMs(start));
         }
+    }
+
+    /// <inheritdoc />
+    public async Task<IReadOnlyList<string>> ListUsersAsync(
+        FgaListUsersRequest request,
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+
+        using var activity = Source.StartActivity("openfga.list_users");
+        activity?.SetTag("relation", request.Relation);
+        activity?.SetTag("object_type", request.ObjectType);
+        activity?.SetTag("consistency", request.Consistency.ToString());
+
+        long start = Stopwatch.GetTimestamp();
+        try
+        {
+            // Filter to user-typed subjects. The model bans `[user:*]` wildcards
+            // (see authz/model.fga header) so a single-entry filter is correct;
+            // we still defensively skip non-user subjects below.
+            ListUsersResponse response = await _client
+                .ListUsers(
+                    new ClientListUsersRequest
+                    {
+                        Object = new FgaObject
+                        {
+                            Type = request.ObjectType,
+                            Id = request.ObjectId,
+                        },
+                        Relation = request.Relation,
+                        UserFilters = new List<UserTypeFilter>
+                        {
+                            new() { Type = TupleShapes.UserType },
+                        },
+                    },
+                    new ClientListUsersOptions { Consistency = MapConsistency(request.Consistency) },
+                    cancellationToken)
+                .ConfigureAwait(false);
+
+            List<string> userIds = new(response.Users?.Count ?? 0);
+            foreach (User user in response.Users ?? new List<User>())
+            {
+                // OpenFGA's ListUsers result is a discriminated union of
+                // (FgaObject, UsersetUser, TypedWildcard). We only surface bare
+                // user ids — usersets and wildcards are intentionally dropped
+                // so callers can resolve every returned id via IUserLookup
+                // without a per-row parse step.
+                FgaObject? obj = user.Object;
+                if (obj is null || !string.Equals(obj.Type, TupleShapes.UserType, StringComparison.Ordinal))
+                {
+                    continue;
+                }
+
+                if (!string.IsNullOrEmpty(obj.Id))
+                {
+                    userIds.Add(obj.Id);
+                }
+            }
+
+            ListUsersResults.Add(userIds.Count);
+            activity?.SetTag("result_count", userIds.Count);
+            activity?.SetTag("outcome", "ok");
+            return userIds;
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
+        catch (Exception ex)
+        {
+            ListUsersErrors.Add(1);
+            activity?.SetTag("outcome", "error");
+            activity?.SetStatus(ActivityStatusCode.Error, ex.Message);
+            _logger.LogWarning(
+                ex,
+                "OpenFGA ListUsers failed; returning empty. object_type={ObjectType} relation={Relation}",
+                request.ObjectType,
+                request.Relation);
+            return Array.Empty<string>();
+        }
+        finally
+        {
+            ListUsersLatency.Record(GetElapsedMs(start));
+        }
+    }
+
+    /// <inheritdoc />
+    public async Task<FgaExpandResult> ExpandAsync(
+        FgaExpandRequest request,
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+
+        using var activity = Source.StartActivity("openfga.expand");
+        activity?.SetTag("relation", request.Relation);
+        activity?.SetTag("object_type", request.ObjectType);
+
+        long start = Stopwatch.GetTimestamp();
+        try
+        {
+            // Expand is fixed at MinimizeLatency: the call is a sub-second tree
+            // walk used by the admin "why" surface, never a read-after-write
+            // hot path. Documenting here so a future change-of-mind has to
+            // justify itself.
+            ExpandResponse response = await _client
+                .Expand(
+                    new ClientExpandRequest
+                    {
+                        Relation = request.Relation,
+                        Object = FormattableString.Invariant($"{request.ObjectType}:{request.ObjectId}"),
+                    },
+                    new ClientExpandOptions { Consistency = ConsistencyPreference.MINIMIZELATENCY },
+                    cancellationToken)
+                .ConfigureAwait(false);
+
+            FgaExpandNode? root = response.Tree?.Root is null
+                ? null
+                : ConvertNode(response.Tree.Root);
+
+            activity?.SetTag("outcome", "ok");
+            return new FgaExpandResult(root);
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
+        catch (Exception ex)
+        {
+            ExpandErrors.Add(1);
+            activity?.SetTag("outcome", "error");
+            activity?.SetStatus(ActivityStatusCode.Error, ex.Message);
+            _logger.LogWarning(
+                ex,
+                "OpenFGA Expand failed; returning empty tree. object_type={ObjectType} relation={Relation}",
+                request.ObjectType,
+                request.Relation);
+            return new FgaExpandResult(null);
+        }
+        finally
+        {
+            ExpandLatency.Record(GetElapsedMs(start));
+        }
+    }
+
+    /// <summary>
+    /// Recursively projects an SDK <see cref="Node"/> onto our public POCO
+    /// tree. <c>null</c>-safe at every level — a malformed server response
+    /// degrades to a partially-populated tree rather than a NullReferenceException.
+    /// </summary>
+    private static FgaExpandNode ConvertNode(Node node)
+    {
+        FgaExpandLeaf? leaf = node.Leaf is null ? null : ConvertLeaf(node.Leaf);
+
+        IReadOnlyList<FgaExpandNode>? union = node.Union?.VarNodes is { } unionNodes
+            ? ConvertNodes(unionNodes)
+            : null;
+
+        IReadOnlyList<FgaExpandNode>? intersection = node.Intersection?.VarNodes is { } intersectionNodes
+            ? ConvertNodes(intersectionNodes)
+            : null;
+
+        FgaExpandDifference? difference = null;
+        if (node.Difference is { Base: { } baseNode, Subtract: { } subNode })
+        {
+            difference = new FgaExpandDifference(ConvertNode(baseNode), ConvertNode(subNode));
+        }
+
+        return new FgaExpandNode(
+            node.Name ?? string.Empty,
+            leaf,
+            union,
+            intersection,
+            difference);
+    }
+
+    private static IReadOnlyList<FgaExpandNode> ConvertNodes(List<Node> nodes)
+    {
+        FgaExpandNode[] result = new FgaExpandNode[nodes.Count];
+        for (int i = 0; i < nodes.Count; i++)
+        {
+            result[i] = ConvertNode(nodes[i]);
+        }
+
+        return result;
+    }
+
+    private static FgaExpandLeaf ConvertLeaf(Leaf leaf)
+    {
+        IReadOnlyList<string> users = Array.Empty<string>();
+        if (leaf.Users?.VarUsers is { Count: > 0 } leafUsers)
+        {
+            users = leafUsers.AsReadOnly();
+        }
+
+        string? computed = leaf.Computed?.Userset;
+
+        FgaExpandTupleToUserset? ttu = null;
+        if (leaf.TupleToUserset is { } source)
+        {
+            IReadOnlyList<string> computedSets = source.Computed is null
+                ? Array.Empty<string>()
+                : source.Computed.ConvertAll(static c => c.Userset ?? string.Empty);
+            ttu = new FgaExpandTupleToUserset(source.Tupleset ?? string.Empty, computedSets);
+        }
+
+        return new FgaExpandLeaf(users, computed, ttu);
     }
 
     private Activity? StartCheckActivity(FgaCheckRequest request, bool cacheHit)

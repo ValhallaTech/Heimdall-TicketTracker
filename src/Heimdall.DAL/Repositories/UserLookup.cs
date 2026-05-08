@@ -1,4 +1,6 @@
 using System;
+using System.Collections.Generic;
+using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 using Dapper;
@@ -67,5 +69,52 @@ public sealed class UserLookup : IUserLookup
         return await connection
             .QuerySingleOrDefaultAsync<UserSummary>(command)
             .ConfigureAwait(false);
+    }
+
+    /// <inheritdoc />
+    public async Task<IReadOnlyList<UserSummary>> SearchByEmailAsync(
+        string emailFragment,
+        int limit,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(emailFragment);
+
+        // Empty / whitespace-only fragments must NOT degenerate into a full
+        // table scan — the admin UI debounces but a stuck key combo could
+        // still trigger one, so we short-circuit explicitly.
+        if (string.IsNullOrWhiteSpace(emailFragment))
+        {
+            return Array.Empty<UserSummary>();
+        }
+
+        // Clamp to a sane upper bound so a malicious / buggy caller cannot
+        // request the entire users table. Phase 3.6 picker shows ≤ 25 rows.
+        const int MaxLimit = 100;
+        int effectiveLimit = limit <= 0 ? 25 : Math.Min(limit, MaxLimit);
+
+        await using var connection = new NpgsqlConnection(_connectionString);
+        // ILIKE for case-insensitive substring; LIKE-pattern metacharacters in
+        // the user input are escaped explicitly so a fragment of "%" cannot
+        // match every row. The `\` escape character is the Postgres default;
+        // we're explicit for readability.
+        string escaped = emailFragment
+            .Replace(@"\", @"\\", StringComparison.Ordinal)
+            .Replace("%", @"\%", StringComparison.Ordinal)
+            .Replace("_", @"\_", StringComparison.Ordinal);
+
+        var command = new CommandDefinition(
+            @"SELECT id AS Id, email AS Email
+              FROM users
+              WHERE email ILIKE @Pattern ESCAPE '\'
+              ORDER BY email ASC
+              LIMIT @Limit",
+            new { Pattern = "%" + escaped + "%", Limit = effectiveLimit },
+            cancellationToken: cancellationToken
+        );
+
+        IEnumerable<UserSummary> rows = await connection
+            .QueryAsync<UserSummary>(command)
+            .ConfigureAwait(false);
+        return rows.ToList();
     }
 }

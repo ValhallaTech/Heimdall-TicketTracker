@@ -51,6 +51,28 @@ internal sealed class NoOpOpenFgaAuthorizationService : IOpenFgaAuthorizationSer
         ArgumentNullException.ThrowIfNull(request);
         return Task.FromResult<IReadOnlyList<string>>(Array.Empty<string>());
     }
+
+    public Task<IReadOnlyList<string>> ListUsersAsync(
+        FgaListUsersRequest request,
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+        _logger.LogDebug(
+            "OpenFGA not configured; ListUsersAsync returning empty for {ObjectType}:{ObjectId}#{Relation}.",
+            request.ObjectType, request.ObjectId, request.Relation);
+        return Task.FromResult<IReadOnlyList<string>>(Array.Empty<string>());
+    }
+
+    public Task<FgaExpandResult> ExpandAsync(
+        FgaExpandRequest request,
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+        _logger.LogDebug(
+            "OpenFGA not configured; ExpandAsync returning empty tree for {ObjectType}:{ObjectId}#{Relation}.",
+            request.ObjectType, request.ObjectId, request.Relation);
+        return Task.FromResult(new FgaExpandResult(null));
+    }
 }
 
 /// <summary>
