@@ -56,6 +56,7 @@
 
 ## References
 
+- OpenFGA Production Best practices - [`openfga.dev/docs/best-practices`](https://openfga.dev/docs/best-practices/running-in-production) - Cluster recommendations, database recommendations, concurrency limits, maximum results.
 - OpenFGA upstream repo — [`openfga/openfga`](https://github.com/openfga/openfga) — server, model storage, gRPC + HTTP API.
 - OpenFGA documentation site — [`openfga.dev/docs`](https://openfga.dev/docs) — concepts, modeling, query APIs, deployment.
 - Modeling language (DSL) reference — [`openfga.dev/docs/configuration-language`](https://openfga.dev/docs/configuration-language) — `model schema 1.1`, type/relation syntax, computed-relation operators.
