@@ -347,10 +347,13 @@ builder.Services.AddScoped<TicketDefaultsBackfiller>();
 // --- OpenFGA registration (Phase 3.3 + 3.4) -------------------------------
 // Registers the OpenFga.Sdk client, IOptions<OpenFgaOptions> bound to the
 // "Authorization:OpenFga" config section with env-var post-binding per
-// render.yaml, and the in-memory cache used by the check adapter. The
-// IOpenFgaAuthorizationService / ITupleWriter / OpenFgaBackfillJob bindings
-// live in ApplicationModule (Autofac) so they share a lifetime with the rest
-// of the BLL surface.
+// render.yaml, the in-memory cache used by the check adapter, and the
+// IOpenFgaAuthorizationService / ITupleWriter / OpenFgaBackfillJob
+// implementations themselves. Everything is registered on the MEL service
+// collection and forwarded into Autofac by AutofacServiceProviderFactory so
+// all OpenFGA wiring lives in one place — including the no-op fall-backs
+// installed when OPENFGA_API_URL / store id / model id are unset, which
+// keeps dev and unit-test stacks bootable without a sidecar.
 builder.Services.AddHeimdallOpenFga(builder.Configuration);
 
 // Health probe + backfill runner for the OpenFGA sidecar. Both are scoped so

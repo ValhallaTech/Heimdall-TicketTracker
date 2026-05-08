@@ -1,5 +1,4 @@
 using System;
-using System.Globalization;
 using Heimdall.Core.Models;
 
 namespace Heimdall.BLL.Authorization.OpenFga;
@@ -78,8 +77,7 @@ public static class TupleShapes
 
     /// <summary>Renders <c>ticket:{int}</c> (invariant culture).</summary>
     public static string TicketRef(int ticketId) =>
-        FormattableString.Invariant(
-            $"{TicketType}:{ticketId.ToString(CultureInfo.InvariantCulture)}");
+        FormattableString.Invariant($"{TicketType}:{ticketId}");
 
     /// <summary>
     /// <c>organization#admin</c> tuple for the given user. Use when the row's wire
