@@ -10,6 +10,7 @@ using Heimdall.Core.Auditing;
 using Microsoft.Extensions.Logging;
 using OpenFga.Sdk.Client;
 using OpenFga.Sdk.Client.Model;
+using OpenFga.Sdk.Exceptions;
 
 namespace Heimdall.BLL.Authorization.OpenFga;
 
@@ -50,6 +51,19 @@ public sealed class OpenFgaTupleWriter : ITupleWriter
         MeterInstance.CreateCounter<long>("heimdall.openfga.tuple_write.success");
     private static readonly Counter<long> WriteErrors =
         MeterInstance.CreateCounter<long>("heimdall.openfga.tuple_write.errors");
+    private static readonly Counter<long> WriteDuplicates =
+        MeterInstance.CreateCounter<long>("heimdall.openfga.tuple_write.duplicates");
+
+    /// <summary>
+    /// OpenFGA <c>ErrorCode</c> string returned when a Write attempts to insert a
+    /// tuple that already exists (or delete one that does not). Re-running the
+    /// bootstrapper / backfill against an already-tupled store will hit this for
+    /// every duplicate row, so we special-case it: log Debug + increment a
+    /// dedicated counter, but do <strong>not</strong> emit an
+    /// <c>openfga_tuple_write_failed</c> audit event (which would otherwise pollute
+    /// the audit trail on every redeploy).
+    /// </summary>
+    private const string WriteFailedDueToInvalidInputCode = "write_failed_due_to_invalid_input";
 
     private static readonly JsonSerializerOptions AuditPayloadJsonOptions = new()
     {
@@ -145,6 +159,20 @@ public sealed class OpenFgaTupleWriter : ITupleWriter
         {
             throw;
         }
+        catch (FgaApiValidationError ex) when (IsDuplicateTupleError(ex))
+        {
+            // Re-running the bootstrapper / backfill is the expected case here:
+            // every "tuple already exists" error means the store is already in
+            // the desired state for that row. Log Debug + count, do NOT audit
+            // (otherwise every restart pollutes the audit trail).
+            WriteDuplicates.Add(1);
+            activity?.SetTag("outcome", "duplicate");
+            _logger.LogDebug(
+                ex,
+                "OpenFGA tuple write reported duplicates; treating as idempotent. writes={WriteCount} deletes={DeleteCount}",
+                writes.Count,
+                deletes.Count);
+        }
         catch (Exception ex)
         {
             WriteErrors.Add(1);
@@ -156,6 +184,16 @@ public sealed class OpenFgaTupleWriter : ITupleWriter
         {
             WriteLatency.Record(Stopwatch.GetElapsedTime(start).TotalMilliseconds);
         }
+    }
+
+    private static bool IsDuplicateTupleError(FgaApiValidationError ex)
+    {
+        // The OpenFGA server returns ErrorCode "write_failed_due_to_invalid_input"
+        // for both "cannot write a tuple which already exists" and
+        // "cannot delete a tuple which does not exist". Both are the safe
+        // "already in desired state" outcome from a re-run perspective.
+        string? code = ex.ApiError?.ErrorCode;
+        return string.Equals(code, WriteFailedDueToInvalidInputCode, StringComparison.Ordinal);
     }
 
     private async Task HandleWriteFailureAsync(

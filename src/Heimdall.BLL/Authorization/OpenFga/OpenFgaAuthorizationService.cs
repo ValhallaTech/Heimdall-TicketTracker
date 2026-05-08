@@ -350,8 +350,11 @@ public sealed class OpenFgaAuthorizationService : IOpenFgaAuthorizationService
             return null;
         }
 
+        // Intentionally omit the fully-qualified `user` and `object` ids: they are
+        // high-cardinality (PII for `user:`, per-row id for objects) and would blow
+        // up the tracing/metrics backend if exported as Activity tags. `object_type`
+        // is the highest-cardinality dimension we expose.
         activity.SetTag("relation", request.Relation);
-        activity.SetTag("object", request.Object);
         activity.SetTag("object_type", ExtractObjectType(request.Object));
         activity.SetTag("consistency", request.Consistency.ToString());
         activity.SetTag("cache_hit", cacheHit);
