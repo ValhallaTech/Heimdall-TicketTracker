@@ -20,6 +20,13 @@
             </a>
         </li>
         <li class="nav-item">
+            <a class="nav-link @(Active == "access" ? "active" : "")"
+               aria-current="@(Active == "access" ? "page" : null)"
+               href="/admin/access">
+                <i class="fa-solid fa-magnifying-glass me-1" aria-hidden="true"></i> Ticket access
+            </a>
+        </li>
+        <li class="nav-item">
             <a class="nav-link @(Active == "queues" ? "active" : "")"
                aria-current="@(Active == "queues" ? "page" : null)"
                href="/admin/queues">
@@ -37,6 +44,6 @@
 </nav>
 
 @code {
-    /// <summary>One of: <c>hierarchy</c>, <c>memberships</c>, <c>queues</c>, <c>audit</c>.</summary>
+    /// <summary>One of: <c>hierarchy</c>, <c>memberships</c>, <c>access</c>, <c>queues</c>, <c>audit</c>.</summary>
     [Parameter] public string Active { get; set; } = string.Empty;
 }

@@ -37,7 +37,7 @@
 
 ## Phase 3.6 — Admin surface returns
 
-- [ ] **11. Admin UI — tuple-management surface.** Read-side first: list/add/remove org/team/project members through step-7 hooks, plus a "who has access to this ticket and why" view backed by [`ListUsers`](https://openfga.dev/api/service#/Relationship%20Queries/ListUsers) (object → users for a relation) for the user list and [`Expand`](https://openfga.dev/api/service#/Relationship%20Queries/Expand) (returns the userset tree) for the inheritance walk; write-side ad-hoc tuple grants land in a follow-up. See [`openfga.md`](../proposals/openfga.md) §3 step 11.
+- [x] **11. Admin UI — tuple-management surface.** Read-side first: list/add/remove org/team/project members through step-7 hooks, plus a "who has access to this ticket and why" view backed by [`ListUsers`](https://openfga.dev/api/service#/Relationship%20Queries/ListUsers) (object → users for a relation) for the user list and [`Expand`](https://openfga.dev/api/service#/Relationship%20Queries/Expand) (returns the userset tree) for the inheritance walk; write-side ad-hoc tuple grants land in a follow-up. See [`openfga.md`](../proposals/openfga.md) §3 step 11.
 
 ## Phase 3.7 — Verify and decommission
 

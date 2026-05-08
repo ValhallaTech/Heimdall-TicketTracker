@@ -1,0 +1,312 @@
+@*
+    Phase 3.6 step 11 (docs/proposals/openfga.md §3) — admin "who has access
+    and why" page. Read-only. Calls IOpenFgaAuthorizationService.ListUsersAsync
+    to enumerate every user holding the chosen relation, then ExpandAsync to
+    render the userset tree that explains the path. Both calls are deny-closed
+    in the adapter — a sidecar outage shows empty results, not an error page.
+*@
+
+@page "/admin/access/ticket/{TicketId:int}"
+@attribute [Authorize(Policy = AuthorizationPolicies.SystemAdmin)]
+@rendermode InteractiveServer
+@using Heimdall.BLL.Authorization.OpenFga
+@using Heimdall.Web.Authorization.Policies
+@using Microsoft.AspNetCore.Authorization
+@inject IOpenFgaAuthorizationService Fga
+@inject IUserLookup UserLookup
+@inject ITicketRepository Tickets
+@inject IProjectRepository Projects
+@inject ITeamRepository Teams
+@inject IOrganizationRepository Organizations
+@inject ILogger<TicketAccess> Logger
+
+<PageTitle>Ticket @TicketId access — Admin — Heimdall TicketTracker</PageTitle>
+
+<AdminNav Active="access" />
+
+<nav aria-label="breadcrumb">
+    <ol class="breadcrumb">
+        <li class="breadcrumb-item"><a href="/admin/access">Ticket access</a></li>
+        <li class="breadcrumb-item active" aria-current="page">Ticket #@TicketId</li>
+    </ol>
+</nav>
+
+<h1 class="h3 fw-semibold mb-3">Ticket #@TicketId — access</h1>
+
+@if (_loading)
+{
+    <div class="spinner-border text-primary" role="status"><span class="visually-hidden">Loading…</span></div>
+}
+else if (_ticket is null)
+{
+    <div class="alert alert-warning" role="alert">Ticket not found.</div>
+}
+else
+{
+    <dl class="row mb-4">
+        <dt class="col-sm-3">Title</dt>
+        <dd class="col-sm-9">@_ticket.Title</dd>
+        <dt class="col-sm-3">Project</dt>
+        <dd class="col-sm-9">@(_projectName ?? "(unknown)")</dd>
+        <dt class="col-sm-3">Team</dt>
+        <dd class="col-sm-9">@(_teamName ?? "(unknown)")</dd>
+        <dt class="col-sm-3">Organization</dt>
+        <dd class="col-sm-9">@(_orgName ?? "(unknown)")</dd>
+    </dl>
+
+    <div class="row g-2 align-items-end mb-3">
+        <div class="col-auto">
+            <label for="relation" class="form-label fw-semibold">Relation</label>
+        </div>
+        <div class="col-auto">
+            <select id="relation" class="form-select" @bind="_relation">
+                @foreach (var r in TicketRelations)
+                {
+                    <option value="@r">@r</option>
+                }
+            </select>
+        </div>
+        <div class="col-auto">
+            <button type="button" class="btn btn-primary"
+                    disabled="@_busy" @onclick="LoadAccessAsync">Inspect</button>
+        </div>
+    </div>
+
+    @if (_busy)
+    {
+        <div class="spinner-border text-primary" role="status"><span class="visually-hidden">Inspecting…</span></div>
+    }
+    else if (_loaded)
+    {
+        <div class="row g-3">
+            <div class="col-md-6">
+                <div class="card shadow-sm">
+                    <div class="card-header bg-transparent fw-semibold">
+                        Users with <code>@_relation</code> (@_users.Count)
+                        @if (_truncated)
+                        {
+                            <span class="badge text-bg-warning ms-2">Truncated</span>
+                        }
+                    </div>
+                    @if (_users.Count == 0)
+                    {
+                        <div class="card-body text-body-secondary">No users.</div>
+                    }
+                    else
+                    {
+                        <ul class="list-group list-group-flush">
+                            @foreach (var u in _users)
+                            {
+                                <li class="list-group-item d-flex justify-content-between">
+                                    <span>@(u.Email ?? "(unknown)")</span>
+                                    <code class="text-body-secondary small">@u.Id</code>
+                                </li>
+                            }
+                        </ul>
+                    }
+                </div>
+            </div>
+            <div class="col-md-6">
+                <div class="card shadow-sm">
+                    <div class="card-header bg-transparent fw-semibold">
+                        Userset tree
+                    </div>
+                    <div class="card-body">
+                        @if (_tree is null)
+                        {
+                            <p class="text-body-secondary mb-0">No tree returned.</p>
+                        }
+                        else
+                        {
+                            @RenderNode(_tree)
+                        }
+                    </div>
+                </div>
+            </div>
+        </div>
+    }
+}
+
+@code {
+    /// <summary>Route segment: ticket id (integer).</summary>
+    [Parameter] public int TicketId { get; set; }
+
+    private static readonly string[] TicketRelations =
+    [
+        "view", "comment", "edit", "assign", "delete",
+    ];
+
+    // The ListUsers UI cap. The adapter does not page; an OpenFGA store with
+    // hundreds of admins on one ticket would otherwise scroll forever.
+    private const int MaxUsersDisplayed = 50;
+
+    private bool _loading = true;
+    private bool _busy;
+    private bool _loaded;
+    private bool _truncated;
+
+    private Ticket? _ticket;
+    private string? _projectName;
+    private string? _teamName;
+    private string? _orgName;
+
+    private string _relation = "view";
+    private List<UserSummary> _users = [];
+    private FgaExpandNode? _tree;
+
+    protected override async Task OnParametersSetAsync()
+    {
+        _loading = true;
+        _loaded = false;
+        try
+        {
+            _ticket = await Tickets.GetByIdAsync(TicketId);
+            if (_ticket is not null)
+            {
+                var project = await Projects.GetByIdAsync(_ticket.ProjectId);
+                _projectName = project?.Name;
+                if (project is not null)
+                {
+                    var team = await Teams.GetByIdAsync(project.TeamId);
+                    _teamName = team?.Name;
+                    if (team is not null)
+                    {
+                        var org = await Organizations.GetByIdAsync(team.OrganizationId);
+                        _orgName = org?.Name;
+                    }
+                }
+            }
+        }
+        finally
+        {
+            _loading = false;
+        }
+    }
+
+    private async Task LoadAccessAsync()
+    {
+        if (_ticket is null)
+        {
+            return;
+        }
+
+        _busy = true;
+        _users = [];
+        _tree = null;
+        _truncated = false;
+        try
+        {
+            string ticketIdStr = TicketId.ToString(System.Globalization.CultureInfo.InvariantCulture);
+            var listRequest = new FgaListUsersRequest(
+                TupleShapes.TicketType,
+                ticketIdStr,
+                _relation,
+                FgaConsistency.HigherConsistency);
+            IReadOnlyList<string> userIds = await Fga.ListUsersAsync(listRequest, CancellationToken.None);
+
+            _truncated = userIds.Count > MaxUsersDisplayed;
+            var bounded = _truncated ? userIds.Take(MaxUsersDisplayed) : userIds;
+
+            var resolved = new List<UserSummary>();
+            foreach (var raw in bounded)
+            {
+                if (Guid.TryParse(raw, out var uid))
+                {
+                    var u = await UserLookup.GetByIdAsync(uid);
+                    resolved.Add(u ?? new UserSummary(uid, string.Empty));
+                }
+            }
+            _users = resolved;
+
+            var expandRequest = new FgaExpandRequest(TupleShapes.TicketType, ticketIdStr, _relation);
+            FgaExpandResult expand = await Fga.ExpandAsync(expandRequest, CancellationToken.None);
+            _tree = expand.Root;
+            _loaded = true;
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "Ticket access inspection failed for ticket {Id}.", TicketId);
+        }
+        finally
+        {
+            _busy = false;
+        }
+    }
+
+    private RenderFragment RenderNode(FgaExpandNode node) => __builder =>
+    {
+        // Recursive render: name, optional leaf, then nested unions /
+        // intersections / differences. We escape every string by passing it
+        // through Razor's text-rendering path — never use MarkupString here.
+        <details open>
+            <summary>
+                <strong>@(string.IsNullOrEmpty(node.Name) ? "(root)" : node.Name)</strong>
+            </summary>
+            <ul class="ms-3">
+                @if (node.Leaf is not null)
+                {
+                    <li>
+                        @if (node.Leaf.Users.Count > 0)
+                        {
+                            <span class="badge text-bg-info">users</span>
+                            <ul>
+                                @foreach (var u in node.Leaf.Users)
+                                {
+                                    <li><code>@u</code></li>
+                                }
+                            </ul>
+                        }
+                        @if (!string.IsNullOrEmpty(node.Leaf.ComputedUserset))
+                        {
+                            <div><span class="badge text-bg-secondary">computed</span> <code>@node.Leaf.ComputedUserset</code></div>
+                        }
+                        @if (node.Leaf.TupleToUserset is not null)
+                        {
+                            <div>
+                                <span class="badge text-bg-secondary">tuple-to-userset</span>
+                                <code>@node.Leaf.TupleToUserset.Tupleset</code>
+                                @if (node.Leaf.TupleToUserset.ComputedUsersets.Count > 0)
+                                {
+                                    <ul>
+                                        @foreach (var c in node.Leaf.TupleToUserset.ComputedUsersets)
+                                        {
+                                            <li><code>@c</code></li>
+                                        }
+                                    </ul>
+                                }
+                            </div>
+                        }
+                    </li>
+                }
+                @if (node.Union is not null)
+                {
+                    <li>
+                        <span class="badge text-bg-success">union</span>
+                        @foreach (var child in node.Union)
+                        {
+                            @RenderNode(child)
+                        }
+                    </li>
+                }
+                @if (node.Intersection is not null)
+                {
+                    <li>
+                        <span class="badge text-bg-warning">intersection</span>
+                        @foreach (var child in node.Intersection)
+                        {
+                            @RenderNode(child)
+                        }
+                    </li>
+                }
+                @if (node.Difference is not null)
+                {
+                    <li>
+                        <span class="badge text-bg-danger">difference</span>
+                        <div><em>base:</em> @RenderNode(node.Difference.Base)</div>
+                        <div><em>subtract:</em> @RenderNode(node.Difference.Subtract)</div>
+                    </li>
+                }
+            </ul>
+        </details>
+    };
+}

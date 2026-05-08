@@ -1,0 +1,48 @@
+@*
+    Phase 3.6 step 11 (docs/proposals/openfga.md §3) — landing page for the
+    "who has access to this ticket and why" admin tool. Numeric ticket-id
+    input that navigates to /admin/access/ticket/{id}.
+*@
+
+@page "/admin/access"
+@attribute [Authorize(Policy = AuthorizationPolicies.SystemAdmin)]
+@rendermode InteractiveServer
+@using Heimdall.Web.Authorization.Policies
+@using Microsoft.AspNetCore.Authorization
+@inject NavigationManager Navigation
+
+<PageTitle>Ticket access — Admin — Heimdall TicketTracker</PageTitle>
+
+<AdminNav Active="access" />
+<h1 class="h3 fw-semibold mb-3">Ticket access</h1>
+<p class="text-body-secondary">
+    Inspect every user who can <code>view</code>, <code>comment</code>,
+    <code>edit</code>, <code>assign</code>, or <code>delete</code> a ticket,
+    and the inheritance chain that grants the access.
+</p>
+
+<form class="row g-2 align-items-end" @onsubmit="GoAsync" @onsubmit:preventDefault>
+    <div class="col-auto">
+        <label for="ticket-id" class="form-label">Ticket id</label>
+        <input id="ticket-id" type="number" min="1" class="form-control"
+               required @bind="_ticketId" />
+    </div>
+    <div class="col-auto">
+        <button type="submit" class="btn btn-primary" disabled="@(_ticketId is null or <= 0)">
+            View access
+        </button>
+    </div>
+</form>
+
+@code {
+    private int? _ticketId;
+
+    private Task GoAsync()
+    {
+        if (_ticketId is { } id && id > 0)
+        {
+            Navigation.NavigateTo($"/admin/access/ticket/{id}");
+        }
+        return Task.CompletedTask;
+    }
+}
