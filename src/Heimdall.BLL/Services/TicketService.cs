@@ -5,6 +5,7 @@ using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
 using Heimdall.BLL.Authorization;
+using Heimdall.BLL.Authorization.OpenFga;
 using Heimdall.BLL.Mapping;
 using Heimdall.Core.Auditing;
 using Heimdall.Core.Caching;
@@ -43,6 +44,7 @@ public class TicketService : ITicketService
     private readonly IPermissionService _permissions;
     private readonly IDbConnectionFactory _connectionFactory;
     private readonly IAuditEventWriter _auditWriter;
+    private readonly ITupleWriter _tupleWriter;
     private readonly ILogger<TicketService> _logger;
 
     /// <summary>Initializes a new instance.</summary>
@@ -65,6 +67,12 @@ public class TicketService : ITicketService
     /// Append-only writer used to record <c>ticket_routed</c> and <c>ticket_assigned</c>
     /// events on the same transaction as the <c>tickets</c> mutation.
     /// </param>
+    /// <param name="tupleWriter">
+    /// OpenFGA tuple writer used to mirror create / assign mutations into the
+    /// authorization store per <c>docs/proposals/openfga.md</c> §3 step 7. Failures
+    /// are logged and audited by the writer itself; this service never observes
+    /// tuple-write outcomes.
+    /// </param>
     /// <param name="logger">Logger.</param>
     /// <exception cref="ArgumentNullException">
     /// Thrown when any required dependency is <see langword="null"/>.
@@ -76,6 +84,7 @@ public class TicketService : ITicketService
         IPermissionService permissions,
         IDbConnectionFactory connectionFactory,
         IAuditEventWriter auditWriter,
+        ITupleWriter tupleWriter,
         ILogger<TicketService> logger
     )
     {
@@ -85,6 +94,7 @@ public class TicketService : ITicketService
         ArgumentNullException.ThrowIfNull(permissions);
         ArgumentNullException.ThrowIfNull(connectionFactory);
         ArgumentNullException.ThrowIfNull(auditWriter);
+        ArgumentNullException.ThrowIfNull(tupleWriter);
         ArgumentNullException.ThrowIfNull(logger);
         _repository = repository;
         _cache = cache;
@@ -92,6 +102,7 @@ public class TicketService : ITicketService
         _permissions = permissions;
         _connectionFactory = connectionFactory;
         _auditWriter = auditWriter;
+        _tupleWriter = tupleWriter;
         _logger = logger;
     }
 
@@ -186,6 +197,25 @@ public class TicketService : ITicketService
         ticket.DateUpdated = now;
         await _repository.CreateAsync(ticket, cancellationToken).ConfigureAwait(false);
         await _cache.RemoveAsync(ListCacheKey, cancellationToken).ConfigureAwait(false);
+
+        // Mirror the new ticket into OpenFGA — parent_project + reporter, plus
+        // assignee when present. Failures are absorbed by ITupleWriter (logged
+        // + audited as openfga_tuple_write_failed for the backfill / reconciliation
+        // job to replay) so a sidecar outage cannot block ticket creation.
+        List<TupleKey> tuples = new(3)
+        {
+            TupleShapes.TicketParentProject(ticket.Id, ticket.ProjectId),
+            TupleShapes.TicketReporter(ticket.Id, ticket.ReporterId),
+        };
+        if (ticket.AssigneeId.HasValue)
+        {
+            tuples.Add(TupleShapes.TicketAssignee(ticket.Id, ticket.AssigneeId.Value));
+        }
+
+        await _tupleWriter
+            .WriteAsync(tuples, Array.Empty<TupleKey>(), cancellationToken)
+            .ConfigureAwait(false);
+
         return _mapper.Map(ticket);
     }
 
@@ -378,6 +408,18 @@ public class TicketService : ITicketService
         if (applied)
         {
             await _cache.RemoveAsync(ListCacheKey, cancellationToken).ConfigureAwait(false);
+
+            // Mirror the assignee transition into OpenFGA. When the previous
+            // assignee was null we only write; the writer's contract treats both
+            // sides as optional so this remains a single Write API call.
+            await _tupleWriter
+                .ReplaceAsync(
+                    fromAssigneeId.HasValue
+                        ? TupleShapes.TicketAssignee(ticketId, fromAssigneeId.Value)
+                        : null,
+                    TupleShapes.TicketAssignee(ticketId, targetUserId),
+                    cancellationToken)
+                .ConfigureAwait(false);
         }
 
         return applied;

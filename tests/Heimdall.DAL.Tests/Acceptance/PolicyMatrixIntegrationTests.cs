@@ -1,10 +1,12 @@
 using System;
+using System.Collections.Generic;
 using System.Globalization;
 using System.Threading;
 using System.Threading.Tasks;
 using Dapper;
 using FluentAssertions;
 using Heimdall.BLL.Authorization;
+using Heimdall.BLL.Authorization.OpenFga;
 using Heimdall.BLL.Mapping;
 using Heimdall.BLL.Services;
 using Heimdall.Core.Interfaces;
@@ -92,7 +94,30 @@ public sealed class PolicyMatrixIntegrationTests : IAsyncLifetime
             permissions,
             _connectionFactory,
             new AuditEventWriter(options),
+            NoOpTupleWriter.Instance,
             NullLogger<TicketService>.Instance);
+    }
+
+    /// <summary>
+    /// Minimal in-test <see cref="ITupleWriter"/> stub. The integration test exercises
+    /// the relational write path only; OpenFGA tuple emission is verified separately.
+    /// </summary>
+    private sealed class NoOpTupleWriter : ITupleWriter
+    {
+        public static readonly NoOpTupleWriter Instance = new();
+
+        public Task WriteAsync(TupleKey single, CancellationToken cancellationToken) =>
+            Task.CompletedTask;
+
+        public Task WriteAsync(
+            IReadOnlyList<TupleKey> writes,
+            IReadOnlyList<TupleKey> deletes,
+            CancellationToken cancellationToken) => Task.CompletedTask;
+
+        public Task ReplaceAsync(
+            TupleKey? delete,
+            TupleKey? write,
+            CancellationToken cancellationToken) => Task.CompletedTask;
     }
 
     public async Task InitializeAsync()

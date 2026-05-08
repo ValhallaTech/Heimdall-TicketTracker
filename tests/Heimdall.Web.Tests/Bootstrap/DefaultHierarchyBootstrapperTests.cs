@@ -1,7 +1,9 @@
 using System;
+using System.Collections.Generic;
 using System.Threading;
 using System.Threading.Tasks;
 using FluentAssertions;
+using Heimdall.BLL.Authorization.OpenFga;
 using Heimdall.Core.Interfaces;
 using Heimdall.Core.Models;
 using Heimdall.Web.Bootstrap;
@@ -27,6 +29,7 @@ public class DefaultHierarchyBootstrapperTests
             harness.OrganizationMemberRepository.Object,
             harness.TeamMemberRepository.Object,
             harness.ProjectMemberRepository.Object,
+            harness.TupleWriter.Object,
             harness.Logger.Object);
         act.Should().Throw<ArgumentNullException>();
     }
@@ -43,6 +46,7 @@ public class DefaultHierarchyBootstrapperTests
             harness.OrganizationMemberRepository.Object,
             harness.TeamMemberRepository.Object,
             harness.ProjectMemberRepository.Object,
+            harness.TupleWriter.Object,
             harness.Logger.Object);
         act.Should().Throw<ArgumentNullException>();
     }
@@ -59,6 +63,7 @@ public class DefaultHierarchyBootstrapperTests
             harness.OrganizationMemberRepository.Object,
             harness.TeamMemberRepository.Object,
             harness.ProjectMemberRepository.Object,
+            harness.TupleWriter.Object,
             harness.Logger.Object);
         act.Should().Throw<ArgumentNullException>();
     }
@@ -75,6 +80,7 @@ public class DefaultHierarchyBootstrapperTests
             harness.OrganizationMemberRepository.Object,
             harness.TeamMemberRepository.Object,
             harness.ProjectMemberRepository.Object,
+            harness.TupleWriter.Object,
             harness.Logger.Object);
         act.Should().Throw<ArgumentNullException>();
     }
@@ -91,6 +97,7 @@ public class DefaultHierarchyBootstrapperTests
             null!,
             harness.TeamMemberRepository.Object,
             harness.ProjectMemberRepository.Object,
+            harness.TupleWriter.Object,
             harness.Logger.Object);
         act.Should().Throw<ArgumentNullException>();
     }
@@ -107,6 +114,7 @@ public class DefaultHierarchyBootstrapperTests
             harness.OrganizationMemberRepository.Object,
             null!,
             harness.ProjectMemberRepository.Object,
+            harness.TupleWriter.Object,
             harness.Logger.Object);
         act.Should().Throw<ArgumentNullException>();
     }
@@ -123,6 +131,7 @@ public class DefaultHierarchyBootstrapperTests
             harness.OrganizationMemberRepository.Object,
             harness.TeamMemberRepository.Object,
             null!,
+            harness.TupleWriter.Object,
             harness.Logger.Object);
         act.Should().Throw<ArgumentNullException>();
     }
@@ -139,6 +148,7 @@ public class DefaultHierarchyBootstrapperTests
             harness.OrganizationMemberRepository.Object,
             harness.TeamMemberRepository.Object,
             harness.ProjectMemberRepository.Object,
+            harness.TupleWriter.Object,
             null!);
         act.Should().Throw<ArgumentNullException>();
     }
@@ -277,6 +287,77 @@ public class DefaultHierarchyBootstrapperTests
             r => r.AddAsync(It.IsAny<TeamMember>(), It.IsAny<CancellationToken>()), Times.Never);
         harness.ProjectMemberRepository.Verify(
             r => r.AddAsync(It.IsAny<ProjectMember>(), It.IsAny<CancellationToken>()), Times.Never);
+    }
+
+    [Fact]
+    public async Task Should_EmitFiveSeedTuples_When_FreshDatabase()
+    {
+        var harness = new TestHarness();
+        var adminId = Guid.NewGuid();
+        var orgId = Guid.NewGuid();
+        var teamId = Guid.NewGuid();
+        var projectId = Guid.NewGuid();
+        harness.SetupAdmin(adminId);
+        harness.SetupFreshHierarchy(orgId, teamId, projectId);
+
+        IReadOnlyList<TupleKey>? capturedWrites = null;
+        IReadOnlyList<TupleKey>? capturedDeletes = null;
+        harness.TupleWriter
+            .Setup(w => w.WriteAsync(
+                It.IsAny<IReadOnlyList<TupleKey>>(),
+                It.IsAny<IReadOnlyList<TupleKey>>(),
+                It.IsAny<CancellationToken>()))
+            .Callback<IReadOnlyList<TupleKey>, IReadOnlyList<TupleKey>, CancellationToken>(
+                (writes, deletes, _) =>
+                {
+                    capturedWrites = writes;
+                    capturedDeletes = deletes;
+                })
+            .Returns(Task.CompletedTask);
+
+        await harness.Bootstrapper.RunAsync(AdminEmail, CancellationToken.None);
+
+        harness.TupleWriter.Verify(
+            w => w.WriteAsync(
+                It.IsAny<IReadOnlyList<TupleKey>>(),
+                It.IsAny<IReadOnlyList<TupleKey>>(),
+                It.IsAny<CancellationToken>()),
+            Times.Once);
+        capturedWrites.Should().NotBeNull();
+        capturedWrites!.Should().HaveCount(5);
+        capturedDeletes.Should().BeEmpty();
+
+        capturedWrites!.Should().BeEquivalentTo(new[]
+        {
+            TupleShapes.TeamParentOrg(teamId, orgId),
+            TupleShapes.ProjectParentTeam(projectId, teamId),
+            TupleShapes.OrgMemberFromRole(orgId, adminId, DefaultHierarchyBootstrapper.OwnerRole),
+            TupleShapes.TeamAdminFromRole(teamId, adminId, TeamMemberRole.Manager),
+            TupleShapes.ProjectMemberFromRole(projectId, adminId, DefaultHierarchyBootstrapper.OwnerRole),
+        });
+    }
+
+    [Fact]
+    public async Task Should_StillEmitSeedTuples_When_FullySeeded()
+    {
+        // The seed-tuple write is unconditional — it must run on every boot so a
+        // missing OpenFGA tuple after a manual SQL fix-up gets re-emitted.
+        var harness = new TestHarness();
+        var adminId = Guid.NewGuid();
+        var orgId = Guid.NewGuid();
+        var teamId = Guid.NewGuid();
+        var projectId = Guid.NewGuid();
+        harness.SetupAdmin(adminId);
+        harness.SetupFullySeededHierarchy(adminId, orgId, teamId, projectId);
+
+        await harness.Bootstrapper.RunAsync(AdminEmail, CancellationToken.None);
+
+        harness.TupleWriter.Verify(
+            w => w.WriteAsync(
+                It.Is<IReadOnlyList<TupleKey>>(c => c.Count == 5),
+                It.Is<IReadOnlyList<TupleKey>>(c => c.Count == 0),
+                It.IsAny<CancellationToken>()),
+            Times.Once);
     }
 
     [Fact]
@@ -440,6 +521,7 @@ public class DefaultHierarchyBootstrapperTests
             OrganizationMemberRepository = new Mock<IOrganizationMemberRepository>();
             TeamMemberRepository = new Mock<ITeamMemberRepository>();
             ProjectMemberRepository = new Mock<IProjectMemberRepository>();
+            TupleWriter = new Mock<ITupleWriter>();
             Logger = new Mock<ILogger<DefaultHierarchyBootstrapper>>();
             Logger.Setup(l => l.IsEnabled(It.IsAny<LogLevel>())).Returns(true);
             Bootstrapper = new DefaultHierarchyBootstrapper(
@@ -450,6 +532,7 @@ public class DefaultHierarchyBootstrapperTests
                 OrganizationMemberRepository.Object,
                 TeamMemberRepository.Object,
                 ProjectMemberRepository.Object,
+                TupleWriter.Object,
                 Logger.Object);
         }
 
@@ -468,6 +551,8 @@ public class DefaultHierarchyBootstrapperTests
         public Mock<ITeamMemberRepository> TeamMemberRepository { get; }
 
         public Mock<IProjectMemberRepository> ProjectMemberRepository { get; }
+
+        public Mock<ITupleWriter> TupleWriter { get; }
 
         public Mock<ILogger<DefaultHierarchyBootstrapper>> Logger { get; }
 

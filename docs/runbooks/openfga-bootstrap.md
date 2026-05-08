@@ -64,9 +64,20 @@ In the Render dashboard, on `heimdall-ticket-tracker-web`:
 
 1. Set `OPENFGA_STORE_ID` to the printed `STORE_ID`.
 2. Set `OPENFGA_AUTHORIZATION_MODEL_ID` to the printed `AUTHORIZATION_MODEL_ID`.
-3. Trigger a redeploy of the web service so the SDK picks them up at startup.
+3. Set `OPENFGA_HEALTH_PROBE_ENABLED=true` (Phase 3.3 — opts the deployment into the fail-fast startup probe). Leave it unset (or `false`) only when you intentionally want the web service to boot without proving the sidecar is reachable (e.g. a one-off sidecar maintenance window).
+4. Trigger a redeploy of the web service so the SDK picks them up at startup.
 
-The web service's startup health probe (Phase 3.3 step 5) will fail fast if either env var is missing or the sidecar is unreachable.
+The web service's startup health probe (Phase 3.3 step 5) calls `ReadAuthorizationModel` against the pinned `AUTHORIZATION_MODEL_ID`, so it fails fast on either an unreachable sidecar or a model-id typo. If `OPENFGA_API_URL` / `OPENFGA_STORE_ID` / `OPENFGA_AUTHORIZATION_MODEL_ID` are partially unset, DI auto-falls-back to `NoOp*` services (deny-closed for checks, no-op for tuple writes) — useful for local dev, **never** what you want in production. The probe is your safety net: leaving it disabled in production while one of those env vars is missing means OpenFGA is silently inert.
+
+## Step 5 — One-time tuple backfill (Phase 3.4)
+
+After the first redeploy with the OpenFGA env vars set, the existing rows in `organizations` / `teams` / `projects` / `*_members` / `tickets` need their equivalent tuples written into the freshly-bootstrapped store. The `OpenFgaBackfillJob` does this idempotently:
+
+1. In the Render dashboard, on `heimdall-ticket-tracker-web`, set `HEIMDALL_OPENFGA_BACKFILL=1`.
+2. Trigger a redeploy. On boot, after the existing bootstrappers run, `OpenFgaBackfillRunner` invokes the backfill job, paginates the entire DB at ≤ 100 tuples per `Write`, and writes one `openfga_backfill_completed` audit row with the result counts.
+3. **Unset `HEIMDALL_OPENFGA_BACKFILL`** (or set it to anything other than `1`) and redeploy again so subsequent boots don't repeat the scan. The job is safe to re-run — duplicate-tuple errors are caught and counted (Debug log; no audit-row noise) — but the scan is wasted work.
+
+The backfill runner is also the recovery tool for the "Phase 3.4 step 8 reconciliation" failure mode below.
 
 ## Re-run policy
 
@@ -87,7 +98,8 @@ The `STORE_ID` only changes if the `heimdall` store is deleted out-of-band (don'
 | `401 Unauthorized` on `fga store list` | Preshared key mismatch | Re-copy `OPENFGA_AUTHN_PRESHARED_KEYS` from the OpenFGA service into `OPENFGA_PRESHARED_KEY`. The web service env var is wired via `fromService` so it can't drift; only manual shell sessions can. |
 | `openfga migrate` failed mid-flight on deploy | Network blip / Postgres unavailable / partial schema | Migrate is idempotent — retry the deploy. If it still fails, connect to `heimdall_authz` with `psql` and inspect; in the worst case `DROP DATABASE heimdall_authz` and re-run **Step 1** (no production tuples exist until **Step 3** has run). |
 | `fga model write` succeeds but web service still 403s | Web service still pinned to old `OPENFGA_AUTHORIZATION_MODEL_ID` | Re-do **Step 4** with the new ID and redeploy the web service. The SDK pins the model ID for stable behaviour across revisions; it does **not** auto-discover. |
-| `STORE_ID` changed unexpectedly between runs | Someone deleted the `heimdall` store | Treat as a Phase 3.4 step 8 reconciliation: re-run **Steps 3–4**, then run the (future) backfill job to repopulate tuples. |
+| `STORE_ID` changed unexpectedly between runs | Someone deleted the `heimdall` store | Treat as a Phase 3.4 step 8 reconciliation: re-run **Steps 3–4**, then run **Step 5** (set `HEIMDALL_OPENFGA_BACKFILL=1`, redeploy, then unset and redeploy again) to repopulate tuples from the DB. |
+| Web service boots in production but OpenFGA checks all return false | One of `OPENFGA_API_URL` / `OPENFGA_STORE_ID` / `OPENFGA_AUTHORIZATION_MODEL_ID` is unset, so DI is using the `NoOp*` fallback | Set the missing env var, set `OPENFGA_HEALTH_PROBE_ENABLED=true`, and redeploy. The probe will then fail fast on subsequent misconfigurations instead of silently denying every check. |
 
 ## See also
 

@@ -1,6 +1,7 @@
 using System;
 using Autofac;
 using Heimdall.BLL.Authorization;
+using Heimdall.BLL.Authorization.OpenFga;
 using Heimdall.BLL.Enrollment;
 using Heimdall.BLL.Mapping;
 using Heimdall.BLL.Services;
@@ -85,5 +86,14 @@ public class ApplicationModule : Autofac.Module
             .RegisterType<NotImplementedEnrollmentService>()
             .As<IUserEnrollmentService>()
             .InstancePerLifetimeScope();
+
+        // OpenFGA — Phase 3.3 + 3.4 of docs/proposals/openfga.md. All OpenFGA
+        // services (SDK client, IOpenFgaAuthorizationService, ITupleWriter,
+        // OpenFgaBackfillJob, IMemoryCache, IOptions<OpenFgaOptions>) are
+        // registered via OpenFgaServiceCollectionExtensions.AddHeimdallOpenFga(...)
+        // on the MEL service collection in Program.cs and forwarded into Autofac
+        // by AutofacServiceProviderFactory. When OPENFGA_API_URL is unset, the
+        // extension registers no-op fall-backs so dev/test stacks can boot
+        // without a sidecar.
     }
 }

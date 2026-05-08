@@ -1,6 +1,7 @@
 using System;
 using System.Threading;
 using System.Threading.Tasks;
+using Heimdall.BLL.Authorization.OpenFga;
 using Heimdall.Core.Interfaces;
 using Heimdall.Core.Models;
 using Microsoft.AspNetCore.Identity;
@@ -64,6 +65,7 @@ public sealed class DefaultHierarchyBootstrapper
     private readonly IOrganizationMemberRepository _organizationMemberRepository;
     private readonly ITeamMemberRepository _teamMemberRepository;
     private readonly IProjectMemberRepository _projectMemberRepository;
+    private readonly ITupleWriter _tupleWriter;
     private readonly ILogger<DefaultHierarchyBootstrapper> _logger;
 
     /// <summary>
@@ -76,6 +78,15 @@ public sealed class DefaultHierarchyBootstrapper
     /// <param name="organizationMemberRepository">Organization-membership persistence — supplies the composite-key lookup and create.</param>
     /// <param name="teamMemberRepository">Team-membership persistence — supplies the composite-key lookup and create.</param>
     /// <param name="projectMemberRepository">Project-membership persistence — supplies the composite-key lookup and create.</param>
+    /// <param name="tupleWriter">
+    /// OpenFGA tuple writer used to mirror seed-hierarchy and membership rows into
+    /// the authorization store per <c>docs/proposals/openfga.md</c> §3 step 7.
+    /// Tuples are emitted unconditionally on every run (whether the row was just
+    /// created or already existed) so a partially-seeded database that skipped
+    /// tuple emission on a previous boot heals itself; the writer's
+    /// log+audit+swallow contract absorbs duplicate-tuple errors as the SDK's
+    /// <c>WriteFailedDueToInvalidInput</c> response.
+    /// </param>
     /// <param name="logger">Structured logger.</param>
     /// <exception cref="ArgumentNullException">If any argument is <c>null</c>.</exception>
     public DefaultHierarchyBootstrapper(
@@ -86,6 +97,7 @@ public sealed class DefaultHierarchyBootstrapper
         IOrganizationMemberRepository organizationMemberRepository,
         ITeamMemberRepository teamMemberRepository,
         IProjectMemberRepository projectMemberRepository,
+        ITupleWriter tupleWriter,
         ILogger<DefaultHierarchyBootstrapper> logger)
     {
         ArgumentNullException.ThrowIfNull(userManager);
@@ -95,6 +107,7 @@ public sealed class DefaultHierarchyBootstrapper
         ArgumentNullException.ThrowIfNull(organizationMemberRepository);
         ArgumentNullException.ThrowIfNull(teamMemberRepository);
         ArgumentNullException.ThrowIfNull(projectMemberRepository);
+        ArgumentNullException.ThrowIfNull(tupleWriter);
         ArgumentNullException.ThrowIfNull(logger);
 
         _userManager = userManager;
@@ -104,6 +117,7 @@ public sealed class DefaultHierarchyBootstrapper
         _organizationMemberRepository = organizationMemberRepository;
         _teamMemberRepository = teamMemberRepository;
         _projectMemberRepository = projectMemberRepository;
+        _tupleWriter = tupleWriter;
         _logger = logger;
     }
 
@@ -152,6 +166,13 @@ public sealed class DefaultHierarchyBootstrapper
             await EnsureOrganizationMemberAsync(admin.Id, orgId, cancellationToken).ConfigureAwait(false);
             await EnsureTeamMemberAsync(admin.Id, teamId, cancellationToken).ConfigureAwait(false);
             await EnsureProjectMemberAsync(admin.Id, projectId, cancellationToken).ConfigureAwait(false);
+
+            // Always re-emit the parent-of and membership tuples — even when every
+            // row pre-existed — so a partial-seed boot that lost tuple writes
+            // self-heals on the next run. Duplicate-tuple errors are swallowed by
+            // ITupleWriter (logged + audited as openfga_tuple_write_failed).
+            await EmitSeedTuplesAsync(admin.Id, orgId, teamId, projectId, cancellationToken)
+                .ConfigureAwait(false);
         }
         catch (OperationCanceledException)
         {
@@ -325,5 +346,32 @@ public sealed class DefaultHierarchyBootstrapper
             "Default-hierarchy bootstrap added owner project-membership for bootstrap admin {UserId} on project {ProjectId}.",
             adminId,
             projectId);
+    }
+
+    private async Task EmitSeedTuplesAsync(
+        Guid adminId,
+        Guid organizationId,
+        Guid teamId,
+        Guid projectId,
+        CancellationToken cancellationToken)
+    {
+        TupleKey[] tuples = new[]
+        {
+            // Hierarchy parent-of edges.
+            TupleShapes.TeamParentOrg(teamId, organizationId),
+            TupleShapes.ProjectParentTeam(projectId, teamId),
+
+            // Bootstrap-admin memberships, role-collapsed per the input contract:
+            //   organization_members.role = 'owner'      -> organization#admin
+            //   team_members.role         = Manager      -> team#admin
+            //   project_members.role      = 'owner'      -> project#admin
+            TupleShapes.OrgMemberFromRole(organizationId, adminId, OwnerRole),
+            TupleShapes.TeamAdminFromRole(teamId, adminId, TeamMemberRole.Manager),
+            TupleShapes.ProjectMemberFromRole(projectId, adminId, OwnerRole),
+        };
+
+        await _tupleWriter
+            .WriteAsync(tuples, Array.Empty<TupleKey>(), cancellationToken)
+            .ConfigureAwait(false);
     }
 }
