@@ -1,5 +1,19 @@
 @page "/tickets/new"
 @page "/tickets/{Id:int}"
+@*
+    Phase 3.5 (docs/proposals/openfga.md §3 step 9) — DEVIATION. The brief
+    asks for [Authorize(Policy = CanViewTicket)] at the page level, but this
+    component multiplexes `/tickets/new` (no ticket id, must be allowed for
+    any authenticated user who can create in some project) and
+    `/tickets/{Id:int}` (must require `view` on the specific ticket). A single
+    page-level resource policy can't satisfy both routes without a
+    per-component split. The OpenFGA expert has been asked to weigh in on
+    splitting into NewTicket.razor + TicketEdit.razor in a follow-up; until
+    then, the existing inline ITicketService gates remain the source of truth
+    and authentication is enforced via the global fallback policy.
+    TODO(Phase 3.5 follow-up): split the page or add per-route guards once
+    that decision lands.
+*@
 @rendermode InteractiveServer
 @using System.Security.Claims
 @using Heimdall.Core.Interfaces

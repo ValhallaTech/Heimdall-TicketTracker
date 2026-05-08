@@ -1,0 +1,19 @@
+@*
+    Phase 3.5 (docs/proposals/openfga.md §3 step 9). When a routed Blazor page
+    requires a named policy the (authenticated) user does not satisfy, this
+    component performs a real HTTP redirect to the server-rendered
+    /access-denied page. Distinct from RedirectToLogin so authenticated-but-
+    unauthorized users do not round-trip through /login (which would re-issue
+    their existing cookie and loop straight back to the page that just denied
+    them). forceLoad: true follows the same rationale as RedirectToLogin —
+    /access-denied is server-rendered, not interactive Blazor.
+*@
+@inject NavigationManager Navigation
+
+@code {
+    /// <inheritdoc />
+    protected override void OnInitialized()
+    {
+        Navigation.NavigateTo("access-denied", forceLoad: true);
+    }
+}

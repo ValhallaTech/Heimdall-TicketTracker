@@ -1,4 +1,12 @@
 @page "/tickets"
+@*
+    TODO(Phase 3.7 step 13 — docs/proposals/openfga.md §3): introduce a
+    ListObjects-backed ticket query so this page renders only tickets the
+    caller can `view` per OpenFGA. Today it relies on the global authenticated
+    fallback policy + the ticket service's existing membership checks; the
+    proper resource policy can't be applied at the route level because the
+    page lists many tickets, not a single resource.
+*@
 @rendermode InteractiveServer
 @implements IDisposable
 @inject ITicketService TicketService
