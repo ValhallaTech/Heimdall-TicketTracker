@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Diagnostics.Metrics;
+using System.Net.Http;
 using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.Extensions.Caching.Memory;
@@ -148,7 +149,10 @@ public sealed class OpenFgaAuthorizationService : IOpenFgaAuthorizationService
         {
             throw;
         }
-        catch (Exception ex)
+        catch (Exception ex) when (
+            ex is ApiException ||
+            ex is HttpRequestException ||
+            ex is TimeoutException)
         {
             CheckErrors.Add(1);
             activity?.SetTag("outcome", "error");
