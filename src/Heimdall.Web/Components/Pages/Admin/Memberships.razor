@@ -269,9 +269,9 @@ else
 
     private IReadOnlyList<(Guid Id, string Label)> ScopeOptions => _activeTab switch
     {
-        "team" => _teams.Select(t => (t.Id, t.Name + "  (" + t.Slug + ")")).ToList(),
-        "project" => _projects.Select(p => (p.Id, p.Name + "  (" + p.Slug + ")")).ToList(),
-        _ => _orgs.Select(o => (o.Id, o.Name + "  (" + o.Slug + ")")).ToList(),
+        "team" => _teams.Select(t => (t.Id, $"{t.Name} ({t.Slug})")).ToList(),
+        "project" => _projects.Select(p => (p.Id, $"{p.Name} ({p.Slug})")).ToList(),
+        _ => _orgs.Select(o => (o.Id, $"{o.Name} ({o.Slug})")).ToList(),
     };
 
     private IReadOnlyList<string> RoleOptions => _activeTab switch
@@ -327,7 +327,7 @@ else
         _activeTab = tab;
         _selectedScopeId = Guid.Empty;
         _members = [];
-        _addRole = tab == "organization" ? "member" : "member";
+        _addRole = "member";
         ResetAddForm();
         _activeScopeLabel = string.Empty;
     }

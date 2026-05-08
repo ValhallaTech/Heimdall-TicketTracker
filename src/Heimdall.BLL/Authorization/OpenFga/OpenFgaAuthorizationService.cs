@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Diagnostics.Metrics;
+using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.Extensions.Caching.Memory;
@@ -553,7 +554,10 @@ public sealed class OpenFgaAuthorizationService : IOpenFgaAuthorizationService
         {
             IReadOnlyList<string> computedSets = source.Computed is null
                 ? Array.Empty<string>()
-                : source.Computed.ConvertAll(static c => c.Userset ?? string.Empty);
+                : source.Computed
+                    .Where(static c => !string.IsNullOrEmpty(c.Userset))
+                    .Select(static c => c.Userset!)
+                    .ToList();
             ttu = new FgaExpandTupleToUserset(source.Tupleset ?? string.Empty, computedSets);
         }
 
