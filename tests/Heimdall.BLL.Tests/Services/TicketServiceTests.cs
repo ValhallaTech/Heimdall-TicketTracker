@@ -1100,4 +1100,218 @@ public class TicketServiceTests
             Times.Once);
         _cache.Verify(c => c.RemoveAsync(CacheKeys.TicketList, token), Times.Once);
     }
+
+    // ─── Phase 3.4 step 7 — tuple-write hook verification ───
+    //
+    // Each test below pins one branch of the create / assign flow's tuple-emission
+    // contract from docs/proposals/openfga.md §3 step 7 + docs/proposals/openfga-input-contract.md §2.
+
+    private static readonly Guid SeedProjectId = Guid.Parse("33333333-3333-3333-3333-333333333333");
+
+    [Fact]
+    public async Task CreateAsync_Should_EmitParentProjectAndReporterTuples_When_AssigneeIsNull()
+    {
+        var dto = new TicketDto
+        {
+            Title = "T",
+            Description = "D",
+            ReporterId = SeedReporterId,
+            ProjectId = SeedProjectId,
+            TeamId = SeedTeamId,
+            AssigneeId = null,
+        };
+        _repository
+            .Setup(r => r.CreateAsync(It.IsAny<Ticket>(), It.IsAny<CancellationToken>()))
+            .Callback<Ticket, CancellationToken>((t, _) => t.Id = 42)
+            .ReturnsAsync(42);
+        _cache
+            .Setup(c => c.RemoveAsync(CacheKeys.TicketList, It.IsAny<CancellationToken>()))
+            .Returns(Task.CompletedTask);
+
+        IReadOnlyList<TupleKey>? capturedWrites = null;
+        IReadOnlyList<TupleKey>? capturedDeletes = null;
+        _tupleWriter
+            .Setup(w => w.WriteAsync(
+                It.IsAny<IReadOnlyList<TupleKey>>(),
+                It.IsAny<IReadOnlyList<TupleKey>>(),
+                It.IsAny<CancellationToken>()))
+            .Callback<IReadOnlyList<TupleKey>, IReadOnlyList<TupleKey>, CancellationToken>(
+                (writes, deletes, _) =>
+                {
+                    capturedWrites = writes;
+                    capturedDeletes = deletes;
+                })
+            .Returns(Task.CompletedTask);
+
+        var sut = CreateSut();
+
+        await sut.CreateAsync(dto);
+
+        capturedWrites.Should().NotBeNull();
+        capturedWrites!.Should().HaveCount(2);
+        capturedWrites.Should().ContainSingle(t => t.Relation == TupleShapes.ParentProjectRelation);
+        capturedWrites.Should().ContainSingle(t => t.Relation == TupleShapes.ReporterRelation);
+        capturedWrites.Should().NotContain(t => t.Relation == TupleShapes.AssigneeRelation);
+        capturedDeletes.Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task CreateAsync_Should_AlsoEmitAssigneeTuple_When_AssigneeIsSet()
+    {
+        var dto = new TicketDto
+        {
+            Title = "T",
+            Description = "D",
+            ReporterId = SeedReporterId,
+            ProjectId = SeedProjectId,
+            TeamId = SeedTeamId,
+            AssigneeId = TargetUserId,
+        };
+        _repository
+            .Setup(r => r.CreateAsync(It.IsAny<Ticket>(), It.IsAny<CancellationToken>()))
+            .Callback<Ticket, CancellationToken>((t, _) => t.Id = 99)
+            .ReturnsAsync(99);
+        _cache
+            .Setup(c => c.RemoveAsync(CacheKeys.TicketList, It.IsAny<CancellationToken>()))
+            .Returns(Task.CompletedTask);
+
+        IReadOnlyList<TupleKey>? capturedWrites = null;
+        _tupleWriter
+            .Setup(w => w.WriteAsync(
+                It.IsAny<IReadOnlyList<TupleKey>>(),
+                It.IsAny<IReadOnlyList<TupleKey>>(),
+                It.IsAny<CancellationToken>()))
+            .Callback<IReadOnlyList<TupleKey>, IReadOnlyList<TupleKey>, CancellationToken>(
+                (writes, _, _) => capturedWrites = writes)
+            .Returns(Task.CompletedTask);
+
+        var sut = CreateSut();
+
+        await sut.CreateAsync(dto);
+
+        capturedWrites.Should().NotBeNull();
+        capturedWrites!.Should().HaveCount(3);
+        capturedWrites.Should().ContainSingle(t => t.Relation == TupleShapes.ParentProjectRelation);
+        capturedWrites.Should().ContainSingle(t => t.Relation == TupleShapes.ReporterRelation);
+        capturedWrites
+            .Should()
+            .ContainSingle(t =>
+                t.Relation == TupleShapes.AssigneeRelation && t.User == $"user:{TargetUserId:D}");
+    }
+
+    [Fact]
+    public async Task AssignTicketAsync_Should_EmitAtomicReplace_When_AssigneeChanges()
+    {
+        var existingAssignee = Guid.Parse("eeeeeeee-eeee-eeee-eeee-eeeeeeeeeeee");
+        var ticket = TicketOnTeam(SeedTeamId, assigneeId: existingAssignee);
+        _repository
+            .Setup(r => r.GetByIdAsync(ticket.Id, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(ticket);
+        _permissions
+            .Setup(p => p.CanAssignTicketAsync(SeedActorId, ticket, TargetUserId, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(true);
+
+        var (connection, transaction) = WireConnection();
+        _repository
+            .Setup(r => r.UpdateAssigneeAsync(connection.Object, transaction.Object, ticket.Id, TargetUserId, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(true);
+        _auditWriter
+            .Setup(w => w.WriteAsync(connection.Object, transaction.Object, It.IsAny<AuditEvent>(), It.IsAny<CancellationToken>()))
+            .Returns(Task.CompletedTask);
+        _cache
+            .Setup(c => c.RemoveAsync(CacheKeys.TicketList, It.IsAny<CancellationToken>()))
+            .Returns(Task.CompletedTask);
+
+        TupleKey? capturedDelete = null;
+        TupleKey? capturedWrite = null;
+        _tupleWriter
+            .Setup(w => w.ReplaceAsync(It.IsAny<TupleKey?>(), It.IsAny<TupleKey?>(), It.IsAny<CancellationToken>()))
+            .Callback<TupleKey?, TupleKey?, CancellationToken>((d, w, _) =>
+            {
+                capturedDelete = d;
+                capturedWrite = w;
+            })
+            .Returns(Task.CompletedTask);
+
+        var sut = CreateSut();
+
+        await sut.AssignTicketAsync(SeedActorId, ticket.Id, TargetUserId);
+
+        _tupleWriter.Verify(
+            w => w.ReplaceAsync(It.IsAny<TupleKey?>(), It.IsAny<TupleKey?>(), It.IsAny<CancellationToken>()),
+            Times.Once);
+        capturedDelete.Should().NotBeNull();
+        capturedDelete!.Relation.Should().Be(TupleShapes.AssigneeRelation);
+        capturedDelete.User.Should().Be($"user:{existingAssignee:D}");
+        capturedWrite.Should().NotBeNull();
+        capturedWrite!.Relation.Should().Be(TupleShapes.AssigneeRelation);
+        capturedWrite.User.Should().Be($"user:{TargetUserId:D}");
+    }
+
+    [Fact]
+    public async Task AssignTicketAsync_Should_EmitWriteOnly_When_PreviouslyUnassigned()
+    {
+        var ticket = TicketOnTeam(SeedTeamId, assigneeId: null);
+        _repository
+            .Setup(r => r.GetByIdAsync(ticket.Id, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(ticket);
+        _permissions
+            .Setup(p => p.CanAssignTicketAsync(SeedActorId, ticket, TargetUserId, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(true);
+
+        var (connection, transaction) = WireConnection();
+        _repository
+            .Setup(r => r.UpdateAssigneeAsync(connection.Object, transaction.Object, ticket.Id, TargetUserId, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(true);
+        _auditWriter
+            .Setup(w => w.WriteAsync(connection.Object, transaction.Object, It.IsAny<AuditEvent>(), It.IsAny<CancellationToken>()))
+            .Returns(Task.CompletedTask);
+        _cache
+            .Setup(c => c.RemoveAsync(CacheKeys.TicketList, It.IsAny<CancellationToken>()))
+            .Returns(Task.CompletedTask);
+
+        TupleKey? capturedDelete = null;
+        TupleKey? capturedWrite = null;
+        _tupleWriter
+            .Setup(w => w.ReplaceAsync(It.IsAny<TupleKey?>(), It.IsAny<TupleKey?>(), It.IsAny<CancellationToken>()))
+            .Callback<TupleKey?, TupleKey?, CancellationToken>((d, w, _) =>
+            {
+                capturedDelete = d;
+                capturedWrite = w;
+            })
+            .Returns(Task.CompletedTask);
+
+        var sut = CreateSut();
+
+        await sut.AssignTicketAsync(SeedActorId, ticket.Id, TargetUserId);
+
+        capturedDelete.Should().BeNull();
+        capturedWrite.Should().NotBeNull();
+        capturedWrite!.User.Should().Be($"user:{TargetUserId:D}");
+    }
+
+    [Fact]
+    public async Task AssignTicketAsync_Should_NotEmitTuple_When_NoOpReassignment()
+    {
+        // Re-assigning to the current assignee is the idempotent no-op path —
+        // no DB UPDATE, no audit row, and crucially no tuple write either.
+        var ticket = TicketOnTeam(SeedTeamId, assigneeId: TargetUserId);
+        _repository
+            .Setup(r => r.GetByIdAsync(ticket.Id, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(ticket);
+        _permissions
+            .Setup(p => p.CanAssignTicketAsync(SeedActorId, ticket, TargetUserId, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(true);
+
+        var sut = CreateSut();
+
+        await sut.AssignTicketAsync(SeedActorId, ticket.Id, TargetUserId);
+
+        _tupleWriter.Verify(
+            w => w.ReplaceAsync(It.IsAny<TupleKey?>(), It.IsAny<TupleKey?>(), It.IsAny<CancellationToken>()),
+            Times.Never);
+        _tupleWriter.Verify(
+            w => w.WriteAsync(It.IsAny<IReadOnlyList<TupleKey>>(), It.IsAny<IReadOnlyList<TupleKey>>(), It.IsAny<CancellationToken>()),
+            Times.Never);
+    }
 }
