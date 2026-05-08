@@ -1,6 +1,6 @@
 # Heimdall TicketTracker
 
-![CI](https://github.com/ValhallaTech/Heimdall-TicketTracker/actions/workflows/ci.yml/badge.svg)
+![CI Pipeline](https://github.com/ValhallaTech/Heimdall-TicketTracker/actions/workflows/ci.yml/badge.svg)
 
 A small, modern ticket-tracking web application built on **.NET 10**, **Blazor (Interactive Server)**, **PostgreSQL**, and **Redis**. It is the watchful guardian of your work items.
 
