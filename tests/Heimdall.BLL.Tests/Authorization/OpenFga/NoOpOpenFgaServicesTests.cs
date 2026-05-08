@@ -73,7 +73,7 @@ public class NoOpOpenFgaServicesTests
             CancellationToken.None);
 
         results.Should().HaveCount(3);
-        results.Should().OnlyContain(b => b == false);
+        results.Should().OnlyContain(b => !b);
     }
 
     [Fact]

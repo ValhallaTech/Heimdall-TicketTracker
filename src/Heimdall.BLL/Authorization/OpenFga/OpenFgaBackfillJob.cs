@@ -268,7 +268,7 @@ public sealed class OpenFgaBackfillJob
         {
             throw;
         }
-        catch (InvalidOperationException ex)
+        catch (Exception ex)
         {
             // ITupleWriter swallows by contract — but defend against future contract
             // changes. The chunk's already lost; let the next chunk continue.
