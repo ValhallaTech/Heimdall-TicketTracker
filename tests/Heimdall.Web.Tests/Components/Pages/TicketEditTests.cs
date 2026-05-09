@@ -101,7 +101,7 @@ public class TicketEditTests : BunitContext
             .Setup(s => s.GetByIdAsync(42, It.IsAny<CancellationToken>()))
             .ReturnsAsync(dto);
 
-        var cut = Render<TicketEdit>(p => p.Add(c => c.Id, 42));
+        var cut = Render<TicketEdit>(p => p.Add(c => c.TicketId, 42));
 
         cut.WaitForAssertion(() =>
         {
@@ -126,7 +126,7 @@ public class TicketEditTests : BunitContext
             .Setup(s => s.GetByIdAsync(99, It.IsAny<CancellationToken>()))
             .ReturnsAsync((TicketDto?)null);
 
-        var cut = Render<TicketEdit>(p => p.Add(c => c.Id, 99));
+        var cut = Render<TicketEdit>(p => p.Add(c => c.TicketId, 99));
 
         cut.WaitForAssertion(() =>
         {
@@ -190,7 +190,7 @@ public class TicketEditTests : BunitContext
             .Setup(s => s.UpdateAsync(It.IsAny<TicketDto>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(true);
 
-        var cut = Render<TicketEdit>(p => p.Add(c => c.Id, 7));
+        var cut = Render<TicketEdit>(p => p.Add(c => c.TicketId, 7));
         cut.WaitForAssertion(() => cut.Find("#title").GetAttribute("value").Should().Be("Old"));
 
         cut.Find("#title").Change("New");
