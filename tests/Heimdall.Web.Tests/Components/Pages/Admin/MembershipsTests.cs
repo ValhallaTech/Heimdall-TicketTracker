@@ -135,7 +135,9 @@ public class MembershipsTests : BunitContext
         cut.WaitForAssertion(() =>
         {
             cut.FindAll("tbody tr").Count.Should().Be(1);
-            cut.Markup.Should().Contain(OrgMemberUserId.ToString("N").Substring(0, 6));
+            // The fixture's IUserLookup.GetByIdAsync stub renders the user as
+            // "{id:N}@example.test", so the row must show that email.
+            cut.Markup.Should().Contain($"{OrgMemberUserId:N}@example.test");
         });
     }
 

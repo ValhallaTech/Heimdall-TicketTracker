@@ -110,7 +110,10 @@ public class TicketAccessTests : BunitContext
         {
             _fga.Verify(f => f.ListUsersAsync(It.IsAny<FgaListUsersRequest>(), It.IsAny<CancellationToken>()), Times.Once);
             _fga.Verify(f => f.ExpandAsync(It.IsAny<FgaExpandRequest>(), It.IsAny<CancellationToken>()), Times.Once);
-            cut.Markup.Should().Contain($"{userId:N}@example.test".Substring(0, 6));
+            // The user-lookup stub renders the resolved user as
+            // "{id:N}@example.test" — assert the full email shows up in the
+            // user list (no magic-number substring).
+            cut.Markup.Should().Contain($"{userId:N}@example.test");
             cut.Markup.Should().NotContain("Truncated");
         });
     }
