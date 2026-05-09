@@ -12,6 +12,7 @@ using Heimdall.DAL.Extensions;
 using Heimdall.DAL.Migrations;
 using Heimdall.Web.Authentication;
 using Heimdall.Web.Authorization;
+using Heimdall.Web.Authorization.Policies;
 using Heimdall.Web.Bootstrap;
 using Heimdall.Web.Components;
 using Heimdall.Web.DependencyInjection;
@@ -218,6 +219,13 @@ builder
 // so the focused unit tests in Heimdall.Web.Tests.Authorization apply the
 // exact same options as production startup.
 builder.Services.AddAuthorization(AuthorizationConfiguration.Configure);
+
+// Phase 3.5 (docs/proposals/openfga.md §3 step 9 + step 10) — register the
+// OpenFGA + system-admin authorization handlers and IHttpContextAccessor.
+// The handlers consume scoped dependencies (FGA adapter, audit writer,
+// user lookup) and are themselves scoped; the ASP.NET policy pipeline
+// resolves them via the request scope.
+builder.Services.AddHeimdallAuthorizationPolicies();
 
 // --- Rate limiting (Phase 1 step 7 / §3.5) --------------------------------
 // /account/login throttle keyed on (client IP, submitted username) per §3.5:

@@ -3,84 +3,74 @@
     landing page skeleton. Phase 2 ships a minimal read-only view; richer
     create/edit flows land in Phase 3.
 
-    Authorization gate: inline IsSystemAdminAsync check + redirect to
-    /access-denied. TODO(Phase 3): replace with [Authorize(Policy = "SystemAdmin")]
-    once the OpenFGA policy framework lands (docs/proposals/openfga.md step 6).
+    Phase 3.5 (openfga.md §3 step 9) replaced the inline AdminGate with
+    [Authorize(Policy = SystemAdmin)] — the policy is served by
+    SystemAdminAuthorizationHandler which reads users.system_admin directly
+    (no FGA dependency, so it remains usable during a sidecar outage).
 *@
 
 @page "/admin/hierarchy"
+@attribute [Authorize(Policy = AuthorizationPolicies.SystemAdmin)]
 @rendermode InteractiveServer
-@using System.Security.Claims
-@using Microsoft.AspNetCore.Components.Authorization
-@inject IUserLookup UserLookup
+@using Heimdall.Web.Authorization.Policies
+@using Microsoft.AspNetCore.Authorization
 @inject IOrganizationRepository Organizations
 @inject ITeamRepository Teams
 @inject IProjectRepository Projects
-@inject NavigationManager Nav
 
 <PageTitle>Hierarchy — Admin — Heimdall TicketTracker</PageTitle>
 
-@if (!_authorized)
+<AdminNav Active="hierarchy" />
+<h1 class="h3 fw-semibold mb-3">Hierarchy</h1>
+<p class="text-body-secondary">Organizations, teams, and projects.</p>
+
+@if (_loading)
 {
-    <p class="text-body-secondary">Checking permissions…</p>
+    <div class="spinner-border text-primary" role="status"><span class="visually-hidden">Loading…</span></div>
+}
+else if (_orgs.Count == 0)
+{
+    <p class="text-body-secondary">No organizations yet.</p>
 }
 else
 {
-    <AdminNav Active="hierarchy" />
-    <h1 class="h3 fw-semibold mb-3">Hierarchy</h1>
-    <p class="text-body-secondary">Organizations, teams, and projects.</p>
-
-    @if (_loading)
-    {
-        <div class="spinner-border text-primary" role="status"><span class="visually-hidden">Loading…</span></div>
-    }
-    else if (_orgs.Count == 0)
-    {
-        <p class="text-body-secondary">No organizations yet.</p>
-    }
-    else
-    {
-        <ul class="list-group">
-            @foreach (var org in _orgs)
-            {
-                <li class="list-group-item">
-                    <i class="fa-solid fa-building me-2" aria-hidden="true"></i>
-                    <strong>@org.Name</strong>
-                    <span class="text-body-secondary small ms-2">/@org.Slug</span>
-                    @if (_teamsByOrg.TryGetValue(org.Id, out var teams) && teams.Count > 0)
-                    {
-                        <ul class="ms-4 mt-2">
-                            @foreach (var team in teams)
-                            {
-                                <li>
-                                    <i class="fa-solid fa-users me-2" aria-hidden="true"></i>
-                                    @team.Name <span class="text-body-secondary small">/@team.Slug</span>
-                                    @if (_projectsByTeam.TryGetValue(team.Id, out var projects) && projects.Count > 0)
-                                    {
-                                        <ul class="ms-4">
-                                            @foreach (var p in projects)
-                                            {
-                                                <li>
-                                                    <i class="fa-solid fa-folder me-2 text-body-secondary" aria-hidden="true"></i>
-                                                    @p.Name <span class="text-body-secondary small">/@p.Slug</span>
-                                                </li>
-                                            }
-                                        </ul>
-                                    }
-                                </li>
-                            }
-                        </ul>
-                    }
-                </li>
-            }
-        </ul>
-    }
+    <ul class="list-group">
+        @foreach (var org in _orgs)
+        {
+            <li class="list-group-item">
+                <i class="fa-solid fa-building me-2" aria-hidden="true"></i>
+                <strong>@org.Name</strong>
+                <span class="text-body-secondary small ms-2">/@org.Slug</span>
+                @if (_teamsByOrg.TryGetValue(org.Id, out var teams) && teams.Count > 0)
+                {
+                    <ul class="ms-4 mt-2">
+                        @foreach (var team in teams)
+                        {
+                            <li>
+                                <i class="fa-solid fa-users me-2" aria-hidden="true"></i>
+                                @team.Name <span class="text-body-secondary small">/@team.Slug</span>
+                                @if (_projectsByTeam.TryGetValue(team.Id, out var projects) && projects.Count > 0)
+                                {
+                                    <ul class="ms-4">
+                                        @foreach (var p in projects)
+                                        {
+                                            <li>
+                                                <i class="fa-solid fa-folder me-2 text-body-secondary" aria-hidden="true"></i>
+                                                @p.Name <span class="text-body-secondary small">/@p.Slug</span>
+                                            </li>
+                                        }
+                                    </ul>
+                                }
+                            </li>
+                        }
+                    </ul>
+                }
+            </li>
+        }
+    </ul>
 }
 
 @code {
-    [CascadingParameter] public Task<AuthenticationState>? AuthenticationStateTask { get; set; }
-
-    private bool _authorized;
     private bool _loading = true;
     private IReadOnlyList<Organization> _orgs = [];
     private readonly Dictionary<Guid, IReadOnlyList<Team>> _teamsByOrg = [];
@@ -88,13 +78,6 @@ else
 
     protected override async Task OnInitializedAsync()
     {
-        if (!await AdminGate.IsSystemAdminAsync(AuthenticationStateTask, UserLookup))
-        {
-            Nav.NavigateTo("/access-denied");
-            return;
-        }
-        _authorized = true;
-
         _orgs = await Organizations.GetAllAsync();
         foreach (var org in _orgs)
         {

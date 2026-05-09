@@ -9,10 +9,24 @@
             (AuthorizationConfiguration.Configure) on every routed component;
             anonymous users are redirected to /login via RedirectToLogin and
             public pages opt out with @attribute [AllowAnonymous].
+
+            Phase 3.5 (openfga.md §3 step 9) added named resource policies on
+            top — pages with [Authorize(Policy = ...)] that the user is signed
+            in for but not authorised on must NOT round-trip through /login (it
+            would re-issue the existing cookie and bounce straight back here,
+            looping). The NotAuthorized branch below distinguishes the two:
+            authenticated → /access-denied, anonymous → /login.
         *@
         <AuthorizeRouteView RouteData="routeData" DefaultLayout="typeof(Layout.MainLayout)">
-            <NotAuthorized>
-                <RedirectToLogin />
+            <NotAuthorized Context="authState">
+                @if (authState?.User?.Identity?.IsAuthenticated == true)
+                {
+                    <RedirectToAccessDenied />
+                }
+                else
+                {
+                    <RedirectToLogin />
+                }
             </NotAuthorized>
         </AuthorizeRouteView>
         <FocusOnNavigate RouteData="routeData" Selector="h1" />

@@ -45,4 +45,22 @@ public interface IUserLookup
     /// <param name="userId">The user id to look up.</param>
     /// <param name="cancellationToken">Cooperative cancellation token.</param>
     Task<UserSummary?> GetByIdAsync(Guid userId, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Returns up to <paramref name="limit"/> users whose email contains
+    /// <paramref name="emailFragment"/> (case-insensitive), ordered by email
+    /// ascending. Used by the admin membership UI to resolve an email-fragment
+    /// search box into concrete user picks (Phase 3.6 step 11 of
+    /// <c>docs/proposals/openfga.md</c>). Whitespace-only fragments return an
+    /// empty list — callers must validate before calling, and the
+    /// implementation must <strong>not</strong> degrade to a full table scan
+    /// when the fragment is empty.
+    /// </summary>
+    /// <param name="emailFragment">The email substring to search for.</param>
+    /// <param name="limit">Maximum number of rows to return; clamped to a sensible upper bound by the implementation.</param>
+    /// <param name="cancellationToken">Cooperative cancellation token.</param>
+    Task<IReadOnlyList<UserSummary>> SearchByEmailAsync(
+        string emailFragment,
+        int limit,
+        CancellationToken cancellationToken = default);
 }

@@ -54,4 +54,44 @@ public interface IOpenFgaAuthorizationService
     Task<IReadOnlyList<string>> ListObjectsAsync(
         FgaListObjectsRequest request,
         CancellationToken cancellationToken);
+
+    /// <summary>
+    /// Issues an OpenFGA <c>ListUsers</c> call: enumerates every <c>user:</c>
+    /// that holds <c>request.Relation</c> on the supplied object, including
+    /// users granted via the inheritance walks expressed in
+    /// <c>authz/model.fga</c>. Used by the admin "who has access" surface
+    /// (<c>docs/proposals/openfga.md</c> §3 step 11).
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// Returns a list of <strong>bare</strong> user ids (the <c>user:</c>
+    /// type prefix is stripped). Wildcard subjects (<c>user:*</c>) and
+    /// non-<c>user</c> subjects are filtered out so callers can resolve every
+    /// returned id via <see cref="Heimdall.Core.Interfaces.IUserLookup"/>
+    /// without a separate parse step. On transport / 5xx failures returns an
+    /// empty list (deny-closed).
+    /// </para>
+    /// </remarks>
+    /// <param name="request">The list-users request.</param>
+    /// <param name="cancellationToken">Cooperative cancellation token.</param>
+    Task<IReadOnlyList<string>> ListUsersAsync(
+        FgaListUsersRequest request,
+        CancellationToken cancellationToken);
+
+    /// <summary>
+    /// Issues an OpenFGA <c>Expand</c> call and projects the SDK's userset
+    /// tree onto a clean POCO tree (<see cref="FgaExpandResult"/>) the UI can
+    /// render directly. Used by the admin "why does this user have access"
+    /// inheritance walk (<c>docs/proposals/openfga.md</c> §3 step 11).
+    /// </summary>
+    /// <remarks>
+    /// On transport / 5xx failures returns an empty result
+    /// (<see cref="FgaExpandResult.Root"/> is <see langword="null"/>) so a
+    /// sidecar outage cannot leak userset structure (deny-closed).
+    /// </remarks>
+    /// <param name="request">The expand request.</param>
+    /// <param name="cancellationToken">Cooperative cancellation token.</param>
+    Task<FgaExpandResult> ExpandAsync(
+        FgaExpandRequest request,
+        CancellationToken cancellationToken);
 }

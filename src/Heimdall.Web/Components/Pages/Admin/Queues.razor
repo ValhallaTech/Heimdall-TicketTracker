@@ -1,73 +1,55 @@
 @page "/admin/queues"
+@attribute [Authorize(Policy = AuthorizationPolicies.SystemAdmin)]
 @rendermode InteractiveServer
-@using System.Security.Claims
-@using Microsoft.AspNetCore.Components.Authorization
-@inject IUserLookup UserLookup
+@using Heimdall.Web.Authorization.Policies
+@using Microsoft.AspNetCore.Authorization
 @inject ITeamRepository Teams
-@inject NavigationManager Nav
 
 @*
     Phase 2.8 step 25 — admin overview of all team queues. Each row links to the
     per-team queue page (/teams/{slug}/queue) which carries the actual
-    Route/Claim/Assign UX. Phase 3 will inline the shared <TicketQueueTable>.
-    TODO(Phase 3): replace AdminGate with [Authorize(Policy = "SystemAdmin")]
-    once the OpenFGA policy framework lands.
+    Route/Claim/Assign UX. Phase 3.5 (openfga.md §3 step 9) replaced the
+    inline AdminGate with [Authorize(Policy = SystemAdmin)].
 *@
 
 <PageTitle>Queues — Admin — Heimdall TicketTracker</PageTitle>
 
-@if (!_authorized)
+<AdminNav Active="queues" />
+<h1 class="h3 fw-semibold mb-3">Team queues</h1>
+<p class="text-body-secondary">Pick a team to view its queue.</p>
+
+@if (_loading)
 {
-    <p class="text-body-secondary">Checking permissions…</p>
+    <div class="spinner-border text-primary" role="status"><span class="visually-hidden">Loading…</span></div>
+}
+else if (_teams.Count == 0)
+{
+    <p class="text-body-secondary">No teams yet.</p>
 }
 else
 {
-    <AdminNav Active="queues" />
-    <h1 class="h3 fw-semibold mb-3">Team queues</h1>
-    <p class="text-body-secondary">Pick a team to view its queue.</p>
-
-    @if (_loading)
-    {
-        <div class="spinner-border text-primary" role="status"><span class="visually-hidden">Loading…</span></div>
-    }
-    else if (_teams.Count == 0)
-    {
-        <p class="text-body-secondary">No teams yet.</p>
-    }
-    else
-    {
-        <div class="list-group">
-            @foreach (var team in _teams)
-            {
-                <a class="list-group-item list-group-item-action d-flex justify-content-between align-items-center"
-                   href="@($"/teams/{team.Slug}/queue")">
-                    <span>
-                        <i class="fa-solid fa-users me-2" aria-hidden="true"></i>
-                        <strong>@team.Name</strong>
-                        <span class="text-body-secondary small ms-2">/@team.Slug</span>
-                    </span>
-                    <i class="fa-solid fa-chevron-right text-body-secondary" aria-hidden="true"></i>
-                </a>
-            }
-        </div>
-    }
+    <div class="list-group">
+        @foreach (var team in _teams)
+        {
+            <a class="list-group-item list-group-item-action d-flex justify-content-between align-items-center"
+               href="@($"/teams/{team.Slug}/queue")">
+                <span>
+                    <i class="fa-solid fa-users me-2" aria-hidden="true"></i>
+                    <strong>@team.Name</strong>
+                    <span class="text-body-secondary small ms-2">/@team.Slug</span>
+                </span>
+                <i class="fa-solid fa-chevron-right text-body-secondary" aria-hidden="true"></i>
+            </a>
+        }
+    </div>
 }
 
 @code {
-    [CascadingParameter] public Task<AuthenticationState>? AuthenticationStateTask { get; set; }
-
-    private bool _authorized;
     private bool _loading = true;
     private IReadOnlyList<Team> _teams = [];
 
     protected override async Task OnInitializedAsync()
     {
-        if (!await AdminGate.IsSystemAdminAsync(AuthenticationStateTask, UserLookup))
-        {
-            Nav.NavigateTo("/access-denied");
-            return;
-        }
-        _authorized = true;
         _teams = await Teams.GetAllAsync();
         _loading = false;
     }

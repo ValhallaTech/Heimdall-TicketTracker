@@ -32,12 +32,12 @@
 
 ## Phase 3.5 — Cutover
 
-- [ ] **9. Replace Phase 1 "authenticated-only" gates with policy-based `[Authorize]`.** Introduce named policies (`CanViewProject`, `CanEditTicket`, `CanAssignTicket`, `CanManageMembers`, …) that resolve to `Check` via the step-6 adapter (never call `OpenFgaClient` directly from page or service code — go through the adapter so policies are unit-testable). Applied to every Blazor page and BLL entry point. See [`openfga.md`](../proposals/openfga.md) §3 step 9.
-- [ ] **10. Deny-closed on sidecar outage + DB-only break-glass.** `Check` failures return false for every caller; break-glass requires `HEIMDALL_AUTHZ_BREAK_GLASS=1` **and** `HeimdallUser.system_admin == true` (read directly from PostgreSQL — no sidecar dependency); every use writes an `audit_events` row. See [`openfga.md`](../proposals/openfga.md) §3 step 10.
+- [x] **9. Replace Phase 1 "authenticated-only" gates with policy-based `[Authorize]`.** Introduce named policies (`CanViewProject`, `CanEditTicket`, `CanAssignTicket`, `CanManageMembers`, …) that resolve to `Check` via the step-6 adapter (never call `OpenFgaClient` directly from page or service code — go through the adapter so policies are unit-testable). Applied to every Blazor page and BLL entry point. See [`openfga.md`](../proposals/openfga.md) §3 step 9.
+- [x] **10. Deny-closed on sidecar outage + DB-only break-glass.** `Check` failures return false for every caller; break-glass requires `HEIMDALL_AUTHZ_BREAK_GLASS=1` **and** `HeimdallUser.system_admin == true` (read directly from PostgreSQL — no sidecar dependency); every use writes an `audit_events` row. See [`openfga.md`](../proposals/openfga.md) §3 step 10.
 
 ## Phase 3.6 — Admin surface returns
 
-- [ ] **11. Admin UI — tuple-management surface.** Read-side first: list/add/remove org/team/project members through step-7 hooks, plus a "who has access to this ticket and why" view backed by [`ListUsers`](https://openfga.dev/api/service#/Relationship%20Queries/ListUsers) (object → users for a relation) for the user list and [`Expand`](https://openfga.dev/api/service#/Relationship%20Queries/Expand) (returns the userset tree) for the inheritance walk; write-side ad-hoc tuple grants land in a follow-up. See [`openfga.md`](../proposals/openfga.md) §3 step 11.
+- [x] **11. Admin UI — tuple-management surface.** Read-side first: list/add/remove org/team/project members through step-7 hooks, plus a "who has access to this ticket and why" view backed by [`ListUsers`](https://openfga.dev/api/service#/Relationship%20Queries/ListUsers) (object → users for a relation) for the user list and [`Expand`](https://openfga.dev/api/service#/Relationship%20Queries/Expand) (returns the userset tree) for the inheritance walk; write-side ad-hoc tuple grants land in a follow-up. See [`openfga.md`](../proposals/openfga.md) §3 step 11.
 
 ## Phase 3.7 — Verify and decommission
 

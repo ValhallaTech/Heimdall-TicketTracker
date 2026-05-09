@@ -1,86 +1,563 @@
+@*
+    Phase 3.6 step 11 (docs/proposals/openfga.md §3) — admin tuple-management
+    surface. Three tabs (organization / team / project) each with a roster
+    table, modal-confirmed remove, and a debounced email-search add form.
+    Every mutation goes through IMembershipAdminService so the audit row +
+    OpenFGA tuple write fire on the server side; the page never touches
+    ITupleWriter directly.
+*@
+
 @page "/admin/memberships"
+@attribute [Authorize(Policy = AuthorizationPolicies.SystemAdmin)]
 @rendermode InteractiveServer
 @using System.Security.Claims
+@using Heimdall.BLL.Services
+@using Heimdall.Web.Authorization.Policies
+@using Microsoft.AspNetCore.Authorization
 @using Microsoft.AspNetCore.Components.Authorization
-@inject IUserLookup UserLookup
+@inject IOrganizationRepository Organizations
 @inject ITeamRepository Teams
+@inject IProjectRepository Projects
+@inject IOrganizationMemberRepository OrgMembers
 @inject ITeamMemberRepository TeamMembers
-@inject NavigationManager Nav
-
-@*
-    Phase 2.8 step 25 read-only memberships view. Phase 3 adds add/remove flows.
-    TODO(Phase 3): replace AdminGate with [Authorize(Policy = "SystemAdmin")]
-    once the OpenFGA policy framework lands (docs/proposals/openfga.md step 6).
-*@
+@inject IProjectMemberRepository ProjectMembers
+@inject IUserLookup UserLookup
+@inject IMembershipAdminService MembershipAdmin
+@inject NavigationManager Navigation
+@inject ILogger<Memberships> Logger
 
 <PageTitle>Memberships — Admin — Heimdall TicketTracker</PageTitle>
 
-@if (!_authorized)
+<AdminNav Active="memberships" />
+<h1 class="h3 fw-semibold mb-3">Memberships</h1>
+<p class="text-body-secondary">
+    Add and remove members on organizations, teams, and projects. Every change
+    is mirrored to OpenFGA and recorded in the audit log.
+</p>
+
+<ul class="nav nav-tabs mb-3" role="tablist">
+    <li class="nav-item" role="presentation">
+        <button type="button"
+                class="nav-link @(_activeTab == "organization" ? "active" : "")"
+                aria-current="@(_activeTab == "organization" ? "true" : null)"
+                @onclick="@(() => SelectTab("organization"))">
+            Organizations
+        </button>
+    </li>
+    <li class="nav-item" role="presentation">
+        <button type="button"
+                class="nav-link @(_activeTab == "team" ? "active" : "")"
+                aria-current="@(_activeTab == "team" ? "true" : null)"
+                @onclick="@(() => SelectTab("team"))">
+            Teams
+        </button>
+    </li>
+    <li class="nav-item" role="presentation">
+        <button type="button"
+                class="nav-link @(_activeTab == "project" ? "active" : "")"
+                aria-current="@(_activeTab == "project" ? "true" : null)"
+                @onclick="@(() => SelectTab("project"))">
+            Projects
+        </button>
+    </li>
+</ul>
+
+<div class="alert alert-danger" role="alert" hidden="@(_actionError is null)">
+    @_actionError
+</div>
+<div class="visually-hidden" aria-live="polite">@_statusMessage</div>
+
+@if (_loading)
 {
-    <p class="text-body-secondary">Checking permissions…</p>
+    <div class="spinner-border text-primary" role="status"><span class="visually-hidden">Loading…</span></div>
 }
 else
 {
-    <AdminNav Active="memberships" />
-    <h1 class="h3 fw-semibold mb-3">Team memberships</h1>
-    <p class="text-body-secondary">Read-only view of every team and its members.</p>
+    <div class="row g-2 align-items-center mb-3">
+        <div class="col-auto">
+            <label for="scope-select" class="col-form-label fw-semibold">@ScopeLabel</label>
+        </div>
+        <div class="col-auto">
+            <select id="scope-select" class="form-select" @bind="_selectedScopeId">
+                <option value="@Guid.Empty">— pick one —</option>
+                @foreach (var (id, label) in ScopeOptions)
+                {
+                    <option value="@id">@label</option>
+                }
+            </select>
+        </div>
+        <div class="col-auto">
+            <button type="button" class="btn btn-outline-secondary"
+                    @onclick="ReloadMembersAsync" disabled="@(_selectedScopeId == Guid.Empty)">
+                Load members
+            </button>
+        </div>
+    </div>
 
-    @if (_loading)
+    @if (_selectedScopeId != Guid.Empty)
     {
-        <div class="spinner-border text-primary" role="status"><span class="visually-hidden">Loading…</span></div>
-    }
-    else
-    {
-        @foreach (var team in _teams)
-        {
-            <div class="card shadow-sm mb-3">
-                <div class="card-header bg-transparent">
-                    <strong>@team.Name</strong>
-                    <span class="text-body-secondary small ms-2">/@team.Slug</span>
+        <div class="card shadow-sm mb-4">
+            <div class="card-header bg-transparent fw-semibold">Members</div>
+            @if (_busy)
+            {
+                <div class="card-body">
+                    <div class="spinner-border spinner-border-sm text-primary" role="status">
+                        <span class="visually-hidden">Working…</span>
+                    </div>
                 </div>
-                <ul class="list-group list-group-flush">
-                    @if (!_membersByTeam.TryGetValue(team.Id, out var members) || members.Count == 0)
-                    {
-                        <li class="list-group-item text-body-secondary">No members.</li>
-                    }
-                    else
-                    {
-                        @foreach (var m in members)
+            }
+            else if (_members.Count == 0)
+            {
+                <div class="card-body text-body-secondary">No members.</div>
+            }
+            else
+            {
+                <table class="table table-sm mb-0">
+                    <thead>
+                        <tr>
+                            <th scope="col">User</th>
+                            <th scope="col">Role</th>
+                            <th scope="col" class="text-end">Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @foreach (var row in _members)
                         {
-                            <li class="list-group-item d-flex justify-content-between">
-                                <span>@m.UserId</span>
-                                <span class="badge text-bg-secondary">@m.Role</span>
-                            </li>
+                            <tr>
+                                <td>
+                                    @(row.Email ?? row.UserId.ToString("D"))
+                                </td>
+                                <td><span class="badge text-bg-secondary">@row.RoleLabel</span></td>
+                                <td class="text-end">
+                                    <button type="button" class="btn btn-sm btn-outline-danger"
+                                            disabled="@_busy"
+                                            @onclick="@(() => OpenRemoveModal(row))">
+                                        Remove
+                                    </button>
+                                </td>
+                            </tr>
                         }
-                    }
-                </ul>
+                    </tbody>
+                </table>
+            }
+        </div>
+
+        <div class="card shadow-sm mb-4">
+            <div class="card-header bg-transparent fw-semibold">Add member</div>
+            <div class="card-body">
+                <div class="row g-2 align-items-end">
+                    <div class="col-md-6">
+                        <label for="add-email" class="form-label">Email starts with</label>
+                        <input id="add-email"
+                               type="search"
+                               class="form-control"
+                               autocomplete="off"
+                               value="@_emailFragment"
+                               @oninput="OnEmailInput"
+                               placeholder="user@example.com" />
+                        @if (_searchInFlight)
+                        {
+                            <div class="form-text">Searching…</div>
+                        }
+                        else if (_searchResults.Count > 0)
+                        {
+                            <ul class="list-group mt-1">
+                                @foreach (var u in _searchResults)
+                                {
+                                    <li class="list-group-item d-flex justify-content-between align-items-center">
+                                        <span>@u.Email</span>
+                                        <button type="button" class="btn btn-sm btn-outline-primary"
+                                                @onclick="@(() => SelectUser(u))">Pick</button>
+                                    </li>
+                                }
+                            </ul>
+                        }
+                        else if (!string.IsNullOrWhiteSpace(_emailFragment))
+                        {
+                            <div class="form-text">No matches.</div>
+                        }
+                    </div>
+                    <div class="col-md-3">
+                        <label for="add-role" class="form-label">Role</label>
+                        <select id="add-role" class="form-select" @bind="_addRole">
+                            @foreach (var role in RoleOptions)
+                            {
+                                <option value="@role">@role</option>
+                            }
+                        </select>
+                    </div>
+                    <div class="col-md-3">
+                        <button type="button" class="btn btn-primary"
+                                disabled="@(!CanSubmitAdd)"
+                                @onclick="AddMemberAsync">
+                            Add @(_pickedUser?.Email ?? "user")
+                        </button>
+                    </div>
+                </div>
             </div>
-        }
+        </div>
     }
 }
 
-@code {
-    [CascadingParameter] public Task<AuthenticationState>? AuthenticationStateTask { get; set; }
+@if (_pendingRemoval is not null)
+{
+    <div class="modal d-block" tabindex="-1" role="dialog" aria-modal="true" aria-labelledby="remove-title">
+        <div class="modal-dialog" role="document">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h2 class="h5 modal-title" id="remove-title">Confirm removal</h2>
+                    <button type="button" class="btn-close" aria-label="Close"
+                            @onclick="CancelRemove" disabled="@_busy"></button>
+                </div>
+                <div class="modal-body">
+                    <p>
+                        Remove
+                        <strong>@(_pendingRemoval.Email ?? _pendingRemoval.UserId.ToString("D"))</strong>
+                        from <strong>@_activeScopeLabel</strong>?
+                    </p>
+                    <p class="text-body-secondary small mb-0">
+                        Their OpenFGA tuple is deleted and an audit row is written.
+                    </p>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" @onclick="CancelRemove" disabled="@_busy">Cancel</button>
+                    <button type="button" class="btn btn-danger" @onclick="ConfirmRemoveAsync" disabled="@_busy">Remove</button>
+                </div>
+            </div>
+        </div>
+    </div>
+    <div class="modal-backdrop fade show"></div>
+}
 
-    private bool _authorized;
+@code {
+    [CascadingParameter]
+    public Task<AuthenticationState>? AuthenticationStateTask { get; set; }
+
     private bool _loading = true;
+    private bool _busy;
+    private Guid _actorId;
+    private string _activeTab = "organization";
+
+    private IReadOnlyList<Organization> _orgs = [];
     private IReadOnlyList<Team> _teams = [];
-    private readonly Dictionary<Guid, IReadOnlyList<TeamMember>> _membersByTeam = [];
+    private IReadOnlyList<Project> _projects = [];
+
+    private Guid _selectedScopeId;
+    private List<MemberRow> _members = [];
+    private string _activeScopeLabel = string.Empty;
+
+    // Add-form state.
+    private string _emailFragment = string.Empty;
+    private CancellationTokenSource? _searchCts;
+    private bool _searchInFlight;
+    private List<UserSummary> _searchResults = [];
+    private UserSummary? _pickedUser;
+    private string _addRole = "member";
+
+    // Modal state.
+    private MemberRow? _pendingRemoval;
+
+    private string? _actionError;
+    private string _statusMessage = string.Empty;
+
+    private string ScopeLabel => _activeTab switch
+    {
+        "team" => "Team",
+        "project" => "Project",
+        _ => "Organization",
+    };
+
+    private IReadOnlyList<(Guid Id, string Label)> ScopeOptions => _activeTab switch
+    {
+        "team" => _teams.Select(t => (t.Id, $"{t.Name} ({t.Slug})")).ToList(),
+        "project" => _projects.Select(p => (p.Id, $"{p.Name} ({p.Slug})")).ToList(),
+        _ => _orgs.Select(o => (o.Id, $"{o.Name} ({o.Slug})")).ToList(),
+    };
+
+    private IReadOnlyList<string> RoleOptions => _activeTab switch
+    {
+        "team" => new[] { "admin", "member", "viewer" },
+        "project" => new[] { "admin", "member", "viewer" },
+        _ => new[] { "admin", "member" },
+    };
+
+    private bool CanSubmitAdd =>
+        !_busy
+        && _selectedScopeId != Guid.Empty
+        && _pickedUser is not null
+        && !string.IsNullOrEmpty(_addRole);
 
     protected override async Task OnInitializedAsync()
     {
-        if (!await AdminGate.IsSystemAdminAsync(AuthenticationStateTask, UserLookup))
+        if (AuthenticationStateTask is null)
         {
-            Nav.NavigateTo("/access-denied");
+            Navigation.NavigateTo("/access-denied");
             return;
         }
-        _authorized = true;
-
-        _teams = await Teams.GetAllAsync();
-        foreach (var team in _teams)
+        var state = await AuthenticationStateTask;
+        if (!Guid.TryParse(state.User.FindFirstValue(ClaimTypes.NameIdentifier), out _actorId))
         {
-            _membersByTeam[team.Id] = await TeamMembers.GetByParentAsync(team.Id);
+            Navigation.NavigateTo("/access-denied");
+            return;
         }
+
+        _orgs = await Organizations.GetAllAsync();
+        // Teams and projects are loaded across all parents because admins pick
+        // by id directly. We accept the O(orgs+teams) one-off load to keep the
+        // tab switch synchronous.
+        var teams = new List<Team>();
+        foreach (var o in _orgs)
+        {
+            teams.AddRange(await Teams.GetByOrganizationAsync(o.Id));
+        }
+        _teams = teams;
+
+        var projects = new List<Project>();
+        foreach (var t in _teams)
+        {
+            projects.AddRange(await Projects.GetByTeamAsync(t.Id));
+        }
+        _projects = projects;
+
         _loading = false;
     }
+
+    private void SelectTab(string tab)
+    {
+        _activeTab = tab;
+        _selectedScopeId = Guid.Empty;
+        _members = [];
+        _addRole = "member";
+        ResetAddForm();
+        _activeScopeLabel = string.Empty;
+    }
+
+    private void ResetAddForm()
+    {
+        _emailFragment = string.Empty;
+        _searchResults = [];
+        _pickedUser = null;
+    }
+
+    private async Task ReloadMembersAsync()
+    {
+        if (_selectedScopeId == Guid.Empty)
+        {
+            _members = [];
+            return;
+        }
+
+        _busy = true;
+        _actionError = null;
+        try
+        {
+            _activeScopeLabel = LookupScopeLabel(_selectedScopeId);
+            _members = await LoadMembersAsync(_selectedScopeId);
+        }
+        catch (Exception ex)
+        {
+            Logger.LogWarning(ex, "Failed to load members for {Scope} {Id}.", _activeTab, _selectedScopeId);
+            _actionError = "Failed to load members.";
+        }
+        finally
+        {
+            _busy = false;
+        }
+    }
+
+    private string LookupScopeLabel(Guid id) => _activeTab switch
+    {
+        "team" => _teams.FirstOrDefault(x => x.Id == id)?.Name ?? id.ToString("D"),
+        "project" => _projects.FirstOrDefault(x => x.Id == id)?.Name ?? id.ToString("D"),
+        _ => _orgs.FirstOrDefault(x => x.Id == id)?.Name ?? id.ToString("D"),
+    };
+
+    private async Task<List<MemberRow>> LoadMembersAsync(Guid scopeId)
+    {
+        var rows = new List<MemberRow>();
+
+        // Resolve user email per row. We accept N+1 lookups here — the admin
+        // roster page is low-traffic, and a JOIN-backed Dapper view is out of
+        // scope for Phase 3.6.
+        if (_activeTab == "organization")
+        {
+            foreach (var m in await OrgMembers.GetByParentAsync(scopeId))
+            {
+                var u = await UserLookup.GetByIdAsync(m.UserId);
+                rows.Add(new MemberRow(m.UserId, u?.Email, m.Role, m.Role));
+            }
+        }
+        else if (_activeTab == "team")
+        {
+            foreach (var m in await TeamMembers.GetByParentAsync(scopeId))
+            {
+                var u = await UserLookup.GetByIdAsync(m.UserId);
+                rows.Add(new MemberRow(m.UserId, u?.Email, m.Role.ToString(), MapTeamRoleLabel(m.Role)));
+            }
+        }
+        else
+        {
+            foreach (var m in await ProjectMembers.GetByParentAsync(scopeId))
+            {
+                var u = await UserLookup.GetByIdAsync(m.UserId);
+                rows.Add(new MemberRow(m.UserId, u?.Email, m.Role, m.Role));
+            }
+        }
+
+        return rows;
+    }
+
+    private static string MapTeamRoleLabel(TeamMemberRole role) => role switch
+    {
+        TeamMemberRole.Manager => "admin (manager)",
+        TeamMemberRole.TeamLead => "admin (team lead)",
+        TeamMemberRole.Member => "member",
+        TeamMemberRole.Viewer => "viewer",
+        _ => role.ToString(),
+    };
+
+    private async Task OnEmailInput(ChangeEventArgs args)
+    {
+        _emailFragment = args.Value?.ToString() ?? string.Empty;
+        _pickedUser = null;
+
+        // Cancel any in-flight search and start a new one with a 250 ms debounce.
+        _searchCts?.Cancel();
+        _searchCts?.Dispose();
+        _searchCts = new CancellationTokenSource();
+        var token = _searchCts.Token;
+
+        if (string.IsNullOrWhiteSpace(_emailFragment))
+        {
+            _searchResults = [];
+            _searchInFlight = false;
+            return;
+        }
+
+        _searchInFlight = true;
+        try
+        {
+            await Task.Delay(250, token);
+            var results = await UserLookup.SearchByEmailAsync(_emailFragment, 25, token);
+            if (token.IsCancellationRequested)
+            {
+                return;
+            }
+            _searchResults = results.ToList();
+        }
+        catch (OperationCanceledException)
+        {
+            // newer keystroke superseded this search.
+        }
+        catch (Exception ex)
+        {
+            Logger.LogWarning(ex, "Email search failed.");
+        }
+        finally
+        {
+            if (!token.IsCancellationRequested)
+            {
+                _searchInFlight = false;
+            }
+        }
+    }
+
+    private void SelectUser(UserSummary user)
+    {
+        _pickedUser = user;
+        _emailFragment = user.Email;
+        _searchResults = [];
+    }
+
+    private async Task AddMemberAsync()
+    {
+        if (_pickedUser is null || _selectedScopeId == Guid.Empty)
+        {
+            return;
+        }
+
+        _busy = true;
+        _actionError = null;
+        try
+        {
+            if (_activeTab == "organization")
+            {
+                await MembershipAdmin.AddOrgMemberAsync(_selectedScopeId, _pickedUser.Id, _addRole, _actorId);
+            }
+            else if (_activeTab == "team")
+            {
+                var role = _addRole switch
+                {
+                    "admin" => TeamMemberRole.Manager,
+                    "viewer" => TeamMemberRole.Viewer,
+                    _ => TeamMemberRole.Member,
+                };
+                await MembershipAdmin.AddTeamMemberAsync(_selectedScopeId, _pickedUser.Id, role, _actorId);
+            }
+            else
+            {
+                await MembershipAdmin.AddProjectMemberAsync(_selectedScopeId, _pickedUser.Id, _addRole, _actorId);
+            }
+
+            _statusMessage = $"Added {_pickedUser.Email}.";
+            ResetAddForm();
+            _members = await LoadMembersAsync(_selectedScopeId);
+        }
+        catch (Npgsql.PostgresException pex) when (pex.SqlState == "23505")
+        {
+            _actionError = "That user is already a member of this scope.";
+        }
+        catch (ArgumentException ex)
+        {
+            _actionError = ex.Message;
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "Add membership failed for {Scope} {Id}.", _activeTab, _selectedScopeId);
+            _actionError = "Failed to add member.";
+        }
+        finally
+        {
+            _busy = false;
+        }
+    }
+
+    private void OpenRemoveModal(MemberRow row) => _pendingRemoval = row;
+
+    private void CancelRemove() => _pendingRemoval = null;
+
+    private async Task ConfirmRemoveAsync()
+    {
+        if (_pendingRemoval is null || _selectedScopeId == Guid.Empty)
+        {
+            return;
+        }
+
+        var row = _pendingRemoval;
+        _busy = true;
+        _actionError = null;
+        try
+        {
+            bool removed = _activeTab switch
+            {
+                "team" => await MembershipAdmin.RemoveTeamMemberAsync(_selectedScopeId, row.UserId, _actorId),
+                "project" => await MembershipAdmin.RemoveProjectMemberAsync(_selectedScopeId, row.UserId, _actorId),
+                _ => await MembershipAdmin.RemoveOrgMemberAsync(_selectedScopeId, row.UserId, _actorId),
+            };
+            _statusMessage = removed ? "Member removed." : "Already removed.";
+            _members = await LoadMembersAsync(_selectedScopeId);
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "Remove membership failed for {Scope} {Id}.", _activeTab, _selectedScopeId);
+            _actionError = "Failed to remove member.";
+        }
+        finally
+        {
+            _pendingRemoval = null;
+            _busy = false;
+        }
+    }
+
+    private sealed record MemberRow(Guid UserId, string? Email, string RoleWire, string RoleLabel);
 }

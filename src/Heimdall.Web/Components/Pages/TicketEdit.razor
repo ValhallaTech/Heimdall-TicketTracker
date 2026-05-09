@@ -1,5 +1,19 @@
 @page "/tickets/new"
-@page "/tickets/{Id:int}"
+@page "/tickets/{TicketId:int}"
+@*
+    Phase 3.5 (docs/proposals/openfga.md §3 step 9) — DEVIATION. The brief
+    asks for [Authorize(Policy = CanViewTicket)] at the page level, but this
+    component multiplexes `/tickets/new` (no ticket id, must be allowed for
+    any authenticated user who can create in some project) and
+    `/tickets/{TicketId:int}` (must require `view` on the specific ticket). A single
+    page-level resource policy can't satisfy both routes without a
+    per-component split. The OpenFGA expert has been asked to weigh in on
+    splitting into NewTicket.razor + TicketEdit.razor in a follow-up; until
+    then, the existing inline ITicketService gates remain the source of truth
+    and authentication is enforced via the global fallback policy.
+    TODO(Phase 3.5 follow-up): split the page or add per-route guards once
+    that decision lands.
+*@
 @rendermode InteractiveServer
 @using System.Security.Claims
 @using Heimdall.Core.Interfaces
@@ -145,7 +159,7 @@
 
 @code {
     /// <summary>Route parameter: ticket id. Null/0 means create.</summary>
-    [Parameter] public int? Id { get; set; }
+    [Parameter] public int? TicketId { get; set; }
 
     /// <summary>
     /// Cascaded authentication state — used to default <see cref="TicketDto.ReporterId"/>
@@ -162,7 +176,7 @@
     [SupplyParameterFromForm(FormName = "ticket-form")]
     public TicketDto Model { get; set; } = default!;
 
-    private bool IsNew => Id is null or 0;
+    private bool IsNew => TicketId is null or 0;
 
     // Phase 2.8 step 24 — picker backing data. Loaded from the repositories in
     // OnParametersSetAsync. Lists are intentionally readonly references rebound
@@ -193,9 +207,9 @@
 
             await PopulateNewTicketDefaultsAsync();
         }
-        else if (Model.Id != Id!.Value)
+        else if (Model.Id != TicketId!.Value)
         {
-            Model = await TicketService.GetByIdAsync(Id!.Value) ?? new TicketDto { Id = Id!.Value };
+            Model = await TicketService.GetByIdAsync(TicketId!.Value) ?? new TicketDto { Id = TicketId!.Value };
         }
 
         // Whether new or existing, ensure the dependent pickers (projects /

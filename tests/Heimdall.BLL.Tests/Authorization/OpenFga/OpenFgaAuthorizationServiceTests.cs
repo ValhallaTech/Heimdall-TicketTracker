@@ -378,4 +378,249 @@ public class OpenFgaAuthorizationServiceTests
 
         await act.Should().ThrowAsync<ArgumentNullException>();
     }
+
+    // ─── ListUsersAsync ───────────────────────────────────────────────────
+
+    [Fact]
+    public async Task ListUsersAsync_Should_ReturnBareUserIds_When_SidecarReturnsObjectSubjects()
+    {
+        var (sut, handler, _) = CreateSut();
+        // ListUsers response shape per OpenFGA: { users: [ { object: { type, id } } ] }
+        // The adapter strips the type prefix and surfaces only `user:` subjects.
+        handler.Responder = (_, _) => Task.FromResult(FakeHttpMessageHandler.Json(
+            "{\"users\":[" +
+            "{\"object\":{\"type\":\"user\",\"id\":\"alice\"}}," +
+            "{\"object\":{\"type\":\"user\",\"id\":\"bob\"}}" +
+            "]}"));
+
+        var result = await sut.ListUsersAsync(
+            new FgaListUsersRequest("ticket", "42", "view"),
+            CancellationToken.None);
+
+        result.Should().Equal("alice", "bob");
+        handler.CallCount.Should().Be(1);
+        handler.Requests[0].Uri.AbsolutePath.Should().EndWith("/list-users");
+    }
+
+    [Fact]
+    public async Task ListUsersAsync_Should_FilterOutNonUserAndUsersetSubjects()
+    {
+        var (sut, handler, _) = CreateSut();
+        // Defensively skip wildcard / userset / non-user subjects even though
+        // the model bans them — the production adapter promises bare user ids
+        // so callers can resolve via IUserLookup without a per-row parse.
+        handler.Responder = (_, _) => Task.FromResult(FakeHttpMessageHandler.Json(
+            "{\"users\":[" +
+            "{\"object\":{\"type\":\"user\",\"id\":\"alice\"}}," +
+            "{\"object\":{\"type\":\"team\",\"id\":\"t-1\"}}," +
+            "{\"userset\":{\"type\":\"team\",\"id\":\"t-1\",\"relation\":\"member\"}}," +
+            "{\"wildcard\":{\"type\":\"user\"}}," +
+            "{\"object\":{\"type\":\"user\",\"id\":\"\"}}," +
+            "{\"object\":{\"type\":\"user\",\"id\":\"bob\"}}" +
+            "]}"));
+
+        var result = await sut.ListUsersAsync(
+            new FgaListUsersRequest("ticket", "42", "view"),
+            CancellationToken.None);
+
+        result.Should().Equal("alice", "bob");
+    }
+
+    [Fact]
+    public async Task ListUsersAsync_Should_ReturnEmpty_When_SidecarReturnsNoUsers()
+    {
+        var (sut, handler, _) = CreateSut();
+        handler.Responder = (_, _) => Task.FromResult(FakeHttpMessageHandler.Json("{\"users\":[]}"));
+
+        var result = await sut.ListUsersAsync(
+            new FgaListUsersRequest("ticket", "42", "view"),
+            CancellationToken.None);
+
+        result.Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task ListUsersAsync_Should_ReturnEmpty_When_SidecarThrows()
+    {
+        var (sut, handler, _) = CreateSut();
+        handler.Responder = (_, _) => throw new HttpRequestException("sidecar down");
+
+        var result = await sut.ListUsersAsync(
+            new FgaListUsersRequest("ticket", "42", "view"),
+            CancellationToken.None);
+
+        result.Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task ListUsersAsync_Should_ReturnEmpty_When_SidecarReturns500()
+    {
+        var (sut, handler, _) = CreateSut();
+        handler.Responder = (_, _) => Task.FromResult(
+            FakeHttpMessageHandler.Json("{\"code\":\"internal_error\"}", HttpStatusCode.InternalServerError));
+
+        var result = await sut.ListUsersAsync(
+            new FgaListUsersRequest("ticket", "42", "view"),
+            CancellationToken.None);
+
+        result.Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task ListUsersAsync_Should_PropagateOperationCanceled_When_TokenCancelled()
+    {
+        var (sut, _, _) = CreateSut();
+        using var cts = new CancellationTokenSource();
+        cts.Cancel();
+
+        Func<Task> act = () => sut.ListUsersAsync(
+            new FgaListUsersRequest("ticket", "42", "view"),
+            cts.Token);
+
+        await act.Should().ThrowAsync<OperationCanceledException>();
+    }
+
+    [Fact]
+    public async Task ListUsersAsync_Should_Throw_When_RequestIsNull()
+    {
+        var (sut, _, _) = CreateSut();
+
+        Func<Task> act = () => sut.ListUsersAsync(null!, CancellationToken.None);
+
+        await act.Should().ThrowAsync<ArgumentNullException>();
+    }
+
+    // ─── ExpandAsync ──────────────────────────────────────────────────────
+
+    [Fact]
+    public async Task ExpandAsync_Should_ReturnTree_When_SidecarReturnsLeafWithUsers()
+    {
+        var (sut, handler, _) = CreateSut();
+        handler.Responder = (_, _) => Task.FromResult(FakeHttpMessageHandler.Json(
+            "{\"tree\":{\"root\":{\"name\":\"ticket:42#view\"," +
+            "\"leaf\":{\"users\":{\"users\":[\"user:alice\",\"user:bob\"]}}}}}"));
+
+        var result = await sut.ExpandAsync(
+            new FgaExpandRequest("ticket", "42", "view"),
+            CancellationToken.None);
+
+        result.Root.Should().NotBeNull();
+        result.Root!.Name.Should().Be("ticket:42#view");
+        result.Root.Leaf.Should().NotBeNull();
+        result.Root.Leaf!.Users.Should().Equal("user:alice", "user:bob");
+        result.Root.Leaf.ComputedUserset.Should().BeNull();
+        result.Root.Leaf.TupleToUserset.Should().BeNull();
+        handler.Requests[0].Uri.AbsolutePath.Should().EndWith("/expand");
+    }
+
+    [Fact]
+    public async Task ExpandAsync_Should_ProjectComputedAndTupleToUsersetLeaves()
+    {
+        var (sut, handler, _) = CreateSut();
+        // Mix of computed-userset and tuple-to-userset leaves nested under union /
+        // intersection / difference branches — the production walker must handle
+        // every userset operator the OpenFGA DSL emits.
+        handler.Responder = (_, _) => Task.FromResult(FakeHttpMessageHandler.Json(
+            "{\"tree\":{\"root\":{\"name\":\"ticket:42#view\"," +
+            "\"union\":{\"nodes\":[" +
+                "{\"name\":\"a\",\"leaf\":{\"computed\":{\"userset\":\"project:p#admin\"}}}," +
+                "{\"name\":\"b\",\"leaf\":{\"tupleToUserset\":{\"tupleset\":\"parent_project\",\"computed\":[{\"userset\":\"#viewer\"}]}}}," +
+                "{\"name\":\"c\",\"intersection\":{\"nodes\":[" +
+                    "{\"name\":\"c1\",\"leaf\":{\"users\":{\"users\":[\"user:x\"]}}}" +
+                "]}}," +
+                "{\"name\":\"d\",\"difference\":{" +
+                    "\"base\":{\"name\":\"d1\",\"leaf\":{\"users\":{\"users\":[\"user:y\"]}}}," +
+                    "\"subtract\":{\"name\":\"d2\",\"leaf\":{\"users\":{\"users\":[\"user:z\"]}}}}}" +
+            "]}}}}"));
+
+        var result = await sut.ExpandAsync(
+            new FgaExpandRequest("ticket", "42", "view"),
+            CancellationToken.None);
+
+        result.Root.Should().NotBeNull();
+        result.Root!.Union.Should().NotBeNull();
+        result.Root.Union!.Should().HaveCount(4);
+
+        // a — computed-userset leaf.
+        result.Root.Union[0].Leaf!.ComputedUserset.Should().Be("project:p#admin");
+
+        // b — tuple-to-userset leaf.
+        result.Root.Union[1].Leaf!.TupleToUserset.Should().NotBeNull();
+        result.Root.Union[1].Leaf!.TupleToUserset!.Tupleset.Should().Be("parent_project");
+        result.Root.Union[1].Leaf!.TupleToUserset!.ComputedUsersets.Should().Equal("#viewer");
+
+        // c — intersection branch.
+        result.Root.Union[2].Intersection.Should().NotBeNull();
+        result.Root.Union[2].Intersection!.Should().HaveCount(1);
+        result.Root.Union[2].Intersection![0].Leaf!.Users.Should().Equal("user:x");
+
+        // d — difference branch.
+        result.Root.Union[3].Difference.Should().NotBeNull();
+        result.Root.Union[3].Difference!.Base.Leaf!.Users.Should().Equal("user:y");
+        result.Root.Union[3].Difference!.Subtract.Leaf!.Users.Should().Equal("user:z");
+    }
+
+    [Fact]
+    public async Task ExpandAsync_Should_ReturnEmptyResult_When_SidecarReturnsNullTree()
+    {
+        var (sut, handler, _) = CreateSut();
+        handler.Responder = (_, _) => Task.FromResult(FakeHttpMessageHandler.Json("{}"));
+
+        var result = await sut.ExpandAsync(
+            new FgaExpandRequest("ticket", "42", "view"),
+            CancellationToken.None);
+
+        result.Root.Should().BeNull();
+    }
+
+    [Fact]
+    public async Task ExpandAsync_Should_ReturnEmptyResult_When_SidecarThrows()
+    {
+        var (sut, handler, _) = CreateSut();
+        handler.Responder = (_, _) => throw new HttpRequestException("sidecar down");
+
+        var result = await sut.ExpandAsync(
+            new FgaExpandRequest("ticket", "42", "view"),
+            CancellationToken.None);
+
+        result.Root.Should().BeNull();
+    }
+
+    [Fact]
+    public async Task ExpandAsync_Should_ReturnEmptyResult_When_SidecarReturns500()
+    {
+        var (sut, handler, _) = CreateSut();
+        handler.Responder = (_, _) => Task.FromResult(
+            FakeHttpMessageHandler.Json("{\"code\":\"internal_error\"}", HttpStatusCode.InternalServerError));
+
+        var result = await sut.ExpandAsync(
+            new FgaExpandRequest("ticket", "42", "view"),
+            CancellationToken.None);
+
+        result.Root.Should().BeNull();
+    }
+
+    [Fact]
+    public async Task ExpandAsync_Should_PropagateOperationCanceled_When_TokenCancelled()
+    {
+        var (sut, _, _) = CreateSut();
+        using var cts = new CancellationTokenSource();
+        cts.Cancel();
+
+        Func<Task> act = () => sut.ExpandAsync(
+            new FgaExpandRequest("ticket", "42", "view"),
+            cts.Token);
+
+        await act.Should().ThrowAsync<OperationCanceledException>();
+    }
+
+    [Fact]
+    public async Task ExpandAsync_Should_Throw_When_RequestIsNull()
+    {
+        var (sut, _, _) = CreateSut();
+
+        Func<Task> act = () => sut.ExpandAsync(null!, CancellationToken.None);
+
+        await act.Should().ThrowAsync<ArgumentNullException>();
+    }
 }

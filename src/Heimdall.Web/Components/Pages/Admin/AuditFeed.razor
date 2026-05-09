@@ -1,83 +1,68 @@
 @page "/admin/audit"
+@attribute [Authorize(Policy = AuthorizationPolicies.SystemAdmin)]
 @rendermode InteractiveServer
-@using System.Security.Claims
 @using Heimdall.Core.Auditing
-@using Microsoft.AspNetCore.Components.Authorization
-@inject IUserLookup UserLookup
+@using Heimdall.Web.Authorization.Policies
+@using Microsoft.AspNetCore.Authorization
 @inject IAuditEventReader AuditReader
-@inject NavigationManager Nav
 
 @*
     Phase 2.8 step 25 — read-only audit feed. Renders the most recent N rows
-    from audit_events newest-first. TODO(Phase 3): replace AdminGate with
-    [Authorize(Policy = "SystemAdmin")] once the OpenFGA policy framework lands.
+    from audit_events newest-first. Phase 3.5 (openfga.md §3 step 9) replaced
+    the inline AdminGate with [Authorize(Policy = SystemAdmin)] — the policy
+    is served by SystemAdminAuthorizationHandler which reads users.system_admin
+    directly (no FGA dependency, so it remains usable during a sidecar outage).
 *@
 
 <PageTitle>Audit feed — Admin — Heimdall TicketTracker</PageTitle>
 
-@if (!_authorized)
+<AdminNav Active="audit" />
+<h1 class="h3 fw-semibold mb-3">Audit feed</h1>
+<p class="text-body-secondary">Most recent @Limit events, newest first.</p>
+
+@if (_loading)
 {
-    <p class="text-body-secondary">Checking permissions…</p>
+    <div class="spinner-border text-primary" role="status"><span class="visually-hidden">Loading…</span></div>
+}
+else if (_events.Count == 0)
+{
+    <p class="text-body-secondary">No audit events yet.</p>
 }
 else
 {
-    <AdminNav Active="audit" />
-    <h1 class="h3 fw-semibold mb-3">Audit feed</h1>
-    <p class="text-body-secondary">Most recent @Limit events, newest first.</p>
-
-    @if (_loading)
-    {
-        <div class="spinner-border text-primary" role="status"><span class="visually-hidden">Loading…</span></div>
-    }
-    else if (_events.Count == 0)
-    {
-        <p class="text-body-secondary">No audit events yet.</p>
-    }
-    else
-    {
-        <div class="table-responsive">
-            <table class="table table-sm align-middle">
-                <thead class="table-group-divider">
-                    <tr>
-                        <th scope="col">When</th>
-                        <th scope="col">Event</th>
-                        <th scope="col">Actor</th>
-                        <th scope="col">Target</th>
+    <div class="table-responsive">
+        <table class="table table-sm align-middle">
+            <thead class="table-group-divider">
+                <tr>
+                    <th scope="col">When</th>
+                    <th scope="col">Event</th>
+                    <th scope="col">Actor</th>
+                    <th scope="col">Target</th>
+                </tr>
+            </thead>
+            <tbody>
+                @foreach (var e in _events)
+                {
+                    <tr @key="e.Id">
+                        <td class="text-nowrap text-body-secondary">@e.OccurredAt.ToString("yyyy-MM-dd HH:mm:ss")</td>
+                        <td><code>@e.EventType</code></td>
+                        <td class="text-body-secondary">@(e.ActorUserId?.ToString() ?? "—")</td>
+                        <td class="text-body-secondary">@(e.Target ?? "—")</td>
                     </tr>
-                </thead>
-                <tbody>
-                    @foreach (var e in _events)
-                    {
-                        <tr @key="e.Id">
-                            <td class="text-nowrap text-body-secondary">@e.OccurredAt.ToString("yyyy-MM-dd HH:mm:ss")</td>
-                            <td><code>@e.EventType</code></td>
-                            <td class="text-body-secondary">@(e.ActorUserId?.ToString() ?? "—")</td>
-                            <td class="text-body-secondary">@(e.Target ?? "—")</td>
-                        </tr>
-                    }
-                </tbody>
-            </table>
-        </div>
-    }
+                }
+            </tbody>
+        </table>
+    </div>
 }
 
 @code {
     private const int Limit = 200;
 
-    [CascadingParameter] public Task<AuthenticationState>? AuthenticationStateTask { get; set; }
-
-    private bool _authorized;
     private bool _loading = true;
     private IReadOnlyList<AuditEventRecord> _events = [];
 
     protected override async Task OnInitializedAsync()
     {
-        if (!await AdminGate.IsSystemAdminAsync(AuthenticationStateTask, UserLookup))
-        {
-            Nav.NavigateTo("/access-denied");
-            return;
-        }
-        _authorized = true;
         _events = await AuditReader.GetRecentAsync(Limit);
         _loading = false;
     }
