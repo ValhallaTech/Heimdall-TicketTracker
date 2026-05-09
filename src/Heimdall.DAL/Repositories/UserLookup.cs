@@ -61,8 +61,11 @@ public sealed class UserLookup : IUserLookup
         CancellationToken cancellationToken = default)
     {
         await using var connection = new NpgsqlConnection(_connectionString);
+        // email is a citext column; Npgsql 10 + Dapper cannot materialise citext
+        // directly to string, so cast to text in the projection (writes still
+        // work because text->citext is implicit on input). See HeimdallUserStore.
         var command = new CommandDefinition(
-            "SELECT id AS Id, email AS Email FROM users WHERE id = @Id",
+            "SELECT id AS Id, email::text AS Email FROM users WHERE id = @Id",
             new { Id = userId },
             cancellationToken: cancellationToken
         );
@@ -103,7 +106,9 @@ public sealed class UserLookup : IUserLookup
             .Replace("_", @"\_", StringComparison.Ordinal);
 
         var command = new CommandDefinition(
-            @"SELECT id AS Id, email AS Email
+            // email is a citext column; cast to text in the projection so
+            // Npgsql/Dapper can materialise it to string (see HeimdallUserStore).
+            @"SELECT id AS Id, email::text AS Email
               FROM users
               WHERE email ILIKE @Pattern ESCAPE '\'
               ORDER BY email ASC

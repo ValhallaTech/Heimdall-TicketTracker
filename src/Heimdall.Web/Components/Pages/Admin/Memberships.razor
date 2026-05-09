@@ -79,7 +79,7 @@ else
         </div>
         <div class="col-auto">
             <select id="scope-select" class="form-select" @bind="_selectedScopeId">
-                <option value="">— pick one —</option>
+                <option value="@Guid.Empty">— pick one —</option>
                 @foreach (var (id, label) in ScopeOptions)
                 {
                     <option value="@id">@label</option>

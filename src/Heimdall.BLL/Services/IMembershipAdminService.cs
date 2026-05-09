@@ -33,7 +33,7 @@ public interface IMembershipAdminService
     /// <summary>Adds an organization membership.</summary>
     /// <param name="organizationId">The parent organization id.</param>
     /// <param name="userId">The user being added.</param>
-    /// <param name="role">Wire-format role (one of <c>admin</c>, <c>member</c>).</param>
+    /// <param name="role">Wire-format role (one of <c>owner</c>, <c>admin</c>, <c>member</c>, <c>viewer</c> — the values of the <c>org_member_role</c> Postgres enum).</param>
     /// <param name="actorUserId">The system-admin user performing the change.</param>
     /// <param name="cancellationToken">Cooperative cancellation token.</param>
     Task AddOrgMemberAsync(
@@ -73,7 +73,7 @@ public interface IMembershipAdminService
     /// <summary>Adds a project membership.</summary>
     /// <param name="projectId">The parent project id.</param>
     /// <param name="userId">The user being added.</param>
-    /// <param name="role">Wire-format role (one of <c>admin</c>, <c>member</c>, <c>viewer</c>).</param>
+    /// <param name="role">Wire-format role (one of <c>owner</c>, <c>admin</c>, <c>member</c>, <c>viewer</c> — the values of the <c>project_member_role</c> Postgres enum).</param>
     /// <param name="actorUserId">The system-admin user performing the change.</param>
     /// <param name="cancellationToken">Cooperative cancellation token.</param>
     Task AddProjectMemberAsync(
