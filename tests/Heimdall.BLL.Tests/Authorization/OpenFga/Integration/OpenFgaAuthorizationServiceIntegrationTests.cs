@@ -256,8 +256,11 @@ public sealed class OpenFgaAuthorizationServiceIntegrationTests
         // Assert
         memberObjects.Should().Contain(TupleShapes.TicketRef(h.TicketId));
         memberObjects.Should().Contain(TupleShapes.TicketRef(secondTicket));
-        strangerObjects.Should().NotContain(TupleShapes.TicketRef(h.TicketId));
-        strangerObjects.Should().NotContain(TupleShapes.TicketRef(secondTicket));
+        // Deny-closed: a stranger with zero tuples in the shared store must
+        // see *no* tickets — not "fewer". The queue-page hot path leaks if
+        // we ever weaken this assertion to a NotContain on a specific id.
+        strangerObjects.Should().BeEmpty(
+            "a user with no membership anywhere must observe an empty queue");
     }
 
     /// <summary>
