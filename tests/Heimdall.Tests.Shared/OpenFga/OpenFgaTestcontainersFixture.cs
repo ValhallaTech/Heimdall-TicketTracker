@@ -107,7 +107,23 @@ public sealed class OpenFgaTestcontainersFixture : IAsyncLifetime
     /// fixture's store and pinned model. Each test gets its own client; the
     /// underlying <see cref="HttpClient"/> is owned by the SDK instance.
     /// </summary>
-    public OpenFgaClient CreateSdkClient()
+    public OpenFgaClient CreateSdkClient() => CreateSdkClient(httpClient: null);
+
+    /// <summary>
+    /// Creates a fully-configured <see cref="OpenFgaClient"/> bound to the
+    /// fixture's store and pinned model, using a caller-supplied
+    /// <see cref="HttpClient"/>. Tests use this overload to wire a
+    /// <see cref="DelegatingHandler"/> that records or counts the requests
+    /// the SDK issues to the sidecar (see the Phase 3.7 OpenFGA-Expert
+    /// review — atomic-<c>Write</c> request-count proof and
+    /// <c>consistency</c>-on-the-wire proof).
+    /// </summary>
+    /// <param name="httpClient">
+    /// Optional pre-built <see cref="HttpClient"/>. When <see langword="null"/>
+    /// a fresh default client is allocated. The caller owns disposal of the
+    /// instance they pass in.
+    /// </param>
+    public OpenFgaClient CreateSdkClient(HttpClient? httpClient)
     {
         ClientConfiguration config = new()
         {
@@ -120,7 +136,7 @@ public sealed class OpenFgaTestcontainersFixture : IAsyncLifetime
                 Config = new CredentialsConfig { ApiToken = _presharedKey },
             },
         };
-        return new OpenFgaClient(config, new HttpClient());
+        return new OpenFgaClient(config, httpClient ?? new HttpClient());
     }
 
     /// <inheritdoc />

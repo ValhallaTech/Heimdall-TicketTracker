@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Net.Http;
 using System.Threading;
 using System.Threading.Tasks;
 using FluentAssertions;
@@ -33,6 +34,7 @@ namespace Heimdall.BLL.Tests.Authorization.OpenFga.Integration;
 [Trait("Category", "Integration")]
 public sealed class OpenFgaTupleWriterIntegrationTests
 {
+    private readonly OpenFgaTestcontainersFixture _fixture;
     private readonly OpenFgaClient _client;
     private readonly OpenFgaTupleWriter _writer;
     private readonly Mock<IAuditEventWriter> _auditWriter;
@@ -41,6 +43,7 @@ public sealed class OpenFgaTupleWriterIntegrationTests
     public OpenFgaTupleWriterIntegrationTests(OpenFgaTestcontainersFixture fixture)
     {
         ArgumentNullException.ThrowIfNull(fixture);
+        _fixture = fixture;
         _client = fixture.CreateSdkClient();
         _auditWriter = new Mock<IAuditEventWriter>(MockBehavior.Loose);
         _writer = new OpenFgaTupleWriter(
@@ -133,6 +136,80 @@ public sealed class OpenFgaTupleWriterIntegrationTests
             w => w.WriteAsync(It.IsAny<AuditEvent>(), It.IsAny<CancellationToken>()),
             Times.Never,
             "duplicate-tuple replay must not emit an openfga_tuple_write_failed audit event");
+    }
+
+    /// <summary>
+    /// The mirror arm of <c>write_failed_due_to_invalid_input</c>: deleting a
+    /// tuple that was never written must also be idempotent and emit no
+    /// audit event. Backfill / always-emit hooks rely on this so a partial
+    /// previous run does not poison subsequent reconciliation.
+    /// </summary>
+    [OpenFgaIntegrationFact]
+    public async Task OpenFgaTupleWriter_Delete_NonExistentTuple_IsIdempotent()
+    {
+        // Arrange — a tuple that has never been written.
+        Guid orgId = Guid.NewGuid();
+        Guid userId = Guid.NewGuid();
+        BllTupleKey ghost = TupleShapes.OrgAdmin(orgId, userId);
+
+        // Act — delete-only call against a tuple the store does not contain.
+        Func<Task> delete = () => _writer.WriteAsync(
+            Array.Empty<BllTupleKey>(),
+            new[] { ghost },
+            CancellationToken.None);
+
+        // Assert
+        await delete.Should().NotThrowAsync().ConfigureAwait(false);
+        _auditWriter.Verify(
+            w => w.WriteAsync(It.IsAny<AuditEvent>(), It.IsAny<CancellationToken>()),
+            Times.Never,
+            "deleting a non-existent tuple is the second arm of write_failed_due_to_invalid_input and must not emit an audit event");
+        (await TupleExistsAsync(ghost).ConfigureAwait(false))
+            .Should().BeFalse("the ghost tuple must remain absent");
+    }
+
+    /// <summary>
+    /// Proves <see cref="ITupleWriter.WriteAsync(IReadOnlyList{TupleKey}, IReadOnlyList{TupleKey}, CancellationToken)"/>
+    /// issues <strong>one</strong> OpenFGA <c>Write</c> API call (not two
+    /// serial calls) when the call carries both writes and deletes. Wire-level
+    /// observation via a <see cref="RecordingHttpHandler"/> — a regression
+    /// that split the atomic call would still pass the final-state assertion
+    /// in <see cref="OpenFgaTupleWriter_Write_IsAtomic_WritesAndDeletesInOneCall"/>,
+    /// so this test counts the requests instead.
+    /// </summary>
+    [OpenFgaIntegrationFact]
+    public async Task OpenFgaTupleWriter_Write_IssuesSingleApiCall_RequestCountProof()
+    {
+        // Arrange — instrument a fresh client with a recording handler.
+        RecordingHttpHandler handler = new();
+        using HttpClient httpClient = new(handler);
+        OpenFgaClient instrumentedClient = _fixture.CreateSdkClient(httpClient);
+        OpenFgaTupleWriter instrumentedWriter = new(
+            instrumentedClient,
+            _auditWriter.Object,
+            NullLogger<OpenFgaTupleWriter>.Instance);
+
+        Guid orgId = Guid.NewGuid();
+        Guid user1 = Guid.NewGuid();
+        Guid user2 = Guid.NewGuid();
+
+        // Pre-seed user1 = admin via the non-instrumented writer so the
+        // recorded count reflects only the atomic swap below.
+        await _writer
+            .WriteAsync(TupleShapes.OrgAdmin(orgId, user1), CancellationToken.None)
+            .ConfigureAwait(false);
+
+        // Act — atomic swap: delete user1, add user2 in one call.
+        await instrumentedWriter.WriteAsync(
+            new[] { TupleShapes.OrgAdmin(orgId, user2) },
+            new[] { TupleShapes.OrgAdmin(orgId, user1) },
+            CancellationToken.None).ConfigureAwait(false);
+
+        // Assert — exactly one POST to .../write (the OpenFGA Write endpoint).
+        int writeCalls = handler.CountByPathSuffix("/write");
+        writeCalls.Should().Be(
+            1,
+            "atomic writes+deletes must commit in a single OpenFGA Write request — splitting it breaks the per-request atomicity invariant");
     }
 
     private async Task<bool> TupleExistsAsync(BllTupleKey tuple)

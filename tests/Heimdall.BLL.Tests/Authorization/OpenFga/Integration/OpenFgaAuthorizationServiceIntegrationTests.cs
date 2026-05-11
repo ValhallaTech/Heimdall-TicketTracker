@@ -41,6 +41,7 @@ namespace Heimdall.BLL.Tests.Authorization.OpenFga.Integration;
 [Trait("Category", "Integration")]
 public sealed class OpenFgaAuthorizationServiceIntegrationTests
 {
+    private readonly OpenFgaTestcontainersFixture _fixture;
     private readonly OpenFgaClient _client;
     private readonly OpenFgaAuthorizationService _service;
     private readonly OpenFgaTupleWriter _writer;
@@ -49,6 +50,7 @@ public sealed class OpenFgaAuthorizationServiceIntegrationTests
     public OpenFgaAuthorizationServiceIntegrationTests(OpenFgaTestcontainersFixture fixture)
     {
         ArgumentNullException.ThrowIfNull(fixture);
+        _fixture = fixture;
         _client = fixture.CreateSdkClient();
 
         OpenFgaOptions options = new()
@@ -296,11 +298,11 @@ public sealed class OpenFgaAuthorizationServiceIntegrationTests
     }
 
     /// <summary>
-    /// <c>Expand</c> returns a non-null userset tree for the queried
-    /// <c>(object, relation)</c> pair. The precise tree shape is server-
-    /// version-dependent and is covered structurally by the
-    /// <see cref="OpenFgaAuthorizationService"/> unit tests; here we only
-    /// assert the round-trip succeeds against a real sidecar.
+    /// <c>Expand</c> returns the userset tree for <c>ticket#view</c>. The walk
+    /// must surface (a) the <c>parent_project</c> tuple-to-userset reference
+    /// that delegates view to the project ancestor chain and (b) the
+    /// reporter / assignee leaves that grant view directly. The admin
+    /// "who has access" surface relies on both arms of this tree.
     /// </summary>
     [OpenFgaIntegrationFact]
     public async Task OpenFgaAuthorizationService_Expand_WalksUsersetTree()
@@ -322,14 +324,42 @@ public sealed class OpenFgaAuthorizationServiceIntegrationTests
         expand.Should().NotBeNull();
         expand.Root.Should().NotBeNull(
             "the userset tree for ticket#view must include the reporter / assignee / parent_project walk");
+
+        IReadOnlyList<FgaExpandLeaf> leaves = CollectLeaves(expand.Root!);
+
+        // The model declares: `view: reporter or assignee or viewer from parent_project`.
+        // Server-rendered trees vary by version, but every variant must expose
+        // both leaf arms — the direct-user leaves AND the tuple-to-userset
+        // pointer that walks the project ancestor chain.
+        leaves.Should().Contain(
+            l => l.TupleToUserset != null
+                 && l.TupleToUserset.Tupleset.EndsWith("#parent_project", StringComparison.Ordinal),
+            "ticket#view must delegate up to the project ancestor chain via the parent_project tuple-to-userset");
+
+        // Reporter and assignee appear in the tree as `#reporter` / `#assignee`
+        // ComputedUserset references on the queried ticket — the server does
+        // not pre-resolve them to the user leaves at this depth. Asserting on
+        // the references is the structural proof that the model's
+        // `view: reporter or assignee or viewer from parent_project` arms are
+        // all reachable.
+        IEnumerable<string> computedUsersets = leaves
+            .Where(l => l.ComputedUserset != null)
+            .Select(l => l.ComputedUserset!);
+        computedUsersets.Should().Contain(
+            cu => cu.EndsWith("#reporter", StringComparison.Ordinal),
+            "ticket#view must reference the reporter computed userset arm");
+        computedUsersets.Should().Contain(
+            cu => cu.EndsWith("#assignee", StringComparison.Ordinal),
+            "ticket#view must reference the assignee computed userset arm");
     }
 
     /// <summary>
-    /// The <c>consistency</c> parameter must reach the sidecar.
-    /// <see cref="FgaConsistency.HigherConsistency"/> immediately after a
-    /// write surfaces the freshly-written tuple. We do not assert on
-    /// <see cref="FgaConsistency.MinimizeLatency"/> being stale — server-side
-    /// cache flags make that observation flaky.
+    /// The <c>consistency</c> request parameter must reach the sidecar on the
+    /// wire. We assert the wire-level shape by recording the SDK's outbound
+    /// HTTP request via a <see cref="RecordingHttpHandler"/> and matching the
+    /// JSON body for <c>HIGHER_CONSISTENCY</c> — the only deterministic
+    /// observation; comparing <c>MINIMIZE_LATENCY</c> vs
+    /// <c>HIGHER_CONSISTENCY</c> outcomes is server-cache-flag dependent.
     /// </summary>
     [OpenFgaIntegrationFact]
     public async Task OpenFgaAuthorizationService_Check_ConsistencyParameterIsPropagated()
@@ -338,11 +368,29 @@ public sealed class OpenFgaAuthorizationServiceIntegrationTests
         Guid orgId = Guid.NewGuid();
         Guid userId = Guid.NewGuid();
 
-        // Act — write, then immediately read with HIGHER_CONSISTENCY.
+        RecordingHttpHandler handler = new();
+        using HttpClient httpClient = new(handler);
+        OpenFgaClient instrumentedClient = _fixture.CreateSdkClient(httpClient);
+
+        OpenFgaOptions options = new()
+        {
+            ApiUrl = _fixture.ApiUrl,
+            StoreId = _fixture.StoreId,
+            AuthorizationModelId = _fixture.AuthorizationModelId,
+            PresharedKey = _fixture.PresharedKey,
+            CacheTtl = TimeSpan.FromMilliseconds(1),
+        };
+        OpenFgaAuthorizationService instrumentedService = new(
+            instrumentedClient,
+            new MemoryCache(new MemoryCacheOptions()),
+            Options.Create(options),
+            NullLogger<OpenFgaAuthorizationService>.Instance);
+
+        // Act — write, then read with HIGHER_CONSISTENCY through the recorded path.
         await _writer
             .WriteAsync(TupleShapes.OrgAdmin(orgId, userId), CancellationToken.None)
             .ConfigureAwait(false);
-        bool allowed = await _service
+        bool allowed = await instrumentedService
             .CheckAsync(
                 new FgaCheckRequest(
                     TupleShapes.UserRef(userId),
@@ -352,9 +400,54 @@ public sealed class OpenFgaAuthorizationServiceIntegrationTests
                 CancellationToken.None)
             .ConfigureAwait(false);
 
-        // Assert
+        // Assert — outcome AND wire shape.
         allowed.Should().BeTrue(
             "HIGHER_CONSISTENCY read after write must observe the newly-written tuple");
+
+        IReadOnlyList<RecordedRequest> checkCalls = handler.Requests
+            .Where(r => r.Path.EndsWith("/check", StringComparison.Ordinal))
+            .ToArray();
+        checkCalls.Should().NotBeEmpty("the adapter must have issued a /check call");
+        checkCalls.Should().Contain(
+            r => r.Body.Contains("HIGHER_CONSISTENCY", StringComparison.Ordinal),
+            "the consistency parameter must be serialised onto the /check request body so the sidecar bypasses its read-after-write cache");
+    }
+
+    private static IReadOnlyList<FgaExpandLeaf> CollectLeaves(FgaExpandNode root)
+    {
+        List<FgaExpandLeaf> leaves = new();
+        Walk(root, leaves);
+        return leaves;
+
+        static void Walk(FgaExpandNode node, List<FgaExpandLeaf> acc)
+        {
+            if (node.Leaf is not null)
+            {
+                acc.Add(node.Leaf);
+            }
+
+            if (node.Union is not null)
+            {
+                foreach (FgaExpandNode child in node.Union)
+                {
+                    Walk(child, acc);
+                }
+            }
+
+            if (node.Intersection is not null)
+            {
+                foreach (FgaExpandNode child in node.Intersection)
+                {
+                    Walk(child, acc);
+                }
+            }
+
+            if (node.Difference is not null)
+            {
+                Walk(node.Difference.Base, acc);
+                Walk(node.Difference.Subtract, acc);
+            }
+        }
     }
 
     private Task<bool> CheckTicketAsync(Guid user, string relation, int ticketId) =>
@@ -371,7 +464,10 @@ public sealed class OpenFgaAuthorizationServiceIntegrationTests
         Guid orgId = Guid.NewGuid();
         Guid teamId = Guid.NewGuid();
         Guid projectId = Guid.NewGuid();
-        int ticketId = Random.Shared.Next(100_000, int.MaxValue);
+        // Cap the upper bound below int.MaxValue so the `h.TicketId + 1`
+        // computation in ListObjects_FiltersTicketsForUser cannot overflow
+        // (theoretical 1-in-2-billion, but free to fix).
+        int ticketId = Random.Shared.Next(100_000, int.MaxValue - 1);
         Guid orgAdmin = Guid.NewGuid();
         Guid reporter = Guid.NewGuid();
         Guid assignee = Guid.NewGuid();
