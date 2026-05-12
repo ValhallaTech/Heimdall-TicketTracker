@@ -1,0 +1,110 @@
+@page "/account/mfa/disable"
+@attribute [Authorize(Policy = AuthorizationPolicies.IsAuthenticated)]
+@using System
+@using Heimdall.Core.Models
+@using Heimdall.Web.Authorization.Policies
+@using Microsoft.AspNetCore.Authorization
+@using Microsoft.AspNetCore.Components.Authorization
+@using Microsoft.AspNetCore.Identity
+@inject UserManager<HeimdallUser> UserManager
+@inject AuthenticationStateProvider AuthenticationStateProvider
+@inject NavigationManager Navigation
+
+@*
+    Server-rendered MFA-disable page (Phase 4.3 step 11 of
+    docs/implementation/phase-4-checklist.md). Posts to
+    /account/mfa/disable — NOT @rendermode InteractiveServer — so the
+    "mfa-setup" rate-limiter and antiforgery validation run on the HTTP
+    pipeline. Re-prompts for the current password as a stolen-cookie defence:
+    an attacker with a live session cookie should not be able to silently
+    strip MFA off the account.
+*@
+
+<PageTitle>Disable two-factor authentication &middot; Heimdall TicketTracker</PageTitle>
+
+<div class="container py-5">
+    <div class="row justify-content-center">
+        <div class="col-md-6 col-lg-5 col-xl-4">
+            <div class="card shadow-sm">
+                <div class="card-body p-4 p-md-5">
+
+                    <div class="text-center mb-4">
+                        <div class="splash-icon mb-3" aria-hidden="true">
+                            <i class="fa-solid fa-shield-halved"></i>
+                        </div>
+                        <h1 class="h3 fw-bold mb-0">Disable two-factor</h1>
+                    </div>
+
+                    <div class="alert alert-warning" role="alert">
+                        <i class="fa-solid fa-triangle-exclamation me-2" aria-hidden="true"></i>
+                        Disabling two-factor authentication removes your authenticator
+                        secret and invalidates every recovery code. You'll be signed out
+                        and will need to sign in again.
+                    </div>
+
+                    @if (HasInvalidPassword)
+                    {
+                        <div class="alert alert-danger" role="alert">
+                            <i class="fa-solid fa-triangle-exclamation me-2" aria-hidden="true"></i>
+                            That password didn't match.
+                        </div>
+                    }
+
+                    <form method="post" action="/account/mfa/disable">
+                        <AntiforgeryToken />
+
+                        <div class="mb-3">
+                            <label for="mfa-disable-password" class="form-label">Current password</label>
+                            <input id="mfa-disable-password"
+                                   name="password"
+                                   type="password"
+                                   class="form-control"
+                                   autocomplete="current-password"
+                                   required
+                                   aria-invalid="@AriaInvalid" />
+                        </div>
+
+                        <button type="submit" class="btn btn-danger w-100 py-2">
+                            <i class="fa-solid fa-shield-xmark me-2" aria-hidden="true"></i>
+                            Disable two-factor
+                        </button>
+                    </form>
+
+                    <div class="text-center mt-3">
+                        <a href="/" class="small text-decoration-none">Cancel</a>
+                    </div>
+
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+@code {
+    /// <summary>Optional <c>?error=</c> query param. <c>"invalid-password"</c> renders the error banner.</summary>
+    [SupplyParameterFromQuery] public string? Error { get; set; }
+
+    private bool HasInvalidPassword => string.Equals(Error, "invalid-password", StringComparison.Ordinal);
+
+    private string? AriaInvalid => HasInvalidPassword ? "true" : null;
+
+    /// <inheritdoc />
+    protected override async Task OnInitializedAsync()
+    {
+        AuthenticationState authState =
+            await AuthenticationStateProvider.GetAuthenticationStateAsync().ConfigureAwait(false);
+
+        HeimdallUser? user = await UserManager.GetUserAsync(authState.User).ConfigureAwait(false);
+        if (user is null)
+        {
+            Navigation.NavigateTo("/login", forceLoad: false);
+            return;
+        }
+
+        // Nothing to disable — bounce to enrolment.
+        if (!user.TwoFactorEnabled)
+        {
+            Navigation.NavigateTo("/account/mfa/setup", forceLoad: false);
+        }
+    }
+}

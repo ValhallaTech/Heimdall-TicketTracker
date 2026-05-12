@@ -68,6 +68,15 @@ public static class AuthorizationPolicies
     /// </summary>
     public const string SystemAdmin = nameof(SystemAdmin);
 
+    /// <summary>
+    /// Policy name: actor has satisfied the MFA gate. Applied to admin surfaces
+    /// in Phase 4.6 step 18. The handler currently registered in Phase 4.3
+    /// step 8 is a fail-closed placeholder (see
+    /// <see cref="RequireMfaPlaceholderAuthorizationHandler"/>); the real
+    /// OpenFGA + <c>amr</c>-aware handler lands in Phase 4.6 step 16.
+    /// </summary>
+    public const string RequireMfa = nameof(RequireMfa);
+
     /// <summary>Route value name carrying an organization id.</summary>
     public const string OrganizationIdRouteKey = "organizationId";
 

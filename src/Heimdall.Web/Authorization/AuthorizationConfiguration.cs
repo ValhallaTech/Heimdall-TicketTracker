@@ -140,6 +140,14 @@ public static class AuthorizationConfiguration
             policy => policy
                 .RequireAuthenticatedUser()
                 .AddRequirements(new SystemAdminRequirement()));
+
+        // Phase 4.3 step 8 — fail-closed MFA placeholder. The real handler is
+        // wired in Phase 4.6 step 16; until then the policy 403s by design.
+        options.AddPolicy(
+            AuthorizationPolicies.RequireMfa,
+            policy => policy
+                .RequireAuthenticatedUser()
+                .AddRequirements(new RequireMfaRequirement()));
     }
 
     private static void AddOpenFgaPolicy(

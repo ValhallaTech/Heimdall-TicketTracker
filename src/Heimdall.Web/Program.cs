@@ -1,4 +1,5 @@
 using System;
+using System.Security.Claims;
 using System.Threading.RateLimiting;
 using AspNetCore.DataProtection.CustomStorage.Dapper.PostgreSQL;
 using Autofac;
@@ -156,13 +157,46 @@ builder
         // before then would brick first-run sign-in.
         options.SignIn.RequireConfirmedEmail = false;
         options.SignIn.RequireConfirmedAccount = false;
+
+        // Phase 4.3 step 7 — name the TOTP token provider so
+        // UserManager.{Get,Reset,Verify}AuthenticatorKey/Token resolve to the
+        // explicit AuthenticatorTokenProvider<HeimdallUser> registration below.
+        // Sets the same name (TokenOptions.DefaultAuthenticatorProvider) that
+        // AddDefaultTokenProviders uses, so the two registrations agree.
+        options.Tokens.AuthenticatorTokenProvider = TokenOptions.DefaultAuthenticatorProvider;
     })
-    .AddSignInManager()
+
+    // Phase 4.3 step 7 — AddIdentityCore deliberately does NOT register
+    // SignInManager (unlike AddIdentity); the explicit generic form here keeps
+    // the registration auditable. SignInManager<HeimdallUser> is required by
+    // the Phase 4.5 step 12 TwoFactorAuthenticatorSignInAsync challenge path.
+    .AddSignInManager<SignInManager<HeimdallUser>>()
 
     // Default token providers (DataProtector / Email / Phone / Authenticator).
     // Required by the password-reset and email-confirmation flows that land in
     // step 10; registered now so the DI graph is stable across phases.
-    .AddDefaultTokenProviders();
+    .AddDefaultTokenProviders()
+
+    // Phase 4.3 step 7 — explicit AuthenticatorTokenProvider<HeimdallUser>
+    // registration under TokenOptions.DefaultAuthenticatorProvider. Identity's
+    // AddDefaultTokenProviders already registers a provider under this name,
+    // so this call is functionally a duplicate (AddTokenProvider overwrites
+    // by name) — kept here intentionally as the audit trail required by the
+    // Phase 4.3 step 7 checklist entry. The explicit registration is the
+    // single source of truth that Heimdall consumes a TOTP provider.
+    .AddTokenProvider<AuthenticatorTokenProvider<HeimdallUser>>(
+        TokenOptions.DefaultAuthenticatorProvider);
+
+// Phase 4.3 step 9 — QR-code renderer used by /account/mfa/setup. Singleton
+// because the underlying QRCoder generator is stateless and re-allocating it
+// per request is pure waste.
+builder.Services.AddSingleton<IAuthenticatorQrCodeRenderer, AuthenticatorQrCodeRenderer>();
+
+// Phase 4.3 step 10 — one-shot in-memory cache that carries freshly-generated
+// recovery codes across the verify-POST → display-GET redirect. Backed by
+// IMemoryCache (registered here defensively in case no other component has).
+builder.Services.AddMemoryCache();
+builder.Services.AddSingleton<IRecoveryCodeDisplayCache, RecoveryCodeDisplayCache>();
 
 // Cookie auth scheme. AddIdentityCore deliberately does NOT register one — we
 // opt in here with the canonical Identity scheme name so SignInManager's calls
@@ -273,6 +307,26 @@ builder.Services.AddRateLimiter(options =>
         {
             PermitLimit = 5,
             Window = TimeSpan.FromMinutes(10),
+            QueueLimit = 0,
+            AutoReplenishment = true,
+        });
+    });
+
+    // Phase 4.3 step 10 — MFA setup / disable throttle keyed on (ip, user_id).
+    // Tighter than login (10 permits / 5 minutes) to neuter brute-force
+    // guessing of the fresh authenticator secret window. user_id rather than
+    // submitted-email because both MFA endpoints run inside an authenticated
+    // cookie session — the principal is already established.
+    options.AddPolicy("mfa-setup", httpContext =>
+    {
+        string ip = httpContext.Connection.RemoteIpAddress?.ToString() ?? "unknown";
+        string userId =
+            httpContext.User?.FindFirstValue(ClaimTypes.NameIdentifier) ?? "anonymous";
+        string key = $"{ip}|{userId}";
+        return RateLimitPartition.GetFixedWindowLimiter(key, _ => new FixedWindowRateLimiterOptions
+        {
+            PermitLimit = 10,
+            Window = TimeSpan.FromMinutes(5),
             QueueLimit = 0,
             AutoReplenishment = true,
         });

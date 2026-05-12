@@ -41,6 +41,11 @@ public static class AuthorizationPoliciesServiceCollectionExtensions
         services.TryAddEnumerable(
             ServiceDescriptor.Scoped<IAuthorizationHandler, SystemAdminAuthorizationHandler>());
 
+        // Phase 4.3 step 8 — fail-closed placeholder. Replaced by the real
+        // OpenFGA + amr-aware handler in Phase 4.6 step 16.
+        services.TryAddEnumerable(
+            ServiceDescriptor.Scoped<IAuthorizationHandler, RequireMfaPlaceholderAuthorizationHandler>());
+
         return services;
     }
 }
