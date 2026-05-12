@@ -19,6 +19,15 @@ namespace Heimdall.Web.Authorization.Policies;
 /// </remarks>
 public static class AuthorizationPolicies
 {
+    /// <summary>
+    /// Policy name: actor is authenticated. Named wrapper around
+    /// <see cref="Microsoft.AspNetCore.Authorization.AuthorizationPolicyBuilder.RequireAuthenticatedUser"/>
+    /// used on pages whose only gate is a valid session (e.g. <c>Tickets.razor</c>,
+    /// <c>NewTicket.razor</c>, <c>Teams/Queue.razor</c>). Explicit rather than relying on the
+    /// Phase 1 global fallback policy, which is removed in Phase 3.7 step 14.
+    /// </summary>
+    public const string IsAuthenticated = nameof(IsAuthenticated);
+
     /// <summary>Policy name: actor has <c>organization#view</c>.</summary>
     public const string CanViewOrganization = nameof(CanViewOrganization);
 

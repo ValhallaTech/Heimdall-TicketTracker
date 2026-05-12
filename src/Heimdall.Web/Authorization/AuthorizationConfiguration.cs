@@ -14,12 +14,12 @@ namespace Heimdall.Web.Authorization;
 /// <remarks>
 /// <para>
 /// Phase 1 (<c>docs/proposals/security-and-authorization.md</c> §9.3 step 9)
-/// wires the global "authenticated-only" fallback policy. Phase 3.5
-/// (<c>docs/proposals/openfga.md</c> §3 step 9) layers named, OpenFGA-resolved
+/// wired the global "authenticated-only" fallback policy. Phase 3.5
+/// (<c>docs/proposals/openfga.md</c> §3 step 9) layered named, OpenFGA-resolved
 /// resource policies on top — every relation in <c>authz/model.fga</c> has a
 /// matching policy in <see cref="AuthorizationPolicies"/>. Phase 3.7 step 14
-/// removes the fallback once full coverage is verified; until then both
-/// stacks coexist.
+/// removes the fallback and replaces it with an explicit <see cref="AuthorizationPolicies.IsAuthenticated"/>
+/// named policy applied per-page, completing full coverage.
 /// </para>
 /// </remarks>
 public static class AuthorizationConfiguration
@@ -30,18 +30,18 @@ public static class AuthorizationConfiguration
     /// </summary>
     /// <remarks>
     /// <para>
-    /// Sets a fallback policy that requires an authenticated user — every
-    /// endpoint without its own authorization metadata is therefore denied to
-    /// anonymous callers and explicitly-public endpoints must opt out with
-    /// <c>[AllowAnonymous]</c> (login, logout, access-denied, the static
-    /// error / not-found pages, the splash page). Then registers each named
-    /// policy in <see cref="AuthorizationPolicies"/> against either an
+    /// Registers the <see cref="AuthorizationPolicies.IsAuthenticated"/> named policy
+    /// that requires an authenticated user (explicit replacement for the Phase 1 fallback
+    /// removed in Phase 3.7 step 14). Then registers each resource-bound named policy in
+    /// <see cref="AuthorizationPolicies"/> against either an
     /// <see cref="OpenFgaRequirement"/> (resource-bound) or a
     /// <see cref="SystemAdminRequirement"/> (DB-only break-glass authority).
     /// </para>
     /// <para>
-    /// TODO(Phase 3.7 step 14): remove the fallback policy once every Blazor
-    /// page and every BLL entry point carries an explicit named policy.
+    /// Every routed Blazor page must carry an explicit <c>[Authorize]</c> attribute referencing
+    /// one of the named policies defined here, or <c>[AllowAnonymous]</c> for public pages.
+    /// The global fallback policy is intentionally absent — omitting an explicit attribute is a
+    /// compile-detectable gap, not a silent allow.
     /// </para>
     /// </remarks>
     /// <param name="options">The options instance to mutate.</param>
@@ -52,11 +52,12 @@ public static class AuthorizationConfiguration
     {
         ArgumentNullException.ThrowIfNull(options);
 
-        // Phase 1 fallback — TODO(Phase 3.7 step 14): remove once every routed
-        // page/endpoint carries an explicit named policy.
-        options.FallbackPolicy = new AuthorizationPolicyBuilder()
-            .RequireAuthenticatedUser()
-            .Build();
+        // Phase 3.7 step 14 — explicit named policy replacing the Phase 1 fallback.
+        // Pages that only require authentication (no resource-level FGA check) apply
+        // [Authorize(Policy = AuthorizationPolicies.IsAuthenticated)] explicitly.
+        options.AddPolicy(
+            AuthorizationPolicies.IsAuthenticated,
+            policy => policy.RequireAuthenticatedUser());
 
         // Phase 3.5 — named policies. Each entry maps a relation declared in
         // authz/model.fga onto an OpenFgaRequirement carrying (objectType,

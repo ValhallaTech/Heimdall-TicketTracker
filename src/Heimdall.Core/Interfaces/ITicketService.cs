@@ -59,6 +59,28 @@ public interface ITicketService
     Task<bool> DeleteAsync(int id, CancellationToken cancellationToken = default);
 
     /// <summary>
+    /// Returns a single page of tickets restricted to <paramref name="allowedTicketIds"/>,
+    /// filtered and sorted per <paramref name="query"/>. Returns an empty page immediately when
+    /// <paramref name="allowedTicketIds"/> is empty — no DB round trip is issued.
+    /// </summary>
+    /// <remarks>
+    /// Drives the <c>Tickets.razor</c> list page when OpenFGA is enabled: the caller first
+    /// resolves the allowed ids via <c>ListObjects(user, "view", "ticket")</c>, then delegates
+    /// here to fetch the restricted page from the database.
+    /// </remarks>
+    /// <param name="allowedTicketIds">
+    /// Ticket ids the caller is authorised to view. An empty list short-circuits without a DB
+    /// query and returns a zero-count page.
+    /// </param>
+    /// <param name="query">Pagination, sort, and filter parameters.</param>
+    /// <param name="cancellationToken">Propagates notification that the operation should be cancelled.</param>
+    /// <returns>A <see cref="PagedResult{T}"/> containing the page items and paging metadata.</returns>
+    Task<PagedResult<TicketDto>> GetPagedByIdsAsync(
+        IReadOnlyList<int> allowedTicketIds,
+        PagedQuery query,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
     /// Routes <paramref name="ticketId"/> to <paramref name="destinationTeamId"/> on
     /// behalf of <paramref name="actorId"/>. Implements
     /// <c>docs/proposals/team-collaboration.md</c> §5.2 / §5.4: the permission gate is

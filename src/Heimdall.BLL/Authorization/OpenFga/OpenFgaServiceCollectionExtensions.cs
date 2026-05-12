@@ -74,10 +74,7 @@ public static class OpenFgaServiceCollectionExtensions
 
         services.AddMemoryCache();
 
-        bool sidecarConfigured =
-            !string.IsNullOrWhiteSpace(resolvedOptions.ApiUrl)
-            && !string.IsNullOrWhiteSpace(resolvedOptions.StoreId)
-            && !string.IsNullOrWhiteSpace(resolvedOptions.AuthorizationModelId);
+        bool sidecarConfigured = resolvedOptions.IsSidecarConfigured;
 
         if (!sidecarConfigured)
         {

@@ -25,6 +25,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\..\src\Heimdall.Web\Heimdall.Web.csproj" />
+    <ProjectReference Include="..\Heimdall.Tests.Shared\Heimdall.Tests.Shared.csproj" />
   </ItemGroup>
 
 </Project>

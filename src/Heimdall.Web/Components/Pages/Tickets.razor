@@ -1,17 +1,18 @@
 @page "/tickets"
-@*
-    TODO(Phase 3.7 step 13 — docs/proposals/openfga.md §3): introduce a
-    ListObjects-backed ticket query so this page renders only tickets the
-    caller can `view` per OpenFGA. Today it relies on the global authenticated
-    fallback policy + the ticket service's existing membership checks; the
-    proper resource policy can't be applied at the route level because the
-    page lists many tickets, not a single resource.
-*@
+@attribute [Authorize(Policy = AuthorizationPolicies.IsAuthenticated)]
 @rendermode InteractiveServer
 @implements IDisposable
+@using Heimdall.BLL.Authorization.OpenFga
+@using Heimdall.Web.Authorization.Policies
+@using Microsoft.AspNetCore.Authorization
+@using Microsoft.AspNetCore.Components.Authorization
+@using Microsoft.Extensions.Options
+@using System.Security.Claims
 @inject ITicketService TicketService
 @inject IUserLookup UserLookup
 @inject NavigationManager Navigation
+@inject IOpenFgaAuthorizationService FgaService
+@inject IOptions<OpenFgaOptions> FgaOptions
 
 <PageTitle>Tickets — Heimdall TicketTracker</PageTitle>
 
@@ -249,6 +250,13 @@ else
     private string  sortField    = "DateCreated";
     private SortDirection sortDirection = SortDirection.Descending;
 
+    // When true, LoadPageAsync gates the DB query behind a ListObjects call so
+    // only tickets the current user can `view` per OpenFGA are fetched.
+    // Determined once on initialisation from OpenFgaOptions.ApiUrl — if the
+    // URL is unset the app is running against the NoOp services and must fall
+    // back to GetPagedAsync to avoid showing an empty list.
+    private bool _useOpenFga;
+
     // Debounce support for the search input.
     private CancellationTokenSource? _searchDebounce;
 
@@ -262,8 +270,16 @@ else
     // long-lived circuits.
     private readonly Dictionary<Guid, string> _userNames = [];
 
+    [CascadingParameter]
+    public Task<AuthenticationState>? AuthenticationStateTask { get; set; }
+
     protected override async Task OnInitializedAsync()
     {
+        // Match the predicate AddHeimdallOpenFga uses to register the real vs
+        // no-op OpenFGA services. If only ApiUrl is set (partial misconfig), the
+        // BLL registers the NoOp service which returns an empty ListObjects
+        // result — gating on ApiUrl alone would silently render zero tickets.
+        _useOpenFga = FgaOptions.Value.IsSidecarConfigured;
         await LoadPageAsync();
     }
 
@@ -282,14 +298,22 @@ else
 
         try
         {
-            var result = await TicketService.GetPagedAsync(
-                new PagedQuery(
-                    page:          currentPage,
-                    pageSize:      pageSize,
-                    searchText:    searchText,
-                    sortField:     sortField,
-                    sortDirection: sortDirection),
-                token);
+            PagedResult<TicketDto> result;
+            if (_useOpenFga)
+            {
+                result = await LoadPageWithFgaAsync(token);
+            }
+            else
+            {
+                result = await TicketService.GetPagedAsync(
+                    new PagedQuery(
+                        page:          currentPage,
+                        pageSize:      pageSize,
+                        searchText:    searchText,
+                        sortField:     sortField,
+                        sortDirection: sortDirection),
+                    token);
+            }
 
             if (!token.IsCancellationRequested)
             {
@@ -302,6 +326,62 @@ else
         {
             // A newer load superseded this one — intentional, do nothing.
         }
+    }
+
+    /// <summary>
+    /// OpenFGA-backed page load. Issues <c>ListObjects(user, "view", "ticket")</c> to
+    /// retrieve the ids this user may view, then delegates to
+    /// <see cref="ITicketService.GetPagedByIdsAsync"/> so the DB query is scoped to
+    /// exactly those ids. Returns an empty page when the auth state is unavailable or
+    /// the user id cannot be parsed — deny-closed by design.
+    /// </summary>
+    private async Task<PagedResult<TicketDto>> LoadPageWithFgaAsync(CancellationToken cancellationToken)
+    {
+        PagedResult<TicketDto> emptyPage = new()
+        {
+            Items = [],
+            TotalCount = 0,
+            Page = currentPage,
+            PageSize = pageSize,
+        };
+
+        if (AuthenticationStateTask is null)
+        {
+            return emptyPage;
+        }
+
+        var state = await AuthenticationStateTask;
+        var userIdStr = state.User.FindFirstValue(ClaimTypes.NameIdentifier);
+        if (!Guid.TryParse(userIdStr, out var userId))
+        {
+            return emptyPage;
+        }
+
+        IReadOnlyList<string> objectRefs = await FgaService.ListObjectsAsync(
+            new FgaListObjectsRequest(TupleShapes.UserRef(userId), "view", TupleShapes.TicketType),
+            cancellationToken);
+
+        string prefix = TupleShapes.TicketType + ":";
+        List<int> allowedIds = new(objectRefs.Count);
+        foreach (string r in objectRefs)
+        {
+            ReadOnlySpan<char> span = r.AsSpan();
+            if (span.StartsWith(prefix, StringComparison.Ordinal)
+                && int.TryParse(span[prefix.Length..], out int id))
+            {
+                allowedIds.Add(id);
+            }
+        }
+
+        return await TicketService.GetPagedByIdsAsync(
+            allowedIds,
+            new PagedQuery(
+                page:          currentPage,
+                pageSize:      pageSize,
+                searchText:    searchText,
+                sortField:     sortField,
+                sortDirection: sortDirection),
+            cancellationToken);
     }
 
     /// <summary>

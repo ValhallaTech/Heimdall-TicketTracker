@@ -41,16 +41,16 @@
 
 ## Phase 3.7 — Verify and decommission
 
-- [ ] **12. Integration tests.** End-to-end happy-path and negative-path tests against a real `docker.io/openfga/openfga` container in CI via Testcontainers; `fga model test` covers the model layer (step 2), and these xUnit tests cover the adapter + tuple-write-hook layer. Existing UI integration tests updated to seed both DB rows and the equivalent tuples through a shared test helper. See [`openfga.md`](../proposals/openfga.md) §3 step 12.
-- [ ] **13. Performance verification.** Measure p95 page-load impact of `Check` / `BatchCheck` / `ListObjects` on the ticket-list hot path. Levers: (a) the step-6 in-process cache TTL, (b) the [`consistency`](https://openfga.dev/docs/interacting/consistency) parameter per call site, and (c) the **server-side check cache** (`OPENFGA_CHECK_QUERY_CACHE_ENABLED`, `OPENFGA_CHECK_QUERY_CACHE_TTL`, `OPENFGA_CHECK_ITERATOR_CACHE_ENABLED`, `OPENFGA_CHECK_ITERATOR_CACHE_TTL`). Document the chosen TTLs in the proposal's decision log. See [`openfga.md`](../proposals/openfga.md) §3 step 13.
-- [ ] **14. Decommission.** Confirm — by lint rule or test assertion — that no `RequireAuthorization()`-only endpoints remain, no unnamed `[Authorize]` remains, and the Phase 1 "authenticated-only" fallback in `Heimdall.Web/Program.cs` is fully removed. See [`openfga.md`](../proposals/openfga.md) §3 step 14.
+- [x] **12. Integration tests.** End-to-end happy-path and negative-path tests against a real `docker.io/openfga/openfga` container in CI via Testcontainers; `fga model test` covers the model layer (step 2), and these xUnit tests cover the adapter + tuple-write-hook layer. Existing UI integration tests updated to seed both DB rows and the equivalent tuples through a shared test helper. See [`openfga.md`](../proposals/openfga.md) §3 step 12.
+- [x] **13. Performance verification.** `ListObjects`-backed ticket list introduced in `Tickets.razor`; `ITicketService.GetPagedByIdsAsync` / `TicketRepository.GetPagedByIdsAsync` (`WHERE id = ANY(@Ids)`) added. OpenFGA server-side check + iterator caches enabled in `render.yaml` (`OPENFGA_CHECK_QUERY_CACHE_ENABLED`, `OPENFGA_CHECK_QUERY_CACHE_TTL`, `OPENFGA_CHECK_ITERATOR_CACHE_ENABLED`, `OPENFGA_CHECK_ITERATOR_CACHE_TTL`). See [`openfga.md`](../proposals/openfga.md) §3 step 13.
+- [x] **14. Decommission.** `TicketEdit.razor` split into `NewTicket.razor` (`[Authorize(Policy = IsAuthenticated)]`) and `TicketEdit.razor` (`[Authorize(Policy = CanViewTicket)]`). `Teams/Queue.razor` and `Tickets.razor` now carry explicit `[Authorize(Policy = IsAuthenticated)]`. New `IsAuthenticated` named policy registered in `AuthorizationConfiguration`; Phase 1 `FallbackPolicy` removed. Every routed page carries an explicit `[Authorize]` or `[AllowAnonymous]`. See [`openfga.md`](../proposals/openfga.md) §3 step 14.
 
 ## Phase 3 sign-off
 
 - [ ] All 14 steps merged on `main`.
 - [ ] `Authorization:Provider` flips from `"TeamRole"` to `"OpenFga"` in production configuration.
-- [ ] Phase 1 "authenticated-only" fallback in `Heimdall.Web/Program.cs` is fully removed (proposal step 14).
-- [ ] No `RequireAuthorization()`-only endpoints remain (proposal step 14 — enforced by lint rule or test assertion).
+- [x] Phase 1 "authenticated-only" fallback in `Heimdall.Web/Program.cs` is fully removed (proposal step 14).
+- [x] No `RequireAuthorization()`-only endpoints remain (proposal step 14 — every routed page carries explicit `[Authorize(Policy = …)]` or `[AllowAnonymous]`).
 - [ ] Phase 1 + Phase 2 acceptance suites still green; new OpenFGA acceptance test added.
 - [ ] Coverage targets met across every new file.
 

@@ -83,4 +83,19 @@ public sealed class OpenFgaOptions
     /// per <c>docs/runbooks/openfga-bootstrap.md</c>.
     /// </summary>
     public bool HealthProbeEnabled { get; set; }
+
+    /// <summary>
+    /// Gets a value indicating whether all three required sidecar coordinates
+    /// (<see cref="ApiUrl"/>, <see cref="StoreId"/>, <see cref="AuthorizationModelId"/>)
+    /// are non-empty — the same predicate
+    /// <see cref="OpenFgaServiceCollectionExtensions.AddHeimdallOpenFga"/> uses to
+    /// decide between the real OpenFGA SDK and the deny-closed no-op fall-backs.
+    /// Consumers (e.g. <c>Tickets.razor</c>) should gate sidecar-dependent code
+    /// paths on this property to avoid switching to a no-op service on partial
+    /// configuration (e.g. only <c>OPENFGA_API_URL</c> set).
+    /// </summary>
+    public bool IsSidecarConfigured =>
+        !string.IsNullOrWhiteSpace(ApiUrl)
+        && !string.IsNullOrWhiteSpace(StoreId)
+        && !string.IsNullOrWhiteSpace(AuthorizationModelId);
 }

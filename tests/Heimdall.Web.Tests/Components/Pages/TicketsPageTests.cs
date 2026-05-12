@@ -1,11 +1,13 @@
 using Bunit;
 using FluentAssertions;
+using Heimdall.BLL.Authorization.OpenFga;
 using Heimdall.Core.Dtos;
 using Heimdall.Core.Interfaces;
 using Heimdall.Core.Models;
 using Heimdall.Core.Models.Pagination;
 using Heimdall.Web.Components.Pages;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Options;
 using Moq;
 
 namespace Heimdall.Web.Tests.Components.Pages;
@@ -20,6 +22,13 @@ public class TicketsPageTests : BunitContext
     {
         Services.AddSingleton(_service.Object);
         Services.AddSingleton(_userLookup.Object);
+
+        // Phase 3.7 step 13: Tickets.razor now injects IOpenFgaAuthorizationService
+        // and IOptions<OpenFgaOptions>. Register a loose mock and empty options so
+        // the component renders without a sidecar (ApiUrl empty → _useOpenFga = false
+        // → falls back to GetPagedAsync, which the existing mock already covers).
+        Services.AddSingleton(new Mock<IOpenFgaAuthorizationService>(MockBehavior.Loose).Object);
+        Services.AddSingleton<IOptions<OpenFgaOptions>>(Options.Create(new OpenFgaOptions()));
 
         // Phase 2.8 step 24: Tickets.razor resolves reporter / assignee display
         // names via IUserLookup.GetByIdAsync. Default to a stable email-shaped

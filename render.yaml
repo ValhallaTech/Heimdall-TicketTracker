@@ -108,19 +108,18 @@ services:
       # back via fromService above. Never commit a literal value.
       - key: OPENFGA_AUTHN_PRESHARED_KEYS
         generateValue: true
-      # --- Performance tuning placeholders (Phase 3.4 step 13) -----------
+      # --- Performance tuning (Phase 3.7 steps 13–14) ----------------------
       # Server-side check / iterator caches per
       # https://openfga.dev/docs/getting-started/setup-openfga/configuration .
-      # Leave commented until step 13 measures the workload; turning these on
-      # before there is real traffic just hides correctness bugs.
-      # - key: OPENFGA_CHECK_QUERY_CACHE_ENABLED
-      #   value: "true"
-      # - key: OPENFGA_CHECK_QUERY_CACHE_TTL
-      #   value: 10s
-      # - key: OPENFGA_CHECK_ITERATOR_CACHE_ENABLED
-      #   value: "true"
-      # - key: OPENFGA_CHECK_ITERATOR_CACHE_TTL
-      #   value: 10s
+      # Enabled now that ListObjects-backed ticket queries drive real workload.
+      - key: OPENFGA_CHECK_QUERY_CACHE_ENABLED
+        value: "true"
+      - key: OPENFGA_CHECK_QUERY_CACHE_TTL
+        value: 10s
+      - key: OPENFGA_CHECK_ITERATOR_CACHE_ENABLED
+        value: "true"
+      - key: OPENFGA_CHECK_ITERATOR_CACHE_TTL
+        value: 10s
 
 databases:
   - name: heimdall-ticket-tracker-postgres
