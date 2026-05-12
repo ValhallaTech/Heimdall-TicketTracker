@@ -156,7 +156,7 @@ public class TicketServiceOpenFgaIntegrationTests
         // Verify exact TupleShapes format
         var parentProject = written.Single(t => t.Relation == TupleShapes.ParentProjectRelation);
         parentProject.Object.Should().Be($"{TupleShapes.TicketType}:42");
-        parentProject.User.Should().Be($"{TupleShapes.ProjectType}:{ProjectId:D}#{TupleShapes.ParentProjectRelation}");
+        parentProject.User.Should().Be($"{TupleShapes.ProjectType}:{ProjectId:D}");
 
         var reporter = written.Single(t => t.Relation == TupleShapes.ReporterRelation);
         reporter.Object.Should().Be($"{TupleShapes.TicketType}:42");

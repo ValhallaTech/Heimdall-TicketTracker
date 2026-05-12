@@ -74,7 +74,7 @@ public class TicketEditTests : BunitContext
     [Fact]
     public void Should_RenderNewTicketHeading_When_IdIsNull()
     {
-        var cut = Render<TicketEdit>();
+        var cut = Render<NewTicket>();
 
         cut.Markup.Should().Contain("New Ticket");
         cut.Find("button[type='submit']").TextContent.Should().Contain("Create Ticket");
@@ -149,7 +149,7 @@ public class TicketEditTests : BunitContext
                 return d;
             });
 
-        var cut = Render<TicketEdit>();
+        var cut = Render<NewTicket>();
 
         cut.Find("#title").Change("My Title");
         cut.Find("#description").Change("Some description");
