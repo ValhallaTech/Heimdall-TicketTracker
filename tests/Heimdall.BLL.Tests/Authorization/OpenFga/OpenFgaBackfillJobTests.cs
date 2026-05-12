@@ -309,6 +309,76 @@ public class OpenFgaBackfillJobTests
         harness.WriteBatchSizes.Should().OnlyContain(c => c > 0 && c <= 100);
     }
 
+    [Fact]
+    public async Task RunAsync_Should_ChunkWritesAtHundred_When_OrgMembershipExceedsLimit()
+    {
+        // 5 organisations × 21 org-members = 105 membership tuples.
+        // Each org also contributes 1 team#parent_org tuple for the single
+        // team beneath it, plus 1 project#parent_team for that team's sole
+        // project. With no tickets the only source of tuples is memberships
+        // (105) + team parent links (5) + project parent links (5) = 115 total
+        // — comfortably above the 100-per-call limit and forcing ≥ 2 flushes.
+        var harness = new Harness();
+
+        var orgIds = new Guid[5];
+        var teamIds = new Guid[5];
+        var projectIds = new Guid[5];
+        var orgs = new Organization[5];
+        var teams = new Team[5];
+
+        for (int i = 0; i < 5; i++)
+        {
+            orgIds[i] = Guid.NewGuid();
+            teamIds[i] = Guid.NewGuid();
+            projectIds[i] = Guid.NewGuid();
+            orgs[i] = new Organization { Id = orgIds[i] };
+            teams[i] = new Team { Id = teamIds[i], OrganizationId = orgIds[i] };
+        }
+
+        harness.Organizations
+            .Setup(r => r.GetAllAsync(It.IsAny<CancellationToken>()))
+            .ReturnsAsync(orgs);
+        harness.Teams
+            .Setup(r => r.GetAllAsync(It.IsAny<CancellationToken>()))
+            .ReturnsAsync(teams);
+
+        for (int i = 0; i < 5; i++)
+        {
+            var projectArr = new[] { new Project { Id = projectIds[i], TeamId = teamIds[i] } };
+            harness.Projects
+                .Setup(r => r.GetByTeamAsync(teamIds[i], It.IsAny<CancellationToken>()))
+                .ReturnsAsync(projectArr);
+
+            // 21 members per org.
+            var members = new OrganizationMember[21];
+            for (int j = 0; j < 21; j++)
+            {
+                members[j] = new OrganizationMember
+                {
+                    UserId = Guid.NewGuid(),
+                    OrganizationId = orgIds[i],
+                    Role = "member",
+                };
+            }
+
+            harness.OrgMembers
+                .Setup(r => r.GetByParentAsync(orgIds[i], It.IsAny<CancellationToken>()))
+                .ReturnsAsync(members);
+        }
+
+        var job = harness.BuildJob();
+
+        await job.RunAsync(CancellationToken.None);
+
+        // 5 orgs × 21 members = 105 membership tuples
+        // + 5 team#parent_org + 5 project#parent_team = 115 total.
+        harness.AllWrittenTuples.Should().HaveCount(115);
+
+        // Must have been split into ≥ 2 batches, none exceeding 100 tuples.
+        harness.WriteBatchSizes.Should().HaveCountGreaterThanOrEqualTo(2);
+        harness.WriteBatchSizes.Should().OnlyContain(c => c > 0 && c <= 100);
+    }
+
     // ─── Re-run idempotency ───────────────────────────────────────────────
 
     [Fact]
