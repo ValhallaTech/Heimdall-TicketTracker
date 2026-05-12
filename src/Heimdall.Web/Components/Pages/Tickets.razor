@@ -275,7 +275,11 @@ else
 
     protected override async Task OnInitializedAsync()
     {
-        _useOpenFga = !string.IsNullOrEmpty(FgaOptions.Value.ApiUrl);
+        // Match the predicate AddHeimdallOpenFga uses to register the real vs
+        // no-op OpenFGA services. If only ApiUrl is set (partial misconfig), the
+        // BLL registers the NoOp service which returns an empty ListObjects
+        // result — gating on ApiUrl alone would silently render zero tickets.
+        _useOpenFga = FgaOptions.Value.IsSidecarConfigured;
         await LoadPageAsync();
     }
 

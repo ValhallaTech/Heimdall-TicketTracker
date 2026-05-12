@@ -6,6 +6,7 @@ using Dapper;
 using Heimdall.BLL.Authorization.OpenFga;
 using Heimdall.Core.Interfaces;
 using Npgsql;
+
 namespace Heimdall.Tests.Shared.OpenFga;
 
 /// <summary>

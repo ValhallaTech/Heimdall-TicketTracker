@@ -55,6 +55,34 @@ public class DecommissionVerificationTests
     }
 
     /// <summary>
+    /// Every routed Blazor page (any type with <see cref="RouteAttribute"/>) must
+    /// declare its access policy explicitly — either <see cref="AllowAnonymousAttribute"/>
+    /// for public pages or <see cref="AuthorizeAttribute"/> with a named policy for
+    /// gated pages. With the global fallback policy removed (Phase 3.7 step 14),
+    /// a routed page that declares neither has no enforcement at all and is a
+    /// configuration gap.
+    /// </summary>
+    [Fact]
+    public void Should_DeclareAccessPolicy_On_AllRoutedBlazorPages()
+    {
+        var assembly = typeof(Program).Assembly;
+
+        var undeclaredPages = assembly
+            .GetTypes()
+            .Where(t => t.IsDefined(typeof(RouteAttribute), inherit: false))
+            .Where(t =>
+                !t.IsDefined(typeof(AuthorizeAttribute), inherit: true)
+                && !t.IsDefined(typeof(AllowAnonymousAttribute), inherit: true))
+            .Select(t => t.FullName ?? t.Name)
+            .ToList();
+
+        undeclaredPages.Should().BeEmpty(
+            because: "every routed Blazor page must declare its access policy explicitly via "
+                + "[Authorize(Policy = ...)] or [AllowAnonymous]; the global fallback policy "
+                + "was removed in Phase 3.7 step 14 so undeclared pages have no enforcement");
+    }
+
+    /// <summary>
     /// Every Blazor page that carries an <c>[AuthorizeAttribute]</c> must
     /// specify a non-empty <c>Policy</c> name. A bare <c>[Authorize]</c> without
     /// a policy falls back to nothing (the fallback was removed) and would admit
