@@ -30,7 +30,7 @@ public class HeimdallUserStoreTests : IAsyncLifetime
     {
         _fx = fx;
         var options = Options.Create(new DataOptions { PostgresConnectionString = fx.ConnectionString });
-        _store = new HeimdallUserStore(options);
+        _store = new HeimdallUserStore(options, new PasswordHasher<HeimdallUser>());
     }
 
     /// <inheritdoc />
@@ -68,7 +68,7 @@ public class HeimdallUserStoreTests : IAsyncLifetime
     [Fact]
     public void Should_Throw_When_OptionsIsNull()
     {
-        Action act = () => new HeimdallUserStore(null!);
+        Action act = () => new HeimdallUserStore(null!, new PasswordHasher<HeimdallUser>());
         act.Should().Throw<ArgumentNullException>();
     }
 
@@ -461,6 +461,7 @@ public class HeimdallUserStoreTests : IAsyncLifetime
     {
         var services = new ServiceCollection();
         services.Configure<DataOptions>(o => o.PostgresConnectionString = _fx.ConnectionString);
+        services.AddSingleton<IPasswordHasher<HeimdallUser>, PasswordHasher<HeimdallUser>>();
         services.AddHeimdallIdentityStores();
 
         using var sp = services.BuildServiceProvider();
