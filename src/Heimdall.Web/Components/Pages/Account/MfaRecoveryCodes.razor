@@ -1,0 +1,134 @@
+@page "/account/mfa/recovery-codes"
+@attribute [Authorize(Policy = AuthorizationPolicies.IsAuthenticated)]
+@using System
+@using System.Collections.Generic
+@using System.Security.Claims
+@using System.Text
+@using Heimdall.Web.Authorization.Policies
+@using Heimdall.Web.Identity
+@using Microsoft.AspNetCore.Authorization
+@using Microsoft.AspNetCore.Components.Authorization
+@inject IRecoveryCodeDisplayCache RecoveryCodeCache
+@inject AuthenticationStateProvider AuthenticationStateProvider
+@inject NavigationManager Navigation
+
+@*
+    Server-rendered recovery-codes display (Phase 4.3 step 10 of
+    docs/implementation/phase-4-checklist.md). Renders the one-shot codes
+    handed over from /account/mfa/setup/verify via IRecoveryCodeDisplayCache.
+
+    Intentionally NOT @rendermode InteractiveServer — the codes are consumed
+    server-side on render so refreshing the page after the first view shows
+    nothing. No JS interop; the "Download .txt" button is a plain data-URL
+    anchor.
+*@
+
+<PageTitle>Save your recovery codes &middot; Heimdall TicketTracker</PageTitle>
+
+<div class="container py-5">
+    <div class="row justify-content-center">
+        <div class="col-md-8 col-lg-6">
+            <div class="card shadow-sm">
+                <div class="card-body p-4 p-md-5">
+
+                    <div class="text-center mb-4">
+                        <div class="splash-icon mb-3" aria-hidden="true">
+                            <i class="fa-solid fa-key"></i>
+                        </div>
+                        <h1 class="h3 fw-bold mb-0">Save your recovery codes</h1>
+                    </div>
+
+                    <div class="alert alert-warning" role="alert">
+                        <i class="fa-solid fa-triangle-exclamation me-2" aria-hidden="true"></i>
+                        These codes are shown only once. Save them now — somewhere safe and
+                        offline (a password manager works). Each code can be used in place of
+                        your authenticator app exactly once.
+                    </div>
+
+                    @* OnInitializedAsync redirects to "/" when the cache miss
+                       leaves Codes null/empty, so by the time we render here
+                       Codes is guaranteed non-empty. *@
+                    @if (Codes is not null && Codes.Count > 0)
+                    {
+                        <ul class="list-group list-group-flush font-monospace mb-3">
+                            @foreach (string recoveryCode in Codes)
+                            {
+                                <li class="list-group-item"><code>@recoveryCode</code></li>
+                            }
+                        </ul>
+
+                        <div class="d-grid gap-2">
+                            <a class="btn btn-outline-secondary"
+                               download="heimdall-recovery-codes.txt"
+                               href="@DownloadDataUri">
+                                <i class="fa-solid fa-download me-2" aria-hidden="true"></i>
+                                Download as .txt
+                            </a>
+                            <a class="btn btn-primary" href="/">
+                                <i class="fa-solid fa-check me-2" aria-hidden="true"></i>
+                                I've saved my codes
+                            </a>
+                        </div>
+                    }
+
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+@code {
+    /// <summary>One-shot token issued by <c>POST /account/mfa/setup/verify</c>.</summary>
+    [SupplyParameterFromQuery] public Guid? Token { get; set; }
+
+    /// <summary>Decoded recovery codes, consumed exactly once.</summary>
+    private IReadOnlyList<string>? Codes { get; set; }
+
+    /// <summary>Data-URL backing the "Download .txt" anchor — populated when codes are present.</summary>
+    private string? DownloadDataUri { get; set; }
+
+    /// <inheritdoc />
+    protected override async Task OnInitializedAsync()
+    {
+        if (Token is null || Token.Value == Guid.Empty)
+        {
+            Navigation.NavigateTo("/", forceLoad: false);
+            return;
+        }
+
+        AuthenticationState authState =
+            await AuthenticationStateProvider.GetAuthenticationStateAsync().ConfigureAwait(false);
+
+        string? nameId = authState.User.FindFirstValue(ClaimTypes.NameIdentifier);
+        if (!Guid.TryParse(nameId, out Guid userId))
+        {
+            Navigation.NavigateTo("/", forceLoad: false);
+            return;
+        }
+
+        IReadOnlyList<string>? codes = RecoveryCodeCache.Consume(userId, Token.Value);
+        if (codes is null || codes.Count == 0)
+        {
+            Navigation.NavigateTo("/", forceLoad: false);
+            return;
+        }
+
+        Codes = codes;
+        DownloadDataUri = BuildDownloadDataUri(codes);
+    }
+
+    private static string BuildDownloadDataUri(IReadOnlyList<string> codes)
+    {
+        StringBuilder builder = new StringBuilder();
+        builder.AppendLine("Heimdall TicketTracker — recovery codes");
+        builder.AppendLine("Each code may be used once. Keep them somewhere safe.");
+        builder.AppendLine();
+        foreach (string code in codes)
+        {
+            builder.AppendLine(code);
+        }
+
+        string base64 = Convert.ToBase64String(Encoding.UTF8.GetBytes(builder.ToString()));
+        return $"data:text/plain;charset=utf-8;base64,{base64}";
+    }
+}

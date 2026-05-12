@@ -72,6 +72,31 @@ public class AuthorizationConfigurationTests
     }
 
     [Fact]
+    public void RequireMfa_Policy_Should_BindRequireMfaRequirement_AndRequireAuthenticatedUser()
+    {
+        // Phase 4.3 step 8 — the policy must demand authentication AND carry
+        // exactly one RequireMfaRequirement so the (currently fail-closed)
+        // handler is the deciding voice on every protected request.
+        var options = BuildOptions();
+
+        var policy = options.GetPolicy(AuthorizationPolicies.RequireMfa);
+
+        policy.Should().NotBeNull();
+        policy!.Requirements
+            .Should().ContainSingle(r => r is DenyAnonymousAuthorizationRequirement,
+                "the MFA policy must reject anonymous principals before the placeholder handler ever runs");
+        policy.Requirements
+            .OfType<RequireMfaRequirement>()
+            .Should().HaveCount(1, "the policy is what binds the placeholder to the request");
+        policy.Requirements
+            .OfType<OpenFgaRequirement>()
+            .Should().BeEmpty("the MFA gate is not an OpenFGA relation check");
+        policy.Requirements
+            .OfType<SystemAdminRequirement>()
+            .Should().BeEmpty("system-admin must not bypass the MFA gate");
+    }
+
+    [Fact]
     public void SystemAdmin_Policy_Should_BindSystemAdminRequirement_AndNotOpenFga()
     {
         var options = BuildOptions();

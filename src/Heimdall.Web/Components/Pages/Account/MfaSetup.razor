@@ -1,0 +1,186 @@
+@page "/account/mfa/setup"
+@attribute [Authorize(Policy = AuthorizationPolicies.IsAuthenticated)]
+@using System
+@using System.Linq
+@using System.Text
+@using Heimdall.Core.Models
+@using Heimdall.Web.Authorization.Policies
+@using Heimdall.Web.Identity
+@using Microsoft.AspNetCore.Authorization
+@using Microsoft.AspNetCore.Components.Authorization
+@using Microsoft.AspNetCore.Identity
+@inject UserManager<HeimdallUser> UserManager
+@inject AuthenticationStateProvider AuthenticationStateProvider
+@inject IAuthenticatorQrCodeRenderer QrCodeRenderer
+@inject NavigationManager Navigation
+
+@*
+    Server-rendered MFA enrolment page (Phase 4.3 step 9 of
+    docs/implementation/phase-4-checklist.md). Intentionally NOT
+    @rendermode InteractiveServer — the verify POST must happen on a fresh
+    HTTP request so the "mfa-setup" rate-limiter, the antiforgery validation,
+    and the cookie-bound principal all observe the same pipeline as login.
+
+    Cookie-gated via the IsAuthenticated policy rather than RequireMfa. The
+    RequireMfa policy is a Phase 4.3 step-8 fail-closed placeholder — applying
+    it here would lock the user out of the very page they need to enrol on.
+*@
+
+<PageTitle>Set up two-factor authentication &middot; Heimdall TicketTracker</PageTitle>
+
+<div class="container py-5">
+    <div class="row justify-content-center">
+        <div class="col-md-8 col-lg-6">
+            <div class="card shadow-sm">
+                <div class="card-body p-4 p-md-5">
+
+                    <div class="text-center mb-4">
+                        <div class="splash-icon mb-3" aria-hidden="true">
+                            <i class="fa-solid fa-shield-halved"></i>
+                        </div>
+                        <h1 class="h3 fw-bold mb-0">Set up two-factor authentication</h1>
+                    </div>
+
+                    @if (HasError)
+                    {
+                        <div class="alert alert-danger" role="alert">
+                            <i class="fa-solid fa-triangle-exclamation me-2" aria-hidden="true"></i>
+                            That code didn't match. Double-check the time on your authenticator
+                            app and try again.
+                        </div>
+                    }
+
+                    @if (!string.IsNullOrEmpty(QrCodeBase64))
+                    {
+                        <p class="text-body-secondary small mb-3">
+                            Scan this QR code with your authenticator app (1Password, Authy,
+                            Google Authenticator, Microsoft Authenticator, etc.). If you can't
+                            scan it, enter the secret below manually.
+                        </p>
+
+                        <div class="text-center mb-3">
+                            <img alt="Authenticator QR code"
+                                 src="data:image/png;base64,@QrCodeBase64"
+                                 class="img-fluid border rounded p-2 bg-white"
+                                 style="max-width: 240px;" />
+                        </div>
+
+                        <div class="mb-4">
+                            <label class="form-label small text-body-secondary">Manual entry secret</label>
+                            <div class="font-monospace small text-break">
+                                <code>@FormattedSecret</code>
+                            </div>
+                        </div>
+
+                        <form method="post" action="/account/mfa/setup/verify">
+                            <AntiforgeryToken />
+
+                            <div class="mb-3">
+                                <label for="mfa-code" class="form-label">Verification code</label>
+                                <input id="mfa-code"
+                                       name="code"
+                                       type="text"
+                                       inputmode="numeric"
+                                       autocomplete="one-time-code"
+                                       pattern="[0-9]*"
+                                       maxlength="8"
+                                       class="form-control"
+                                       required
+                                       aria-invalid="@AriaInvalid" />
+                                <div class="form-text">
+                                    Enter the 6-digit code your authenticator app shows right now.
+                                </div>
+                            </div>
+
+                            <button type="submit" class="btn btn-primary w-100 py-2">
+                                <i class="fa-solid fa-check me-2" aria-hidden="true"></i>
+                                Enable two-factor
+                            </button>
+                        </form>
+                    }
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+@code {
+    /// <summary>Optional <c>?error=</c> query param. <c>"invalid-code"</c> renders the error banner.</summary>
+    [SupplyParameterFromQuery] public string? Error { get; set; }
+
+    private bool HasError => string.Equals(Error, "invalid-code", StringComparison.Ordinal);
+
+    private string? AriaInvalid => HasError ? "true" : null;
+
+    /// <summary>Base64-encoded PNG payload rendered into a data-URL <c>&lt;img&gt;</c>.</summary>
+    private string? QrCodeBase64 { get; set; }
+
+    /// <summary>Manual-entry secret, grouped four characters at a time for legibility.</summary>
+    private string? FormattedSecret { get; set; }
+
+    /// <inheritdoc />
+    protected override async Task OnInitializedAsync()
+    {
+        AuthenticationState authState =
+            await AuthenticationStateProvider.GetAuthenticationStateAsync().ConfigureAwait(false);
+
+        HeimdallUser? user = await UserManager.GetUserAsync(authState.User).ConfigureAwait(false);
+        if (user is null)
+        {
+            Navigation.NavigateTo("/login", forceLoad: false);
+            return;
+        }
+
+        // If MFA is already enabled, the user belongs on the disable page —
+        // re-resetting the authenticator key here would silently break their
+        // existing enrolment.
+        if (user.TwoFactorEnabled)
+        {
+            Navigation.NavigateTo("/account/mfa/disable", forceLoad: false);
+            return;
+        }
+
+        // ResetAuthenticatorKeyAsync rotates the secret AND the security stamp.
+        // Done unconditionally on every visit so a half-completed enrolment is
+        // never resumed against a stale key.
+        await UserManager.ResetAuthenticatorKeyAsync(user).ConfigureAwait(false);
+        string? key = await UserManager.GetAuthenticatorKeyAsync(user).ConfigureAwait(false);
+
+        if (string.IsNullOrEmpty(key))
+        {
+            // Defence in depth: GetAuthenticatorKeyAsync immediately after a
+            // successful reset must return a value. If it does not, something
+            // is badly wrong with the store wiring — punt the user back home
+            // rather than rendering an empty QR.
+            Navigation.NavigateTo("/", forceLoad: false);
+            return;
+        }
+
+        string otpauthUri = BuildOtpauthUri(user.Email, key);
+        QrCodeBase64 = QrCodeRenderer.Render(otpauthUri);
+        FormattedSecret = FormatSecretForDisplay(key);
+    }
+
+    private static string BuildOtpauthUri(string email, string secret)
+    {
+        // otpauth://totp/Heimdall:{email}?secret=…&issuer=Heimdall&algorithm=SHA1&digits=6&period=30
+        StringBuilder builder = new StringBuilder("otpauth://totp/Heimdall:");
+        builder.Append(Uri.EscapeDataString(email));
+        builder.Append("?secret=").Append(Uri.EscapeDataString(secret));
+        builder.Append("&issuer=Heimdall");
+        builder.Append("&algorithm=SHA1");
+        builder.Append("&digits=6");
+        builder.Append("&period=30");
+        return builder.ToString();
+    }
+
+    private static string FormatSecretForDisplay(string secret)
+    {
+        // Group every 4 chars with a space so users typing it manually can
+        // track their position. Pure presentation — never logged anywhere.
+        return string.Join(
+            ' ',
+            Enumerable.Range(0, (secret.Length + 3) / 4)
+                .Select(i => secret.Substring(i * 4, Math.Min(4, secret.Length - i * 4))));
+    }
+}

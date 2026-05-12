@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Linq;
 using System.Security.Claims;
 using System.Text.Json;
@@ -7,6 +8,7 @@ using System.Threading.Tasks;
 using Heimdall.Core.Auditing;
 using Heimdall.Core.Email;
 using Heimdall.Core.Models;
+using Heimdall.Web.Authorization.Policies;
 using Heimdall.Web.Email;
 using Heimdall.Web.Identity;
 using Microsoft.AspNetCore.Builder;
@@ -74,6 +76,21 @@ public static class AccountEndpoints
         endpoints.MapGet("/account/confirm-email", HandleConfirmEmailAsync)
             .AllowAnonymous()
             .WithName("Account_ConfirmEmail");
+
+        // --- Phase 4.3 steps 10–11: MFA enrolment + disable -------------------
+        // Both endpoints are cookie-gated on the IsAuthenticated policy (NOT on
+        // the RequireMfa placeholder — that would lock the user out of the very
+        // pages they need to enrol on). Both bind to the "mfa-setup" rate limit
+        // policy keyed on (ip, user_id) — see Program.cs.
+        endpoints.MapPost("/account/mfa/setup/verify", HandleMfaSetupVerifyAsync)
+            .RequireAuthorization(AuthorizationPolicies.IsAuthenticated)
+            .WithName("Account_MfaSetupVerify")
+            .RequireRateLimiting("mfa-setup");
+
+        endpoints.MapPost("/account/mfa/disable", HandleMfaDisableAsync)
+            .RequireAuthorization(AuthorizationPolicies.IsAuthenticated)
+            .WithName("Account_MfaDisable")
+            .RequireRateLimiting("mfa-setup");
 
         return endpoints;
     }
@@ -697,8 +714,301 @@ public static class AccountEndpoints
     }
 
     // -----------------------------------------------------------------------------
+    // MFA enrolment / disable (Phase 4.3 steps 10–11)
+    // -----------------------------------------------------------------------------
+
+    /// <summary>
+    /// Handles the MFA enrolment verify POST. On a valid TOTP code, flips
+    /// <c>users.two_factor_enabled</c> (Identity rotates the security stamp),
+    /// generates ten one-time recovery codes, stashes them in the short-lived
+    /// <see cref="IRecoveryCodeDisplayCache"/>, and redirects to the display
+    /// page. On an invalid code, writes an audit event and redirects back to
+    /// the setup page with <c>?error=invalid-code</c>.
+    /// </summary>
+    /// <remarks>
+    /// The authenticator key, the submitted code, and the generated recovery
+    /// codes are never logged and never included in audit-event payloads —
+    /// only counts and identifiers.
+    /// </remarks>
+    internal static async Task<IResult> HandleMfaSetupVerifyAsync(
+        HttpContext httpContext,
+        [FromForm] string code,
+        [FromServices] UserManager<HeimdallUser> userManager,
+        [FromServices] IRecoveryCodeDisplayCache recoveryCodeCache,
+        [FromServices] IAuditEventWriter auditWriter,
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(httpContext);
+        ArgumentNullException.ThrowIfNull(userManager);
+        ArgumentNullException.ThrowIfNull(recoveryCodeCache);
+        ArgumentNullException.ThrowIfNull(auditWriter);
+
+        code ??= string.Empty;
+
+        string? ip = httpContext.Connection.RemoteIpAddress?.ToString();
+        string? userAgent = TruncateUserAgent(httpContext.Request.Headers.UserAgent.ToString());
+
+        HeimdallUser? user = await userManager.GetUserAsync(httpContext.User).ConfigureAwait(false);
+        if (user is null)
+        {
+            return Results.Redirect("/login", permanent: false);
+        }
+
+        bool verified = await userManager
+            .VerifyTwoFactorTokenAsync(user, TokenOptions.DefaultAuthenticatorProvider, code)
+            .ConfigureAwait(false);
+
+        if (!verified)
+        {
+            // Audit payload deliberately excludes the submitted code and the
+            // authenticator key — both are secrets and neither belongs in
+            // a queryable audit log.
+            string failurePayload = JsonSerializer.Serialize(new { user_id = user.Id });
+            await TryWriteAuditAsync(httpContext, auditWriter, new AuditEvent
+            {
+                ActorUserId = user.Id,
+                EventType = "mfa.enrolment.verify_failed",
+                Target = user.Id.ToString(),
+                Ip = ip,
+                UserAgent = userAgent,
+                PayloadJson = failurePayload,
+            }, cancellationToken).ConfigureAwait(false);
+
+            return Results.Redirect("/account/mfa/setup?error=invalid-code", permanent: false);
+        }
+
+        // SetTwoFactorEnabledAsync rotates the security stamp, which the
+        // Phase 1 RevalidatingServerAuthenticationStateProvider observes and
+        // tears down stale circuits on. Failure here means the persistence
+        // layer rejected the flip (concurrency token mismatch, etc.) — do
+        // NOT proceed to generate recovery codes or emit a success audit
+        // event because the user is not actually enrolled.
+        IdentityResult enableResult = await userManager
+            .SetTwoFactorEnabledAsync(user, true)
+            .ConfigureAwait(false);
+
+        if (!enableResult.Succeeded)
+        {
+            string enableFailurePayload = JsonSerializer.Serialize(new { user_id = user.Id });
+            await TryWriteAuditAsync(httpContext, auditWriter, new AuditEvent
+            {
+                ActorUserId = user.Id,
+                EventType = "mfa.enrolment.enable_failed",
+                Target = user.Id.ToString(),
+                Ip = ip,
+                UserAgent = userAgent,
+                PayloadJson = enableFailurePayload,
+            }, cancellationToken).ConfigureAwait(false);
+
+            return Results.Redirect("/account/mfa/setup?error=enable-failed", permanent: false);
+        }
+
+        IEnumerable<string>? generated = await userManager
+            .GenerateNewTwoFactorRecoveryCodesAsync(user, 10)
+            .ConfigureAwait(false);
+
+        // GenerateNewTwoFactorRecoveryCodesAsync returns null when there is no
+        // recovery-code store wired — defence in depth; this should not happen
+        // in production, but if it does the user is still enrolled, just
+        // without recovery codes.
+        IReadOnlyList<string> codes = generated is null
+            ? Array.Empty<string>()
+            : new List<string>(generated);
+
+        Guid displayToken = recoveryCodeCache.Stash(user.Id, codes);
+
+        string successPayload = JsonSerializer.Serialize(new
+        {
+            user_id = user.Id,
+            recovery_code_count = codes.Count,
+        });
+        await TryWriteAuditAsync(httpContext, auditWriter, new AuditEvent
+        {
+            ActorUserId = user.Id,
+            EventType = "mfa_enrolled",
+            Target = user.Id.ToString(),
+            Ip = ip,
+            UserAgent = userAgent,
+            PayloadJson = successPayload,
+        }, cancellationToken).ConfigureAwait(false);
+
+        string redirect =
+            $"/account/mfa/recovery-codes?token={Uri.EscapeDataString(displayToken.ToString())}";
+        return Results.Redirect(redirect, permanent: false);
+    }
+
+    /// <summary>
+    /// Handles the MFA disable POST. Re-prompts for the current password as a
+    /// stolen-cookie defence; on success, tears down the authenticator key,
+    /// flips <c>users.two_factor_enabled</c> back to <c>false</c>, wipes any
+    /// recovery codes, re-rotates the security stamp, signs the user out, and
+    /// redirects to the login page with <c>?info=mfa-disabled</c>.
+    /// </summary>
+    /// <remarks>
+    /// The submitted password is never logged and never included in audit
+    /// payloads.
+    /// </remarks>
+    internal static async Task<IResult> HandleMfaDisableAsync(
+        HttpContext httpContext,
+        [FromForm] string password,
+        [FromServices] UserManager<HeimdallUser> userManager,
+        [FromServices] SignInManager<HeimdallUser> signInManager,
+        [FromServices] IUserStore<HeimdallUser> userStore,
+        [FromServices] IAuditEventWriter auditWriter,
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(httpContext);
+        ArgumentNullException.ThrowIfNull(userManager);
+        ArgumentNullException.ThrowIfNull(signInManager);
+        ArgumentNullException.ThrowIfNull(userStore);
+        ArgumentNullException.ThrowIfNull(auditWriter);
+
+        password ??= string.Empty;
+
+        string? ip = httpContext.Connection.RemoteIpAddress?.ToString();
+        string? userAgent = TruncateUserAgent(httpContext.Request.Headers.UserAgent.ToString());
+
+        HeimdallUser? user = await userManager.GetUserAsync(httpContext.User).ConfigureAwait(false);
+        if (user is null)
+        {
+            return Results.Redirect("/login", permanent: false);
+        }
+
+        // CheckPasswordSignInAsync without lockout — the user is already signed
+        // in, so feeding into the login-attempt counter on a wrong re-entry
+        // would conflate two distinct threat models.
+        Microsoft.AspNetCore.Identity.SignInResult passwordResult = await signInManager
+            .CheckPasswordSignInAsync(user, password, lockoutOnFailure: false)
+            .ConfigureAwait(false);
+
+        if (!passwordResult.Succeeded)
+        {
+            string badPayload = JsonSerializer.Serialize(new { user_id = user.Id });
+            await TryWriteAuditAsync(httpContext, auditWriter, new AuditEvent
+            {
+                ActorUserId = user.Id,
+                EventType = "mfa.disable.bad_password",
+                Target = user.Id.ToString(),
+                Ip = ip,
+                UserAgent = userAgent,
+                PayloadJson = badPayload,
+            }, cancellationToken).ConfigureAwait(false);
+
+            return Results.Redirect("/account/mfa/disable?error=invalid-password", permanent: false);
+        }
+
+        // Defence in depth: validate the recovery-code store wiring BEFORE
+        // mutating any user state. AddHeimdallIdentityStores registers the
+        // same HeimdallUserStore against IUserStore and the recovery-code
+        // store interface, so this cast must succeed in production. Throwing
+        // up-front on a mis-wired host is preferable to partially disabling
+        // MFA (key rotated, two_factor_enabled flipped) and then aborting
+        // before recovery codes are wiped.
+        if (userStore is not IUserTwoFactorRecoveryCodeStore<HeimdallUser> recoveryCodeStore)
+        {
+            throw new InvalidOperationException(
+                "Registered IUserStore<HeimdallUser> does not implement "
+                + "IUserTwoFactorRecoveryCodeStore<HeimdallUser>. Check "
+                + "AddHeimdallIdentityStores wiring.");
+        }
+
+        // Tear-down sequence — order matters:
+        //   1. Rotate the authenticator key to a fresh random value via
+        //      ResetAuthenticatorKeyAsync, then flip TwoFactorEnabled=false.
+        //      Even though the (now orphaned) row stays in user_authenticator_keys,
+        //      Identity's two-factor sign-in is gated on TwoFactorEnabled and the
+        //      secret has been rotated, so the previous QR/secret is meaningless.
+        //      A subsequent re-enrolment via ResetAuthenticatorKeyAsync rotates
+        //      again. The HeimdallUserStore.SetAuthenticatorKeyAsync contract
+        //      (Phase 4.2) currently forbids null, so explicit row-deletion is
+        //      out of scope for this phase.
+        //   2. Wipe recovery codes via the raw store (ReplaceCodesAsync with an
+        //      empty enumerable deletes all rows).
+        //   3. Re-rotate the security stamp; the
+        //      RevalidatingServerAuthenticationStateProvider (Phase 1 step 5)
+        //      tears down any other live circuit on the next revalidation tick.
+        //
+        // Each IdentityResult is checked individually. A failure on any step
+        // aborts the tear-down: do NOT proceed to wipe recovery codes or
+        // emit a success audit event when the user's MFA state did not
+        // transition cleanly.
+        IdentityResult resetResult = await userManager
+            .ResetAuthenticatorKeyAsync(user)
+            .ConfigureAwait(false);
+        if (!resetResult.Succeeded)
+        {
+            await WriteMfaDisableFailureAuditAsync(
+                httpContext, auditWriter, user, ip, userAgent, "reset_key_failed", cancellationToken)
+                .ConfigureAwait(false);
+            return Results.Redirect("/account/mfa/disable?error=disable-failed", permanent: false);
+        }
+
+        IdentityResult disableResult = await userManager
+            .SetTwoFactorEnabledAsync(user, false)
+            .ConfigureAwait(false);
+        if (!disableResult.Succeeded)
+        {
+            await WriteMfaDisableFailureAuditAsync(
+                httpContext, auditWriter, user, ip, userAgent, "disable_flag_failed", cancellationToken)
+                .ConfigureAwait(false);
+            return Results.Redirect("/account/mfa/disable?error=disable-failed", permanent: false);
+        }
+
+        await recoveryCodeStore
+            .ReplaceCodesAsync(user, Array.Empty<string>(), cancellationToken)
+            .ConfigureAwait(false);
+
+        await userManager.UpdateSecurityStampAsync(user).ConfigureAwait(false);
+
+        string disabledPayload = JsonSerializer.Serialize(new { user_id = user.Id });
+        await TryWriteAuditAsync(httpContext, auditWriter, new AuditEvent
+        {
+            ActorUserId = user.Id,
+            EventType = "mfa_disabled",
+            Target = user.Id.ToString(),
+            Ip = ip,
+            UserAgent = userAgent,
+            PayloadJson = disabledPayload,
+        }, cancellationToken).ConfigureAwait(false);
+
+        // Sign the cookie out so the user re-authenticates with the new
+        // post-MFA security posture. The security-stamp revalidator would also
+        // catch this eventually, but an explicit SignOutAsync makes the UX
+        // deterministic across replicas.
+        await signInManager.SignOutAsync().ConfigureAwait(false);
+
+        return Results.Redirect("/login?info=mfa-disabled", permanent: false);
+    }
+
+    // -----------------------------------------------------------------------------
     // Helpers
     // -----------------------------------------------------------------------------
+
+    /// <summary>
+    /// Writes a single-line MFA-disable failure audit event with a uniform
+    /// payload shape (<c>{ user_id, reason }</c>). Keeps the per-step failure
+    /// branches in <see cref="HandleMfaDisableAsync"/> short.
+    /// </summary>
+    private static Task WriteMfaDisableFailureAuditAsync(
+        HttpContext httpContext,
+        IAuditEventWriter auditWriter,
+        HeimdallUser user,
+        string? ip,
+        string? userAgent,
+        string reason,
+        CancellationToken cancellationToken)
+    {
+        string payload = JsonSerializer.Serialize(new { user_id = user.Id, reason });
+        return TryWriteAuditAsync(httpContext, auditWriter, new AuditEvent
+        {
+            ActorUserId = user.Id,
+            EventType = "mfa.disable.failed",
+            Target = user.Id.ToString(),
+            Ip = ip,
+            UserAgent = userAgent,
+            PayloadJson = payload,
+        }, cancellationToken);
+    }
 
     private static string ExtractEmailDomain(string email)
     {
