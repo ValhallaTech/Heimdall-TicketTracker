@@ -47,12 +47,12 @@
 
 ## Phase 3 sign-off
 
-- [ ] All 14 steps merged on `main`.
-- [ ] `Authorization:Provider` flips from `"TeamRole"` to `"OpenFga"` in production configuration.
+- [x] All 14 steps merged on `main`.
+- [x] `Authorization:Provider` flips from `"TeamRole"` to `"OpenFga"` in production configuration.
 - [x] Phase 1 "authenticated-only" fallback in `Heimdall.Web/Program.cs` is fully removed (proposal step 14).
 - [x] No `RequireAuthorization()`-only endpoints remain (proposal step 14 — every routed page carries explicit `[Authorize(Policy = …)]` or `[AllowAnonymous]`).
-- [ ] Phase 1 + Phase 2 acceptance suites still green; new OpenFGA acceptance test added.
-- [ ] Coverage targets met across every new file.
+- [x] Phase 1 + Phase 2 acceptance suites still green; new OpenFGA acceptance test added.
+- [x] Coverage targets met across every new file.
 
 ## References
 
