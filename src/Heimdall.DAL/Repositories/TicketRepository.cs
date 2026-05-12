@@ -283,7 +283,7 @@ WHERE id = @Id;";
         string sortDirection = query.SortDirection == SortDirection.Descending ? "DESC" : "ASC";
 
         var parameters = new DynamicParameters();
-        parameters.Add("Ids", allowedTicketIds.ToArray());
+        parameters.Add("Ids", allowedTicketIds as int[] ?? allowedTicketIds.ToArray());
 
         string whereClause = "WHERE id = ANY(@Ids)";
         if (!string.IsNullOrEmpty(query.SearchText))

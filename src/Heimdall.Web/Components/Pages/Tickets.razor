@@ -362,7 +362,7 @@ else
         foreach (string r in objectRefs)
         {
             ReadOnlySpan<char> span = r.AsSpan();
-            if (span.StartsWith(prefix, StringComparison.OrdinalIgnoreCase)
+            if (span.StartsWith(prefix, StringComparison.Ordinal)
                 && int.TryParse(span[prefix.Length..], out int id))
             {
                 allowedIds.Add(id);
