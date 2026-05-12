@@ -45,14 +45,10 @@
                         your authenticator app exactly once.
                     </div>
 
-                    @if (Codes is null || Codes.Count == 0)
-                    {
-                        <p class="text-body-secondary">
-                            No recovery codes are available to display. Return to the
-                            <a href="/">home page</a>.
-                        </p>
-                    }
-                    else
+                    @* OnInitializedAsync redirects to "/" when the cache miss
+                       leaves Codes null/empty, so by the time we render here
+                       Codes is guaranteed non-empty. *@
+                    @if (Codes is not null && Codes.Count > 0)
                     {
                         <ul class="list-group list-group-flush font-monospace mb-3">
                             @foreach (string recoveryCode in Codes)

@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using FluentAssertions;
 using Heimdall.Web.Identity;
 using Microsoft.Extensions.Caching.Memory;
@@ -158,6 +159,31 @@ public class RecoveryCodeDisplayCacheTests
 
         act.Should().Throw<ArgumentNullException>()
             .And.ParamName.Should().Be("cache");
+    }
+
+    [Fact]
+    public void Should_AllowExactlyOneCallerToObserveCodes_When_ConsumedConcurrently()
+    {
+        // Comment from PR review #45: the previous TryGetValue+Remove pair was
+        // not atomic — two parallel Consume calls could both observe the same
+        // codes before either Remove had taken effect. The current
+        // Interlocked-backed SingleShotCodes wrapper makes the call race-free.
+        const int parallelism = 32;
+        var cache = CreateCache();
+        var userId = Guid.NewGuid();
+        var token = cache.Stash(userId, new[] { "a", "b", "c" });
+
+        using var barrier = new System.Threading.Barrier(parallelism);
+        var results = new IReadOnlyList<string>?[parallelism];
+
+        System.Threading.Tasks.Parallel.For(0, parallelism, i =>
+        {
+            barrier.SignalAndWait();
+            results[i] = cache.Consume(userId, token);
+        });
+
+        results.Count(r => r is not null).Should().Be(1,
+            "Interlocked.Exchange must guarantee exactly one observer of the codes across concurrent racers");
     }
 
     // Expiry is enforced by IMemoryCache; covered by integration tests.

@@ -253,6 +253,37 @@ public class AccountEndpointsMfaTests
             .Should().Contain("\"recovery_code_count\":0");
     }
 
+    [Fact]
+    public async Task Should_AbortEnrolment_When_SetTwoFactorEnabledFails()
+    {
+        // Comment from PR review #45: if SetTwoFactorEnabledAsync fails, the
+        // handler must NOT generate recovery codes, stash, or emit mfa_enrolled.
+        var user = SampleUser();
+        var ctx = CreateHttpContext(AuthenticatedPrincipal(user));
+        var um = CreateUserManagerMock();
+        um.Setup(x => x.GetUserAsync(It.IsAny<ClaimsPrincipal>())).ReturnsAsync(user);
+        um.Setup(x => x.VerifyTwoFactorTokenAsync(user, TokenOptions.DefaultAuthenticatorProvider, "123456"))
+          .ReturnsAsync(true);
+        um.Setup(x => x.SetTwoFactorEnabledAsync(user, true))
+          .ReturnsAsync(IdentityResult.Failed(new IdentityError { Code = "X", Description = "boom" }));
+
+        var captured = new List<AuditEvent>();
+        _audit.Setup(x => x.WriteAsync(It.IsAny<AuditEvent>(), It.IsAny<CancellationToken>()))
+              .Callback<AuditEvent, CancellationToken>((e, _) => captured.Add(e))
+              .Returns(Task.CompletedTask);
+
+        var result = await AccountEndpoints.HandleMfaSetupVerifyAsync(
+            ctx, "123456", um.Object, _recoveryCache.Object, _audit.Object, default);
+
+        var redirect = result.Should().BeOfType<RedirectHttpResult>().Subject;
+        redirect.Url.Should().Be("/account/mfa/setup?error=enable-failed");
+
+        um.Verify(x => x.GenerateNewTwoFactorRecoveryCodesAsync(It.IsAny<HeimdallUser>(), It.IsAny<int>()), Times.Never);
+        _recoveryCache.Verify(x => x.Stash(It.IsAny<Guid>(), It.IsAny<IReadOnlyList<string>>()), Times.Never);
+        captured.Should().ContainSingle(e => e.EventType == "mfa.enrolment.enable_failed");
+        captured.Should().NotContain(e => e.EventType == "mfa_enrolled");
+    }
+
     // -----------------------------------------------------------------------------
     // HandleMfaDisableAsync
     // -----------------------------------------------------------------------------
@@ -434,5 +465,90 @@ public class AccountEndpointsMfaTests
             ctx, "pw", um.Object, sm.Object, brokenStore.Object, _audit.Object, default);
 
         await act.Should().ThrowAsync<InvalidOperationException>();
+
+        // Comment from PR review #45: the wiring check happens BEFORE any
+        // mutating call, so a mis-wired host cannot leave the user in a
+        // partially-disabled state.
+        um.Verify(x => x.ResetAuthenticatorKeyAsync(It.IsAny<HeimdallUser>()), Times.Never);
+        um.Verify(x => x.SetTwoFactorEnabledAsync(It.IsAny<HeimdallUser>(), It.IsAny<bool>()), Times.Never);
+        um.Verify(x => x.UpdateSecurityStampAsync(It.IsAny<HeimdallUser>()), Times.Never);
+    }
+
+    [Fact]
+    public async Task Should_AbortDisable_When_ResetAuthenticatorKeyFails()
+    {
+        // Comment from PR review #45: a ResetAuthenticatorKey failure must
+        // halt the tear-down before SetTwoFactorEnabled / ReplaceCodes /
+        // UpdateSecurityStamp / SignOut run.
+        var user = SampleUser();
+        var ctx = CreateHttpContext(AuthenticatedPrincipal(user));
+        var um = CreateUserManagerMock();
+        um.Setup(x => x.GetUserAsync(It.IsAny<ClaimsPrincipal>())).ReturnsAsync(user);
+        var sm = CreateSignInManagerMock(um.Object);
+        sm.Setup(x => x.CheckPasswordSignInAsync(user, "pw", false)).ReturnsAsync(SignInResult.Success);
+        um.Setup(x => x.ResetAuthenticatorKeyAsync(user))
+          .ReturnsAsync(IdentityResult.Failed(new IdentityError { Code = "X", Description = "boom" }));
+
+        var store = new Mock<IUserStore<HeimdallUser>>();
+        var recoveryStore = store.As<IUserTwoFactorRecoveryCodeStore<HeimdallUser>>();
+
+        var captured = new List<AuditEvent>();
+        _audit.Setup(x => x.WriteAsync(It.IsAny<AuditEvent>(), It.IsAny<CancellationToken>()))
+              .Callback<AuditEvent, CancellationToken>((e, _) => captured.Add(e))
+              .Returns(Task.CompletedTask);
+
+        var result = await AccountEndpoints.HandleMfaDisableAsync(
+            ctx, "pw", um.Object, sm.Object, store.Object, _audit.Object, default);
+
+        result.Should().BeOfType<RedirectHttpResult>()
+            .Which.Url.Should().Be("/account/mfa/disable?error=disable-failed");
+
+        um.Verify(x => x.SetTwoFactorEnabledAsync(It.IsAny<HeimdallUser>(), It.IsAny<bool>()), Times.Never);
+        um.Verify(x => x.UpdateSecurityStampAsync(It.IsAny<HeimdallUser>()), Times.Never);
+        recoveryStore.Verify(
+            x => x.ReplaceCodesAsync(It.IsAny<HeimdallUser>(), It.IsAny<IEnumerable<string>>(), It.IsAny<CancellationToken>()),
+            Times.Never);
+        sm.Verify(x => x.SignOutAsync(), Times.Never);
+        captured.Should().ContainSingle(e => e.EventType == "mfa.disable.failed");
+        captured.Should().NotContain(e => e.EventType == "mfa_disabled");
+    }
+
+    [Fact]
+    public async Task Should_AbortDisable_When_SetTwoFactorEnabledFalseFails()
+    {
+        // Comment from PR review #45: a SetTwoFactorEnabled(false) failure
+        // must also halt the tear-down before ReplaceCodes / UpdateSecurityStamp /
+        // SignOut run.
+        var user = SampleUser();
+        var ctx = CreateHttpContext(AuthenticatedPrincipal(user));
+        var um = CreateUserManagerMock();
+        um.Setup(x => x.GetUserAsync(It.IsAny<ClaimsPrincipal>())).ReturnsAsync(user);
+        var sm = CreateSignInManagerMock(um.Object);
+        sm.Setup(x => x.CheckPasswordSignInAsync(user, "pw", false)).ReturnsAsync(SignInResult.Success);
+        um.Setup(x => x.ResetAuthenticatorKeyAsync(user)).ReturnsAsync(IdentityResult.Success);
+        um.Setup(x => x.SetTwoFactorEnabledAsync(user, false))
+          .ReturnsAsync(IdentityResult.Failed(new IdentityError { Code = "X", Description = "boom" }));
+
+        var store = new Mock<IUserStore<HeimdallUser>>();
+        var recoveryStore = store.As<IUserTwoFactorRecoveryCodeStore<HeimdallUser>>();
+
+        var captured = new List<AuditEvent>();
+        _audit.Setup(x => x.WriteAsync(It.IsAny<AuditEvent>(), It.IsAny<CancellationToken>()))
+              .Callback<AuditEvent, CancellationToken>((e, _) => captured.Add(e))
+              .Returns(Task.CompletedTask);
+
+        var result = await AccountEndpoints.HandleMfaDisableAsync(
+            ctx, "pw", um.Object, sm.Object, store.Object, _audit.Object, default);
+
+        result.Should().BeOfType<RedirectHttpResult>()
+            .Which.Url.Should().Be("/account/mfa/disable?error=disable-failed");
+
+        um.Verify(x => x.UpdateSecurityStampAsync(It.IsAny<HeimdallUser>()), Times.Never);
+        recoveryStore.Verify(
+            x => x.ReplaceCodesAsync(It.IsAny<HeimdallUser>(), It.IsAny<IEnumerable<string>>(), It.IsAny<CancellationToken>()),
+            Times.Never);
+        sm.Verify(x => x.SignOutAsync(), Times.Never);
+        captured.Should().ContainSingle(e => e.EventType == "mfa.disable.failed");
+        captured.Should().NotContain(e => e.EventType == "mfa_disabled");
     }
 }

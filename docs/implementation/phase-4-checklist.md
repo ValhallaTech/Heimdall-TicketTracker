@@ -27,7 +27,7 @@
 ## Phase 4.3 — Identity wiring
 
 - [x] **7. Register the 2FA stores and the TOTP token provider in `Heimdall.Web/Program.cs`.** Extend the existing `AddIdentityCore<HeimdallUser>()` call with `.AddTokenProvider<AuthenticatorTokenProvider<HeimdallUser>>(TokenOptions.DefaultAuthenticatorProvider)` and `.AddSignInManager<SignInManager<HeimdallUser>>()` (the latter is required for `TwoFactorAuthenticatorSignInAsync`; Phase 1 chose `AddIdentityCore` over `AddIdentity`, so `SignInManager` is not auto-registered). `IdentityOptions.Tokens.AuthenticatorTokenProvider` set to the default name. No JWT scheme yet — that is Phase 5. Audit-events row `event_type = 'mfa_provider_registered'` is **not** emitted (this is a startup wiring step, not a user action).
-- [x] **8. Add the `RequireMfaPolicy` registration scaffold.** Register the named policy in `AddAuthorization` with a placeholder requirement that **fails closed** until step 12 wires the real handler. Document the placeholder in the policy's XML doc comment so reviewers know the gate is intentionally inert until step 12. Defence-in-depth: any page that opts into the policy before step 12 simply 403s instead of silently allowing.
+- [x] **8. Add the `RequireMfaPolicy` registration scaffold.** Register the named policy in `AddAuthorization` with a placeholder requirement that **fails closed** until step 16 wires the real handler. Document the placeholder in the policy's XML doc comment so reviewers know the gate is intentionally inert until step 16. Defence-in-depth: any page that opts into the policy before step 16 simply 403s instead of silently allowing.
 
 ## Phase 4.4 — Enrolment UI
 

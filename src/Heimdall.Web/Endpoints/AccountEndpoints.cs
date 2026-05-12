@@ -779,8 +779,29 @@ public static class AccountEndpoints
 
         // SetTwoFactorEnabledAsync rotates the security stamp, which the
         // Phase 1 RevalidatingServerAuthenticationStateProvider observes and
-        // tears down stale circuits on.
-        await userManager.SetTwoFactorEnabledAsync(user, true).ConfigureAwait(false);
+        // tears down stale circuits on. Failure here means the persistence
+        // layer rejected the flip (concurrency token mismatch, etc.) — do
+        // NOT proceed to generate recovery codes or emit a success audit
+        // event because the user is not actually enrolled.
+        IdentityResult enableResult = await userManager
+            .SetTwoFactorEnabledAsync(user, true)
+            .ConfigureAwait(false);
+
+        if (!enableResult.Succeeded)
+        {
+            string enableFailurePayload = JsonSerializer.Serialize(new { user_id = user.Id });
+            await TryWriteAuditAsync(httpContext, auditWriter, new AuditEvent
+            {
+                ActorUserId = user.Id,
+                EventType = "mfa.enrolment.enable_failed",
+                Target = user.Id.ToString(),
+                Ip = ip,
+                UserAgent = userAgent,
+                PayloadJson = enableFailurePayload,
+            }, cancellationToken).ConfigureAwait(false);
+
+            return Results.Redirect("/account/mfa/setup?error=enable-failed", permanent: false);
+        }
 
         IEnumerable<string>? generated = await userManager
             .GenerateNewTwoFactorRecoveryCodesAsync(user, 10)
@@ -876,6 +897,21 @@ public static class AccountEndpoints
             return Results.Redirect("/account/mfa/disable?error=invalid-password", permanent: false);
         }
 
+        // Defence in depth: validate the recovery-code store wiring BEFORE
+        // mutating any user state. AddHeimdallIdentityStores registers the
+        // same HeimdallUserStore against IUserStore and the recovery-code
+        // store interface, so this cast must succeed in production. Throwing
+        // up-front on a mis-wired host is preferable to partially disabling
+        // MFA (key rotated, two_factor_enabled flipped) and then aborting
+        // before recovery codes are wiped.
+        if (userStore is not IUserTwoFactorRecoveryCodeStore<HeimdallUser> recoveryCodeStore)
+        {
+            throw new InvalidOperationException(
+                "Registered IUserStore<HeimdallUser> does not implement "
+                + "IUserTwoFactorRecoveryCodeStore<HeimdallUser>. Check "
+                + "AddHeimdallIdentityStores wiring.");
+        }
+
         // Tear-down sequence — order matters:
         //   1. Rotate the authenticator key to a fresh random value via
         //      ResetAuthenticatorKeyAsync, then flip TwoFactorEnabled=false.
@@ -891,20 +927,31 @@ public static class AccountEndpoints
         //   3. Re-rotate the security stamp; the
         //      RevalidatingServerAuthenticationStateProvider (Phase 1 step 5)
         //      tears down any other live circuit on the next revalidation tick.
-        await userManager.ResetAuthenticatorKeyAsync(user).ConfigureAwait(false);
-        await userManager.SetTwoFactorEnabledAsync(user, false).ConfigureAwait(false);
-
-        // Defence in depth: the AddHeimdallIdentityStores wiring registers the
-        // same HeimdallUserStore against IUserStore and the recovery-code store
-        // interface, so this cast must succeed in production. Throwing on a
-        // mis-wired host is preferable to silently leaving recovery codes
-        // alive after a disable.
-        if (userStore is not IUserTwoFactorRecoveryCodeStore<HeimdallUser> recoveryCodeStore)
+        //
+        // Each IdentityResult is checked individually. A failure on any step
+        // aborts the tear-down: do NOT proceed to wipe recovery codes or
+        // emit a success audit event when the user's MFA state did not
+        // transition cleanly.
+        IdentityResult resetResult = await userManager
+            .ResetAuthenticatorKeyAsync(user)
+            .ConfigureAwait(false);
+        if (!resetResult.Succeeded)
         {
-            throw new InvalidOperationException(
-                "Registered IUserStore<HeimdallUser> does not implement "
-                + "IUserTwoFactorRecoveryCodeStore<HeimdallUser>. Check "
-                + "AddHeimdallIdentityStores wiring.");
+            await WriteMfaDisableFailureAuditAsync(
+                httpContext, auditWriter, user, ip, userAgent, "reset_key_failed", cancellationToken)
+                .ConfigureAwait(false);
+            return Results.Redirect("/account/mfa/disable?error=disable-failed", permanent: false);
+        }
+
+        IdentityResult disableResult = await userManager
+            .SetTwoFactorEnabledAsync(user, false)
+            .ConfigureAwait(false);
+        if (!disableResult.Succeeded)
+        {
+            await WriteMfaDisableFailureAuditAsync(
+                httpContext, auditWriter, user, ip, userAgent, "disable_flag_failed", cancellationToken)
+                .ConfigureAwait(false);
+            return Results.Redirect("/account/mfa/disable?error=disable-failed", permanent: false);
         }
 
         await recoveryCodeStore
@@ -936,6 +983,32 @@ public static class AccountEndpoints
     // -----------------------------------------------------------------------------
     // Helpers
     // -----------------------------------------------------------------------------
+
+    /// <summary>
+    /// Writes a single-line MFA-disable failure audit event with a uniform
+    /// payload shape (<c>{ user_id, reason }</c>). Keeps the per-step failure
+    /// branches in <see cref="HandleMfaDisableAsync"/> short.
+    /// </summary>
+    private static Task WriteMfaDisableFailureAuditAsync(
+        HttpContext httpContext,
+        IAuditEventWriter auditWriter,
+        HeimdallUser user,
+        string? ip,
+        string? userAgent,
+        string reason,
+        CancellationToken cancellationToken)
+    {
+        string payload = JsonSerializer.Serialize(new { user_id = user.Id, reason });
+        return TryWriteAuditAsync(httpContext, auditWriter, new AuditEvent
+        {
+            ActorUserId = user.Id,
+            EventType = "mfa.disable.failed",
+            Target = user.Id.ToString(),
+            Ip = ip,
+            UserAgent = userAgent,
+            PayloadJson = payload,
+        }, cancellationToken);
+    }
 
     private static string ExtractEmailDomain(string email)
     {

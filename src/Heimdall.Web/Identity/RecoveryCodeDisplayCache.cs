@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Threading;
 using Microsoft.Extensions.Caching.Memory;
 
 namespace Heimdall.Web.Identity;
@@ -63,7 +64,11 @@ public sealed class RecoveryCodeDisplayCache : IRecoveryCodeDisplayCache
             AbsoluteExpirationRelativeToNow = AbsoluteExpiration,
             Size = 1,
         };
-        _cache.Set<IReadOnlyList<string>>(key, copy, options);
+        // Wrap the codes in a single-shot holder so concurrent callers race on
+        // an Interlocked.Exchange instead of the non-atomic TryGetValue/Remove
+        // pair. Without the wrapper, two parallel Consume calls could both
+        // observe the same value before either Remove had taken effect.
+        _cache.Set(key, new SingleShotCodes(copy), options);
         return token;
     }
 
@@ -71,15 +76,42 @@ public sealed class RecoveryCodeDisplayCache : IRecoveryCodeDisplayCache
     public IReadOnlyList<string>? Consume(Guid userId, Guid token)
     {
         string key = BuildKey(userId, token);
-        if (_cache.TryGetValue<IReadOnlyList<string>>(key, out IReadOnlyList<string>? codes))
+        if (!_cache.TryGetValue(key, out SingleShotCodes? holder) || holder is null)
         {
-            // Atomic remove-on-read — even if two browser tabs race to the
-            // display page, only one of them sees the codes.
-            _cache.Remove(key);
-            return codes;
+            return null;
         }
 
-        return null;
+        // Interlocked.Exchange guarantees exactly one caller observes the
+        // non-null payload; subsequent racers see null. Only the winning
+        // caller removes the cache entry so a late TryGetValue cannot resurrect
+        // the holder for another reader.
+        IReadOnlyList<string>? codes = holder.Take();
+        if (codes is null)
+        {
+            return null;
+        }
+
+        _cache.Remove(key);
+        return codes;
+    }
+
+    /// <summary>
+    /// One-shot holder used to make <see cref="Consume"/> race-free across
+    /// concurrent readers. The <see cref="Take"/> method uses
+    /// <see cref="Interlocked.Exchange{T}(ref T, T)"/> so exactly one caller
+    /// wins and receives the codes; all subsequent racers observe <c>null</c>.
+    /// </summary>
+    private sealed class SingleShotCodes
+    {
+        private IReadOnlyList<string>? _codes;
+
+        public SingleShotCodes(IReadOnlyList<string> codes)
+        {
+            _codes = codes;
+        }
+
+        public IReadOnlyList<string>? Take()
+            => Interlocked.Exchange(ref _codes, null);
     }
 
     private static string BuildKey(Guid userId, Guid token)
