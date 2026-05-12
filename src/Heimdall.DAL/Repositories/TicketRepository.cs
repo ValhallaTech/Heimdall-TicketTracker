@@ -262,6 +262,84 @@ WHERE id = @Id;";
     }
 
     /// <inheritdoc />
+    public async Task<(IReadOnlyList<Ticket> Items, int TotalCount)> GetPagedByIdsAsync(
+        IReadOnlyList<int> allowedTicketIds,
+        PagedQuery query,
+        CancellationToken cancellationToken = default
+    )
+    {
+        ArgumentNullException.ThrowIfNull(allowedTicketIds);
+        ArgumentNullException.ThrowIfNull(query);
+
+        if (allowedTicketIds.Count == 0)
+        {
+            return ([], 0);
+        }
+
+        string sortColumn = PagedQuery.AllowedSortFields.TryGetValue(query.SortField, out string? mappedColumn)
+            ? mappedColumn
+            : "date_created";
+
+        string sortDirection = query.SortDirection == SortDirection.Descending ? "DESC" : "ASC";
+
+        var parameters = new DynamicParameters();
+        parameters.Add("Ids", allowedTicketIds.ToArray());
+
+        string whereClause = "WHERE id = ANY(@Ids)";
+        if (!string.IsNullOrEmpty(query.SearchText))
+        {
+            whereClause += " AND (title ILIKE @Search OR description ILIKE @Search)";
+            parameters.Add("Search", $"%{query.SearchText}%");
+        }
+
+        string querySql =
+            $"""
+            SELECT {ListSelectColumns}
+            FROM   tickets
+            {whereClause}
+            ORDER  BY {sortColumn} {sortDirection}, id DESC
+            LIMIT  @Take OFFSET @Skip
+            """;
+
+        string countSql =
+            $"""
+            SELECT COUNT(*)::int
+            FROM   tickets
+            {whereClause}
+            """;
+
+        if (_dapper is not null)
+        {
+            var page = await _dapper
+                .QueryPageAsync<Ticket>(
+                    countSql,
+                    querySql,
+                    query.Page,
+                    query.PageSize,
+                    parameters,
+                    cancellationToken: cancellationToken
+                )
+                .ConfigureAwait(false);
+
+            var items = page.Result ?? new List<Ticket>();
+            return (items.AsReadOnly(), checked((int)page.TotalCount));
+        }
+
+        parameters.Add("Take", query.PageSize);
+        parameters.Add("Skip", ((long)query.Page - 1L) * query.PageSize);
+
+        string combinedSql = querySql + ";\n" + countSql + ";";
+        using var connection = CreateConnection();
+        var command = new CommandDefinition(combinedSql, parameters, cancellationToken: cancellationToken);
+
+        using var multi = await connection.QueryMultipleAsync(command).ConfigureAwait(false);
+        var rows = await multi.ReadAsync<Ticket>().ConfigureAwait(false);
+        int totalCount = await multi.ReadSingleAsync<int>().ConfigureAwait(false);
+
+        return ([.. rows], totalCount);
+    }
+
+    /// <inheritdoc />
     public async Task<bool> DeleteAsync(int id, CancellationToken cancellationToken = default)
     {
         using var connection = CreateConnection();

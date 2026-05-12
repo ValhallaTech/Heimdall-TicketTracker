@@ -1,12 +1,12 @@
-@page "/tickets/{TicketId:int}"
-@attribute [Authorize(Policy = AuthorizationPolicies.CanViewTicket)]
+@page "/tickets/new"
+@attribute [Authorize(Policy = AuthorizationPolicies.IsAuthenticated)]
 @rendermode InteractiveServer
 @using Heimdall.Web.Authorization.Policies
 @using Microsoft.AspNetCore.Authorization
+@using Microsoft.AspNetCore.Components.Authorization
 @using System.Security.Claims
 @using Heimdall.Core.Interfaces
 @using Heimdall.Web.Bootstrap
-@using Microsoft.AspNetCore.Components.Authorization
 @inject ITicketService TicketService
 @inject IOrganizationRepository OrganizationRepository
 @inject ITeamRepository TeamRepository
@@ -15,7 +15,7 @@
 @inject IUserLookup UserLookup
 @inject NavigationManager Navigation
 
-<PageTitle>Edit Ticket — Heimdall TicketTracker</PageTitle>
+<PageTitle>New Ticket — Heimdall TicketTracker</PageTitle>
 
 <div class="mb-4">
     <a href="/tickets" class="btn btn-link ps-0 text-decoration-none"><i class="fa-solid fa-arrow-left me-1" aria-hidden="true"></i> Back to tickets</a>
@@ -23,7 +23,7 @@
 
 <div class="card shadow-sm mx-auto" style="max-width: 720px;">
     <div class="card-header bg-transparent py-3">
-        <h1 class="h4 mb-0 fw-semibold">Edit Ticket</h1>
+        <h1 class="h4 mb-0 fw-semibold">New Ticket</h1>
     </div>
     <div class="card-body p-4">
         <EditForm Model="Model" OnValidSubmit="SaveAsync" FormName="ticket-form">
@@ -137,7 +137,7 @@
 
             <div class="mt-4 d-flex gap-2">
                 <button type="submit" class="btn btn-primary px-4">
-                    <i class="fa-solid fa-floppy-disk me-1" aria-hidden="true"></i>Save Changes
+                    <i class="fa-solid fa-floppy-disk me-1" aria-hidden="true"></i>Create Ticket
                 </button>
                 <a href="/tickets" class="btn btn-outline-secondary"><i class="fa-solid fa-xmark me-1" aria-hidden="true"></i> Cancel</a>
             </div>
@@ -146,8 +146,12 @@
 </div>
 
 @code {
-    /// <summary>Route parameter: ticket id to edit.</summary>
-    [Parameter] public int TicketId { get; set; }
+    /// <summary>
+    /// Cascaded authentication state — used to default <see cref="TicketDto.ReporterId"/>
+    /// to the current user's id so the FK isn't <see cref="Guid.Empty"/> on submission.
+    /// </summary>
+    [CascadingParameter]
+    public Task<AuthenticationState>? AuthenticationStateTask { get; set; }
 
     /// <summary>
     /// Form-backed model. Marked with <see cref="SupplyParameterFromFormAttribute"/>
@@ -156,7 +160,6 @@
     /// </summary>
     [SupplyParameterFromForm(FormName = "ticket-form")]
     public TicketDto Model { get; set; } = default!;
-
 
     // Phase 2.8 step 24 — picker backing data. Loaded from the repositories in
     // OnParametersSetAsync. Lists are intentionally readonly references rebound
@@ -178,10 +181,12 @@
             _teams = await TeamRepository.GetAllAsync();
         }
 
-        if (Model.Id != TicketId)
+        if (Model.Id != 0)
         {
-            Model = await TicketService.GetByIdAsync(TicketId) ?? new TicketDto { Id = TicketId };
+            Model = new TicketDto();
         }
+
+        await PopulateNewTicketDefaultsAsync();
 
         // Ensure the dependent pickers (projects / members) are populated for
         // the currently-selected team.
@@ -256,9 +261,54 @@
         }
     }
 
+    /// <summary>
+    /// Pre-fills <see cref="TicketDto.ProjectId"/>, <see cref="TicketDto.TeamId"/>, and
+    /// <see cref="TicketDto.ReporterId"/> on a fresh new-ticket form so an unedited submit
+    /// doesn't violate the Phase 2.4 / 2.5 FK + NOT NULL constraints with
+    /// <see cref="Guid.Empty"/>. Defaults are resolved by the same hard-coded slug
+    /// constants that <see cref="DefaultHierarchyBootstrapper"/> creates at startup.
+    /// </summary>
+    private async Task PopulateNewTicketDefaultsAsync()
+    {
+        if (Model.ProjectId == Guid.Empty || Model.TeamId == Guid.Empty)
+        {
+            var org = await OrganizationRepository
+                .GetBySlugAsync(DefaultHierarchyBootstrapper.OrganizationSlug);
+            if (org is not null && Model.TeamId == Guid.Empty)
+            {
+                var team = await TeamRepository
+                    .GetBySlugAsync(org.Id, DefaultHierarchyBootstrapper.TeamSlug);
+                if (team is not null)
+                {
+                    Model.TeamId = team.Id;
+
+                    if (Model.ProjectId == Guid.Empty)
+                    {
+                        var project = await ProjectRepository
+                            .GetBySlugAsync(team.Id, DefaultHierarchyBootstrapper.ProjectSlug);
+                        if (project is not null)
+                        {
+                            Model.ProjectId = project.Id;
+                        }
+                    }
+                }
+            }
+        }
+
+        if (Model.ReporterId == Guid.Empty && AuthenticationStateTask is not null)
+        {
+            var state = await AuthenticationStateTask;
+            var userId = state.User.FindFirstValue(ClaimTypes.NameIdentifier);
+            if (Guid.TryParse(userId, out var parsed))
+            {
+                Model.ReporterId = parsed;
+            }
+        }
+    }
+
     private async Task SaveAsync()
     {
-        await TicketService.UpdateAsync(Model);
+        await TicketService.CreateAsync(Model);
         Navigation.NavigateTo("/tickets");
     }
 }

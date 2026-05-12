@@ -1,6 +1,9 @@
 @page "/teams/{Slug}/queue"
+@attribute [Authorize(Policy = AuthorizationPolicies.IsAuthenticated)]
 @rendermode InteractiveServer
 @implements IDisposable
+@using Heimdall.Web.Authorization.Policies
+@using Microsoft.AspNetCore.Authorization
 @using System.Security.Claims
 @using Heimdall.BLL.Authorization
 @using Heimdall.Core.Dtos

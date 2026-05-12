@@ -58,6 +58,27 @@ public interface ITicketRepository
     Task<bool> DeleteAsync(int id, CancellationToken cancellationToken = default);
 
     /// <summary>
+    /// Returns a single page of tickets whose ids appear in <paramref name="allowedTicketIds"/>,
+    /// filtered and sorted per <paramref name="query"/>. Returns an empty result immediately when
+    /// <paramref name="allowedTicketIds"/> is empty — no DB round trip is issued.
+    /// Drives the <c>Tickets.razor</c> list page when OpenFGA <c>ListObjects</c> is enabled.
+    /// </summary>
+    /// <param name="allowedTicketIds">
+    /// Ticket ids the caller is authorised to view (from OpenFGA <c>ListObjects</c>).
+    /// When empty, the caller must not issue a DB query — the method returns immediately.
+    /// </param>
+    /// <param name="query">Pagination, sort, and filter parameters.</param>
+    /// <param name="cancellationToken">Propagates notification that the operation should be cancelled.</param>
+    /// <returns>
+    /// A tuple containing the page of <see cref="Ticket"/> items and the total count of matching
+    /// records across all pages, constrained to <paramref name="allowedTicketIds"/>.
+    /// </returns>
+    Task<(IReadOnlyList<Ticket> Items, int TotalCount)> GetPagedByIdsAsync(
+        IReadOnlyList<int> allowedTicketIds,
+        PagedQuery query,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
     /// Updates only the <c>team_id</c> column of the ticket (and refreshes
     /// <c>date_updated</c>). The caller supplies an open <paramref name="connection"/>
     /// and active <paramref name="transaction"/> so the audit-event INSERT for the

@@ -259,6 +259,55 @@ public class TicketService : ITicketService
     }
 
     /// <inheritdoc />
+    public async Task<PagedResult<TicketDto>> GetPagedByIdsAsync(
+        IReadOnlyList<int> allowedTicketIds,
+        PagedQuery query,
+        CancellationToken cancellationToken = default
+    )
+    {
+        ArgumentNullException.ThrowIfNull(allowedTicketIds);
+        ArgumentNullException.ThrowIfNull(query);
+
+        if (allowedTicketIds.Count == 0)
+        {
+            PagedResult<TicketDto> empty = new()
+            {
+                Items = [],
+                TotalCount = 0,
+                Page = query.Page,
+                PageSize = query.PageSize,
+            };
+            return empty;
+        }
+
+        var sanitized = query.Sanitized();
+        var (items, totalCount) = await _repository
+            .GetPagedByIdsAsync(allowedTicketIds, sanitized, cancellationToken)
+            .ConfigureAwait(false);
+
+        var dtos = _mapper.Map(items);
+
+        PagedResult<TicketDto> result = new()
+        {
+            Items = dtos,
+            TotalCount = totalCount,
+            Page = sanitized.Page,
+            PageSize = sanitized.PageSize,
+        };
+
+        _logger.LogDebug(
+            "GetPagedByIdsAsync returned page {Page}/{TotalPages} ({PageSize} items per page, {TotalCount} total, {AllowedCount} allowed ids).",
+            result.Page,
+            result.TotalPages,
+            result.PageSize,
+            result.TotalCount,
+            allowedTicketIds.Count
+        );
+
+        return result;
+    }
+
+    /// <inheritdoc />
     public async Task<bool> RouteTicketAsync(
         Guid actorId,
         int ticketId,
