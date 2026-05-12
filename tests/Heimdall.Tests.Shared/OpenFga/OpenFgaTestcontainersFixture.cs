@@ -39,9 +39,15 @@ namespace Heimdall.Tests.Shared.OpenFga;
 /// hand-maintained JSON sibling. The transform happens once per fixture instance.
 /// </para>
 /// <para>
-/// Image tags use the floating <c>latest</c> tag per the orchestrator brief
-/// (Renovate manages pinning at the repository policy level — pinning here would
-/// fight that policy). If a runner is offline / image-restricted, set
+/// Image tags default to the floating <c>latest</c> tag to match the project's
+/// established convention (<c>render.yaml</c> pins the production OpenFGA
+/// service the same way). Renovate's configured managers (<c>nuget</c>,
+/// <c>npm</c>, <c>dockerfile</c>, <c>docker-compose</c>, <c>github-actions</c>
+/// per <c>renovate.json</c>) do <strong>not</strong> rewrite C# string
+/// constants, so for repeatable / pinned local runs override the image refs
+/// via <see cref="OpenFgaImageEnvVar"/> and <see cref="OpenFgaCliImageEnvVar"/>
+/// (e.g. <c>HEIMDALL_OPENFGA_TEST_IMAGE=docker.io/openfga/openfga:v1.10.1</c>).
+/// If a runner is offline / image-restricted, set
 /// <c>HEIMDALL_OPENFGA_TESTS_ENABLED=false</c> to skip the fixture-dependent tests.
 /// </para>
 /// </remarks>
@@ -55,8 +61,35 @@ public sealed class OpenFgaTestcontainersFixture : IAsyncLifetime
     /// </summary>
     public const string EnabledEnvVar = "HEIMDALL_OPENFGA_TESTS_ENABLED";
 
-    private const string OpenFgaImage = "docker.io/openfga/openfga:latest";
-    private const string OpenFgaCliImage = "docker.io/openfga/cli:latest";
+    /// <summary>
+    /// Environment variable that overrides the OpenFGA server image reference.
+    /// Set to a pinned tag or digest for repeatable local runs (e.g.
+    /// <c>docker.io/openfga/openfga:v1.10.1</c> or
+    /// <c>docker.io/openfga/openfga@sha256:…</c>). Falls back to the floating
+    /// <c>:latest</c> tag when unset, matching <c>render.yaml</c>.
+    /// </summary>
+    public const string OpenFgaImageEnvVar = "HEIMDALL_OPENFGA_TEST_IMAGE";
+
+    /// <summary>
+    /// Environment variable that overrides the OpenFGA CLI image reference
+    /// used by the one-shot <c>fga model transform</c> step. See
+    /// <see cref="OpenFgaImageEnvVar"/> for usage; defaults to
+    /// <c>docker.io/openfga/cli:latest</c>.
+    /// </summary>
+    public const string OpenFgaCliImageEnvVar = "HEIMDALL_OPENFGA_CLI_TEST_IMAGE";
+
+    private const string DefaultOpenFgaImage = "docker.io/openfga/openfga:latest";
+    private const string DefaultOpenFgaCliImage = "docker.io/openfga/cli:latest";
+
+    private static readonly string OpenFgaImage =
+        Environment.GetEnvironmentVariable(OpenFgaImageEnvVar) is { Length: > 0 } envImg
+            ? envImg
+            : DefaultOpenFgaImage;
+
+    private static readonly string OpenFgaCliImage =
+        Environment.GetEnvironmentVariable(OpenFgaCliImageEnvVar) is { Length: > 0 } envCli
+            ? envCli
+            : DefaultOpenFgaCliImage;
 
     private const string PostgresHostnameAlias = "fga-postgres";
     private const string OpenFgaHostnameAlias = "openfga";

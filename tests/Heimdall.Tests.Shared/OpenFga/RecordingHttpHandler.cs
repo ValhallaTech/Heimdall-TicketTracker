@@ -21,8 +21,11 @@ namespace Heimdall.Tests.Shared.OpenFga;
 /// <para>
 /// The body buffer is re-attached to the outgoing request so the SDK call
 /// still succeeds. The handler is thread-safe (multiple SDK calls from one
-/// client may overlap during a test) — both the recording list and per-path
-/// counters use <see cref="ConcurrentBag{T}"/> / <see cref="ConcurrentDictionary{TKey,TValue}"/>.
+/// client may overlap during a test): the recording uses
+/// <see cref="ConcurrentQueue{T}"/>, which preserves enqueue order under
+/// concurrent producers — important because tests assert on the order of
+/// recorded requests (e.g. "pre-seed write happened before the recorded
+/// atomic swap").
 /// </para>
 /// <para>
 /// Construct with <c>new HttpClient(new RecordingHttpHandler(new HttpClientHandler()))</c>
@@ -31,7 +34,7 @@ namespace Heimdall.Tests.Shared.OpenFga;
 /// </remarks>
 public sealed class RecordingHttpHandler : DelegatingHandler
 {
-    private readonly ConcurrentBag<RecordedRequest> _requests = new();
+    private readonly ConcurrentQueue<RecordedRequest> _requests = new();
 
     /// <summary>Initializes a new instance wrapping the given inner handler.</summary>
     /// <param name="inner">Underlying handler; required.</param>
@@ -47,7 +50,7 @@ public sealed class RecordingHttpHandler : DelegatingHandler
     {
     }
 
-    /// <summary>Gets the recorded requests in arrival order (best-effort under concurrency).</summary>
+    /// <summary>Gets the recorded requests in arrival order.</summary>
     public IReadOnlyList<RecordedRequest> Requests => _requests.ToArray();
 
     /// <summary>
@@ -71,8 +74,13 @@ public sealed class RecordingHttpHandler : DelegatingHandler
         string body = string.Empty;
         if (request.Content is not null)
         {
+            // Capture the original content so we can dispose it after the
+            // buffered copy is wired in — otherwise its underlying stream /
+            // buffer lingers until GC, which adds up over a long test run.
+            HttpContent originalContent = request.Content;
+
             // Buffer the body so we can both record it and let the SDK send it.
-            byte[] bytes = await request.Content
+            byte[] bytes = await originalContent
                 .ReadAsByteArrayAsync(cancellationToken)
                 .ConfigureAwait(false);
             body = System.Text.Encoding.UTF8.GetString(bytes);
@@ -80,16 +88,17 @@ public sealed class RecordingHttpHandler : DelegatingHandler
             // Re-attach a fresh stream-backed content with the original
             // headers so the SDK's outbound payload is unchanged.
             ByteArrayContent replacement = new(bytes);
-            foreach (KeyValuePair<string, IEnumerable<string>> header in request.Content.Headers)
+            foreach (KeyValuePair<string, IEnumerable<string>> header in originalContent.Headers)
             {
                 replacement.Headers.TryAddWithoutValidation(header.Key, header.Value);
             }
 
             request.Content = replacement;
+            originalContent.Dispose();
         }
 
         string path = request.RequestUri?.AbsolutePath ?? string.Empty;
-        _requests.Add(new RecordedRequest(request.Method.Method, path, body));
+        _requests.Enqueue(new RecordedRequest(request.Method.Method, path, body));
 
         return await base.SendAsync(request, cancellationToken).ConfigureAwait(false);
     }
