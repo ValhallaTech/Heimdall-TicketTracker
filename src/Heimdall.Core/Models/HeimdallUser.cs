@@ -46,6 +46,14 @@ public class HeimdallUser
     /// <summary>Gets or sets a value indicating whether the user has the system administrator privilege.</summary>
     public bool SystemAdmin { get; set; }
 
+    /// <summary>
+    /// Gets or sets a value indicating whether two-factor authentication is enabled for this
+    /// user. Defaults to <c>false</c>. Persisted to the <c>users.two_factor_enabled</c> column
+    /// by <c>HeimdallUserStore</c> (Phase 4.1 step 1 of
+    /// <c>docs/proposals/security-and-authorization.md</c> §9.3).
+    /// </summary>
+    public bool TwoFactorEnabled { get; set; }
+
     /// <summary>Gets or sets the UTC offset timestamp at which the user record was created.</summary>
     public DateTimeOffset CreatedAt { get; set; }
 

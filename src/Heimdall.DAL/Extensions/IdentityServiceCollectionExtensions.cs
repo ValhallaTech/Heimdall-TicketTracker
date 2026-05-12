@@ -18,7 +18,9 @@ public static class IdentityServiceCollectionExtensions
     /// of every Identity user-store interface that Heimdall supports
     /// (<see cref="IUserStore{TUser}"/>, <see cref="IUserPasswordStore{TUser}"/>,
     /// <see cref="IUserEmailStore{TUser}"/>, <see cref="IUserSecurityStampStore{TUser}"/>,
-    /// <see cref="IUserLockoutStore{TUser}"/>). The concrete store is registered as
+    /// <see cref="IUserLockoutStore{TUser}"/>, <see cref="IUserTwoFactorStore{TUser}"/>,
+    /// <see cref="IUserAuthenticatorKeyStore{TUser}"/>,
+    /// <see cref="IUserTwoFactorRecoveryCodeStore{TUser}"/>). The concrete store is registered as
     /// scoped, and each interface forwards to that single instance per scope so
     /// <see cref="UserManager{TUser}"/> sees a single coherent store regardless of
     /// which abstraction it resolves through.
@@ -41,6 +43,9 @@ public static class IdentityServiceCollectionExtensions
         services.AddScoped<IUserEmailStore<HeimdallUser>>(sp => sp.GetRequiredService<HeimdallUserStore>());
         services.AddScoped<IUserSecurityStampStore<HeimdallUser>>(sp => sp.GetRequiredService<HeimdallUserStore>());
         services.AddScoped<IUserLockoutStore<HeimdallUser>>(sp => sp.GetRequiredService<HeimdallUserStore>());
+        services.AddScoped<IUserTwoFactorStore<HeimdallUser>>(sp => sp.GetRequiredService<HeimdallUserStore>());
+        services.AddScoped<IUserAuthenticatorKeyStore<HeimdallUser>>(sp => sp.GetRequiredService<HeimdallUserStore>());
+        services.AddScoped<IUserTwoFactorRecoveryCodeStore<HeimdallUser>>(sp => sp.GetRequiredService<HeimdallUserStore>());
 
         return services;
     }
