@@ -1,5 +1,6 @@
 @page "/admin/audit"
 @attribute [Authorize(Policy = AuthorizationPolicies.SystemAdmin)]
+@attribute [Authorize(Policy = AuthorizationPolicies.RequireMfa)]
 @rendermode InteractiveServer
 @using Heimdall.Core.Auditing
 @using Heimdall.Web.Authorization.Policies

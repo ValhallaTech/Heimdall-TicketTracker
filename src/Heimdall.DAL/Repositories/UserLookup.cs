@@ -56,6 +56,26 @@ public sealed class UserLookup : IUserLookup
     }
 
     /// <inheritdoc />
+    public async Task<bool> IsTwoFactorEnabledAsync(
+        Guid userId,
+        CancellationToken cancellationToken = default)
+    {
+        await using var connection = new NpgsqlConnection(_connectionString);
+        var command = new CommandDefinition(
+            "SELECT two_factor_enabled FROM users WHERE id = @Id",
+            new { Id = userId },
+            cancellationToken: cancellationToken
+        );
+        // Same deny-closed pattern as IsSystemAdminAsync: a missing row maps
+        // to false, never an exception. The Phase 4.6 step 16 handler relies
+        // on this contract (treat unknown users as MFA-not-enabled).
+        var flag = await connection
+            .QuerySingleOrDefaultAsync<bool?>(command)
+            .ConfigureAwait(false);
+        return flag == true;
+    }
+
+    /// <inheritdoc />
     public async Task<UserSummary?> GetByIdAsync(
         Guid userId,
         CancellationToken cancellationToken = default)

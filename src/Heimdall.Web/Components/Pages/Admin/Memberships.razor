@@ -9,6 +9,7 @@
 
 @page "/admin/memberships"
 @attribute [Authorize(Policy = AuthorizationPolicies.SystemAdmin)]
+@attribute [Authorize(Policy = AuthorizationPolicies.RequireMfa)]
 @rendermode InteractiveServer
 @using System.Security.Claims
 @using Heimdall.BLL.Services
