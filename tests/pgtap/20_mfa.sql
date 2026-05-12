@@ -130,6 +130,14 @@ SELECT col_default_is('user_recovery_codes', 'created_at', 'now()');
 INSERT INTO users (email, normalized_email, security_stamp, concurrency_stamp, created_at, updated_at)
 VALUES ('mfa@example.com', 'MFA@EXAMPLE.COM', 's', 'c', now(), now());
 
+-- Stash the seed user's id in a transaction-scoped GUC so the cascade probes
+-- below can scope their COUNT(*) assertions to just this user — keeps the
+-- pgTAP suite robust if other scripts ever leave residual rows in these
+-- tables (the outer BEGIN/ROLLBACK already protects us, but defence in
+-- depth is cheap and matches the per-user filtering used elsewhere).
+SELECT set_config('test.mfa_user_id', id::text, false)
+FROM users WHERE email = 'mfa@example.com';
+
 INSERT INTO user_authenticator_keys (user_id, provider_name, authenticator_key)
 SELECT id, 'Authenticator', 'JBSWY3DPEHPK3PXP'
 FROM users WHERE email = 'mfa@example.com';
@@ -151,7 +159,8 @@ SELECT lives_ok(
 );
 
 SELECT is(
-    (SELECT COUNT(*)::int FROM user_authenticator_keys),
+    (SELECT COUNT(*)::int FROM user_authenticator_keys
+        WHERE user_id = current_setting('test.mfa_user_id')::uuid),
     0,
     'deleting a user cascades their user_authenticator_keys row'
 );
@@ -166,7 +175,8 @@ SAVEPOINT cascade_recovery_codes;
 DELETE FROM users WHERE email = 'mfa@example.com';
 
 SELECT is(
-    (SELECT COUNT(*)::int FROM user_recovery_codes),
+    (SELECT COUNT(*)::int FROM user_recovery_codes
+        WHERE user_id = current_setting('test.mfa_user_id')::uuid),
     0,
     'deleting a user cascades their user_recovery_codes rows'
 );

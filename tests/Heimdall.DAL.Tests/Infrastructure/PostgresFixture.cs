@@ -61,8 +61,8 @@ public sealed class PostgresFixture : IAsyncLifetime
     /// its position in the sequence is not load-bearing. The Phase 4.1 MFA tables
     /// <c>user_recovery_codes</c> and <c>user_authenticator_keys</c> declare
     /// <c>ON DELETE CASCADE</c> FKs to <c>users</c>, so a bare <c>DELETE FROM users</c>
-    /// would already drain them; they are listed explicitly first so the reset order is
-    /// self-evident to readers of the test code.
+    /// would already drain them; they are listed explicitly before <c>users</c> so the
+    /// reset order is self-evident to readers of the test code.
     /// </summary>
     public async Task ResetUsersTableAsync()
     {

@@ -15,7 +15,7 @@ namespace Heimdall.DAL.Identity;
 /// Dapper-backed ASP.NET Core Identity store for <see cref="HeimdallUser"/>. Implements
 /// the Authenticated Foundation surface (Phase 1 of
 /// <c>docs/proposals/security-and-authorization.md</c> §9.3) — user CRUD, password,
-/// email, security-stamp, lockout — together with the Phase 4.1 two-factor stores
+/// email, security-stamp, lockout — together with the Phase 4.2 two-factor stores
 /// (<see cref="IUserTwoFactorStore{TUser}"/>, <see cref="IUserAuthenticatorKeyStore{TUser}"/>,
 /// <see cref="IUserTwoFactorRecoveryCodeStore{TUser}"/>). Roles, claims, phone, and external
 /// logins are intentionally out of scope and are not implemented.
@@ -71,8 +71,9 @@ public sealed class HeimdallUserStore :
 
     // Authenticator provider discriminator stored in user_authenticator_keys.provider_name.
     // Identity's TOTP token provider is registered under this name (see
-    // TokenOptions.DefaultAuthenticatorProvider), so the store filters on the same literal.
-    private const string AuthenticatorProviderName = "Authenticator";
+    // TokenOptions.DefaultAuthenticatorProvider). Bound to the framework constant so the
+    // store stays in sync if Identity ever renames the default provider.
+    private static readonly string AuthenticatorProviderName = TokenOptions.DefaultAuthenticatorProvider;
 
     private readonly string _connectionString;
     private readonly IPasswordHasher<HeimdallUser> _passwordHasher;

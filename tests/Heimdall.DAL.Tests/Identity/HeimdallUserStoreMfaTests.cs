@@ -418,11 +418,16 @@ public class HeimdallUserStoreMfaTests : IAsyncLifetime
     // ---------------------------------------------------------------------------------
     // Logging-hygiene (Phase 4.2 checklist step 2): the authenticator key must
     // never be observed in application logs. The store does not currently take
-    // an ILogger — this test wires one up anyway so any future addition that
-    // accidentally logs the secret is caught immediately.
+    // an ILogger, so a captor-based assertion here would be vacuous — the
+    // captured message bag is guaranteed empty regardless of store behaviour
+    // (flagged by both the PR reviewer and the security reviewer on PR #44).
+    // The test is deferred until MFA-related logging actually lands; the
+    // [Fact(Skip = …)] keeps the invariant visible in the suite so a future
+    // contributor adding an ILogger to HeimdallUserStore has an obvious hook
+    // to re-enable it.
     // ---------------------------------------------------------------------------------
 
-    [Fact]
+    [Fact(Skip = "Deferred: HeimdallUserStore has no ILogger yet, so the captor is vacuous. Re-enable when MFA-related logging is added (PR #44 reviewer + security-reviewer feedback).")]
     public async Task Should_NotLogAuthenticatorKey_When_SetThenGet()
     {
         const string Secret = "SECRET-KEY-VALUE-123";
