@@ -58,7 +58,11 @@ public sealed class PostgresFixture : IAsyncLifetime
     /// <see cref="PostgresCollection"/> with suites that create org/team/project rows
     /// will fail with <c>23001</c> when an earlier suite leaves orphan rows referencing
     /// users. The <c>audit_events.actor_user_id</c> FK is <c>ON DELETE SET NULL</c>, so
-    /// its position in the sequence is not load-bearing.
+    /// its position in the sequence is not load-bearing. The Phase 4.1 MFA tables
+    /// <c>user_recovery_codes</c> and <c>user_authenticator_keys</c> declare
+    /// <c>ON DELETE CASCADE</c> FKs to <c>users</c>, so a bare <c>DELETE FROM users</c>
+    /// would already drain them; they are listed explicitly first so the reset order is
+    /// self-evident to readers of the test code.
     /// </summary>
     public async Task ResetUsersTableAsync()
     {
@@ -72,6 +76,8 @@ public sealed class PostgresFixture : IAsyncLifetime
             + "DELETE FROM projects; "
             + "DELETE FROM teams; "
             + "DELETE FROM organizations; "
+            + "DELETE FROM user_recovery_codes; "
+            + "DELETE FROM user_authenticator_keys; "
             + "DELETE FROM users; "
             + "DELETE FROM audit_events;"
         );
@@ -89,7 +95,9 @@ public sealed class PostgresFixture : IAsyncLifetime
     /// <c>audit_events</c> is also cleared so any rows written by earlier tests
     /// in the collection don't bleed into the next assertion;
     /// <c>audit_events.actor_user_id</c> is <c>ON DELETE SET NULL</c>, so its
-    /// position in the sequence is not load-bearing.
+    /// position in the sequence is not load-bearing. The Phase 4.1 MFA tables
+    /// <c>user_recovery_codes</c> and <c>user_authenticator_keys</c> CASCADE on
+    /// <c>users</c> deletion, but are listed explicitly so the order is obvious.
     /// </summary>
     public async Task ResetCollaborationTablesAsync()
     {
@@ -102,6 +110,8 @@ public sealed class PostgresFixture : IAsyncLifetime
             + "DELETE FROM projects; "
             + "DELETE FROM teams; "
             + "DELETE FROM organizations; "
+            + "DELETE FROM user_recovery_codes; "
+            + "DELETE FROM user_authenticator_keys; "
             + "DELETE FROM users; "
             + "DELETE FROM audit_events;"
         );
@@ -112,7 +122,9 @@ public sealed class PostgresFixture : IAsyncLifetime
     /// hierarchy and Phase 2.2 membership tables. Phase 2.5 added FK columns on
     /// <c>tickets</c> that reference <c>projects</c>, <c>teams</c>, and <c>users</c>
     /// with <c>ON DELETE RESTRICT</c> (assignee is <c>SET NULL</c>), so tickets must
-    /// be cleared before any of those parents.
+    /// be cleared before any of those parents. The Phase 4.1 MFA tables
+    /// <c>user_recovery_codes</c> and <c>user_authenticator_keys</c> CASCADE on
+    /// <c>users</c> deletion, but are listed explicitly so the order is obvious.
     /// </summary>
     public async Task ResetTicketsAndCollaborationTablesAsync()
     {
@@ -127,6 +139,8 @@ public sealed class PostgresFixture : IAsyncLifetime
             + "DELETE FROM projects; "
             + "DELETE FROM teams; "
             + "DELETE FROM organizations; "
+            + "DELETE FROM user_recovery_codes; "
+            + "DELETE FROM user_authenticator_keys; "
             + "DELETE FROM users; "
             + "DELETE FROM audit_events;"
         );

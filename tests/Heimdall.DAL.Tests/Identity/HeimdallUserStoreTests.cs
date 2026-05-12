@@ -461,6 +461,7 @@ public class HeimdallUserStoreTests : IAsyncLifetime
     {
         var services = new ServiceCollection();
         services.Configure<DataOptions>(o => o.PostgresConnectionString = _fx.ConnectionString);
+        services.AddSingleton<IPasswordHasher<HeimdallUser>, PasswordHasher<HeimdallUser>>();
         services.AddHeimdallIdentityStores();
 
         using var sp = services.BuildServiceProvider();
