@@ -69,11 +69,11 @@
 
 ## Phase 4 sign-off
 
-- [ ] All 23 steps merged on `main`.
-- [ ] `Authentication:Mfa:Required` (or equivalent feature flag, name confirmed in step 8) is `true` in production configuration.
-- [ ] At least one production org admin has completed enrolment and verified a recovery-code redemption against a non-production environment.
-- [ ] Phase 1 + Phase 2 + Phase 3 acceptance suites still green; new MFA acceptance test added (step 22).
-- [ ] Coverage targets met across every new file (consistent with Phase 1–3: 100% line on the Dapper stores and the policy handler; branch coverage on every state transition).
+- [x] All 23 steps merged on `main` (verified via `git log origin/main`; Phase 4.7 landed in [PR #48](https://github.com/ValhallaTech/Heimdall-TicketTracker/pull/48) on top of Phase 4.1–4.2 [PR #44](https://github.com/ValhallaTech/Heimdall-TicketTracker/pull/44), Phase 4.3–4.4 [PR #45](https://github.com/ValhallaTech/Heimdall-TicketTracker/pull/45), and Phase 4.5–4.6 [PR #47](https://github.com/ValhallaTech/Heimdall-TicketTracker/pull/47)).
+- [x] **MFA gate is always-on** — `RequireMfaPolicy` is unconditionally registered in `Heimdall.Web/Program.cs` step 7, the live handler from step 16 supersedes the step-8 placeholder, and step 18 applies the policy to every `/admin/*` page and every OpenFGA tuple-management endpoint. The originally-planned `Authentication:Mfa:Required` feature flag was **not** introduced: the proposal §4 stance ("optional but encouraged for regular users; required for org admins") is realised structurally inside the handler (non-admins succeed unconditionally, admins must satisfy `amr=mfa` + live `two_factor_enabled`), so a runtime toggle would have no remaining lever to flip without weakening the policy. No production configuration change is required to enable MFA — it is on by default.
+- [ ] **Operational, post-deploy:** At least one production org admin has completed enrolment and verified a recovery-code redemption against a non-production environment. *Not a code-side gate; tracked by ops and ticked once the next production deploy has exercised [`docs/runbooks/mfa-enrolment.md`](../runbooks/mfa-enrolment.md).*
+- [x] Phase 1 + Phase 2 + Phase 3 acceptance suites still green; new MFA acceptance test added (step 22 — [`tests/Heimdall.Web.Tests/Acceptance/Phase4AcceptanceTests.cs`](../../tests/Heimdall.Web.Tests/Acceptance/Phase4AcceptanceTests.cs), shares the `Phase1Acceptance` xUnit collection).
+- [x] Coverage targets met across every new file (consistent with Phase 1–3: 100% line on the Dapper 2FA stores and the policy handler; branch coverage on every state transition — verified by `dotnet test Heimdall.slnx --settings coverlet.runsettings` in PR #48).
 - [x] `docs/runbooks/mfa-enrolment.md` published and linked from `README.md` alongside the OpenFGA runbook.
 
 ## References
