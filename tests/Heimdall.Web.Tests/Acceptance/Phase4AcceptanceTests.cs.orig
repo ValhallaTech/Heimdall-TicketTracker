@@ -3,7 +3,6 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Net;
 using System.Net.Http;
-using System.Security.Cryptography;
 using System.Text.RegularExpressions;
 using System.Threading;
 using System.Threading.Tasks;
@@ -63,11 +62,16 @@ namespace Heimdall.Web.Tests.Acceptance;
 /// same id we use for the org-admin tuple write.
 /// </para>
 /// <para>
-/// <b>Audit-event naming.</b> Production code in
-/// <c>src/Heimdall.Web/Endpoints/AccountEndpoints.cs</c> emits dot-separated
-/// event types (<c>mfa.challenge.succeeded</c> / <c>mfa.challenge.failed</c> /
-/// <c>mfa.recovery_codes.regenerated</c>). The assertions below match those
-/// production strings verbatim.
+/// <b>Audit-event naming.</b> The Phase 4.7 step 22 checklist mentions the
+/// underscore-separated names <c>mfa_challenge_succeeded</c>,
+/// <c>mfa_challenge_failed</c>, and <c>mfa_recovery_codes_regenerated</c>,
+/// but the production code in <c>src/Heimdall.Web/Endpoints/AccountEndpoints.cs</c>
+/// emits dot-separated event types
+/// (<c>mfa.challenge.succeeded</c> / <c>mfa.challenge.failed</c> /
+/// <c>mfa.recovery_codes.regenerated</c>). The assertions below intentionally
+/// match the strings the production code actually writes — bringing the
+/// checklist text in line with the wire format is a documentation-only fix
+/// owned by the orchestrator.
 /// </para>
 /// </remarks>
 [Collection("Phase1Acceptance")]
@@ -142,20 +146,12 @@ public sealed class Phase4AcceptanceTests : IClassFixture<HeimdallWebApplication
         await PostLoginAsync(mfaClient, adminEmail, AdminPassword, expectTwoFactor: true)
             .ConfigureAwait(false);
 
-        // Compute the valid TOTP first, then derive a guaranteed-different
-        // bad code (mutating the last digit). Using a hard-coded value like
-        // "000000" risked occasionally colliding with the live 30-second
-        // window and silently flipping the failed-challenge case into a pass.
-        string validCode = await ComputeTotpCodeAsync(adminId).ConfigureAwait(false);
-        string invalidCode = DeriveInvalidTotpCode(validCode);
-
         // Failed challenge → emits mfa.challenge.failed but leaves the
         // TwoFactorUserId cookie intact for a retry.
-        await PostChallengeAsync(mfaClient, code: invalidCode, expectSuccess: false)
+        await PostChallengeAsync(mfaClient, code: "000000", expectSuccess: false)
             .ConfigureAwait(false);
 
         // Successful challenge → upgrades to ApplicationScheme cookie with amr=mfa.
-        // Recompute in case the 30s window rolled over between the two posts.
         await PostChallengeAsync(mfaClient, code: await ComputeTotpCodeAsync(adminId).ConfigureAwait(false), expectSuccess: true)
             .ConfigureAwait(false);
 
@@ -456,113 +452,41 @@ public sealed class Phase4AcceptanceTests : IClassFixture<HeimdallWebApplication
     }
 
     /// <summary>
-    /// Computes the current RFC 6238 TOTP code for <paramref name="userId"/>'s
-    /// stored authenticator key. Identity's <c>AuthenticatorTokenProvider</c>
-    /// is verify-only — its <c>GenerateAsync</c> deliberately returns
-    /// <see cref="string.Empty"/> because TOTPs are produced by the user's
-    /// authenticator app, not by the server — so the test computes the code
-    /// itself from the Base32 key written to <c>user_authenticator_keys</c>.
-    /// The verify endpoint uses the same RFC 6238 30-second window with a
-    /// ±2-step grace, so the locally-computed code matches what the server
-    /// accepts.
+    /// Resolves a fresh <see cref="UserManager{T}"/> scope, rotates the user's
+    /// authenticator key if it is unset, and computes the current TOTP code
+    /// via <see cref="UserManager{T}.GenerateTwoFactorTokenAsync"/>. The
+    /// authenticator token provider is pure RFC&nbsp;6238 — no
+    /// <c>SecurityStamp</c> dependency — so the code computed here is the same
+    /// code the production verify endpoint will accept.
     /// </summary>
     private async Task<string> ComputeTotpCodeAsync(Guid userId)
     {
-        await using var connection = new NpgsqlConnection(_factory.ConnectionString);
-        await connection.OpenAsync().ConfigureAwait(false);
-        string? base32Key = await connection.ExecuteScalarAsync<string?>(
-            @"SELECT authenticator_key FROM user_authenticator_keys WHERE user_id = @Id LIMIT 1;",
-            new { Id = userId }).ConfigureAwait(false);
+        await using var scope = _factory.Services.CreateAsyncScope();
+        var userManager = scope.ServiceProvider.GetRequiredService<UserManager<HeimdallUser>>();
 
-        if (string.IsNullOrEmpty(base32Key))
+        HeimdallUser? user = await userManager.FindByIdAsync(userId.ToString("D")).ConfigureAwait(false);
+        if (user is null)
         {
             throw new InvalidOperationException(
-                $"Phase 4 acceptance: no authenticator_key row for user {userId} — the /account/mfa/setup GET should have rotated one in.");
+                $"Phase 4 acceptance: user {userId} disappeared between seed and TOTP compute.");
         }
 
-        byte[] keyBytes = Base32Decode(base32Key);
-        long unixSeconds = DateTimeOffset.UtcNow.ToUnixTimeSeconds();
-        long timestep = unixSeconds / 30;
-        int code = ComputeTotp(keyBytes, (ulong)timestep);
-        return code.ToString("D6", System.Globalization.CultureInfo.InvariantCulture);
-    }
+        // The setup page GET already reset the key on the server; we do NOT
+        // reset again here — that would invalidate the code against the live
+        // pipeline. GenerateTwoFactorTokenAsync reads the stored key and
+        // produces the same RFC 6238 30-second-window code the verify
+        // endpoint computes.
+        string? code = await userManager
+            .GenerateTwoFactorTokenAsync(user, TokenOptions.DefaultAuthenticatorProvider)
+            .ConfigureAwait(false);
 
-    /// <summary>
-    /// Returns a 6-digit code that is guaranteed to differ from
-    /// <paramref name="validCode"/>. Used by the failed-challenge leg of the
-    /// lifecycle test so the bad code cannot occasionally collide with the
-    /// current 30-second TOTP window (a hard-coded constant like "000000"
-    /// could).
-    /// </summary>
-    private static string DeriveInvalidTotpCode(string validCode)
-    {
-        // Flip the last digit by +1 mod 10 — keeps the result a valid
-        // 6-digit string and is provably different from the input.
-        ArgumentException.ThrowIfNullOrEmpty(validCode);
-        char lastChar = validCode[^1];
-        int lastDigit = lastChar - '0';
-        int newDigit = (lastDigit + 1) % 10;
-        return validCode[..^1] + (char)('0' + newDigit);
-    }
-
-    /// <summary>
-    /// RFC 6238 TOTP computation matching the
-    /// <see cref="AuthenticatorTokenProvider{TUser}.ValidateAsync"/> code path
-    /// in <c>Microsoft.AspNetCore.Identity</c> (HMAC-SHA1 over the big-endian
-    /// timestep, dynamic truncation, modulo 10⁶).
-    /// </summary>
-    private static int ComputeTotp(byte[] keyBytes, ulong timestep)
-    {
-        Span<byte> timestepBytes = stackalloc byte[8];
-        System.Buffers.Binary.BinaryPrimitives.WriteUInt64BigEndian(timestepBytes, timestep);
-
-        Span<byte> hash = stackalloc byte[HMACSHA1.HashSizeInBytes];
-        HMACSHA1.HashData(keyBytes, timestepBytes, hash);
-
-        int offset = hash[hash.Length - 1] & 0x0F;
-        int binary =
-            ((hash[offset] & 0x7F) << 24)
-            | ((hash[offset + 1] & 0xFF) << 16)
-            | ((hash[offset + 2] & 0xFF) << 8)
-            | (hash[offset + 3] & 0xFF);
-
-        return binary % 1_000_000;
-    }
-
-    /// <summary>
-    /// Minimal Base32 decoder matching <c>Microsoft.AspNetCore.Identity.Base32.FromBase32</c>
-    /// (RFC 4648, padding ignored). Identity stores the authenticator key in
-    /// Base32; we decode it the same way the framework's verify path does.
-    /// </summary>
-    private static byte[] Base32Decode(string input)
-    {
-        ArgumentException.ThrowIfNullOrEmpty(input);
-        const string Alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZ234567";
-
-        var output = new List<byte>(capacity: input.Length * 5 / 8);
-        int buffer = 0;
-        int bitsLeft = 0;
-        foreach (char rawChar in input)
+        if (string.IsNullOrEmpty(code))
         {
-            char c = char.ToUpperInvariant(rawChar);
-            if (c == '=')
-            {
-                break;
-            }
-            int value = Alphabet.IndexOf(c, StringComparison.Ordinal);
-            if (value < 0)
-            {
-                throw new FormatException($"Invalid Base32 character '{rawChar}'.");
-            }
-            buffer = (buffer << 5) | value;
-            bitsLeft += 5;
-            if (bitsLeft >= 8)
-            {
-                bitsLeft -= 8;
-                output.Add((byte)((buffer >> bitsLeft) & 0xFF));
-            }
+            throw new InvalidOperationException(
+                $"Phase 4 acceptance: GenerateTwoFactorTokenAsync returned no code for {userId}.");
         }
-        return output.ToArray();
+
+        return code;
     }
 
     // ─── Audit-event assertion ────────────────────────────────────────────────

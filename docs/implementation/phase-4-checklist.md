@@ -63,7 +63,7 @@
   2. After enrolment + recovery-code generation, the admin can reach `/admin/*` pages.
   3. Disabling MFA logs the admin out (security-stamp rotation tears the circuit per the Phase 1 revalidating provider) and re-flips the redirect.
   4. A non-admin user can log in without MFA and is **not** redirected to setup.
-  5. `mfa_enrolled`, `mfa_disabled`, `mfa_challenge_succeeded`, `mfa_challenge_failed`, `mfa_recovery_codes_regenerated` audit-event rows are persisted with the correct shape.
+  5. `mfa_enrolled`, `mfa_disabled`, `mfa.challenge.succeeded`, `mfa.challenge.failed`, `mfa.recovery_codes.regenerated` audit-event rows are persisted with the correct shape. (The three challenge / recovery-regen event types use dot-separated names — matching the literals emitted from `src/Heimdall.Web/Endpoints/AccountEndpoints.cs`; the enrol / disable lifecycle events keep their original underscore names.)
   Shares the `Phase1Acceptance` xUnit collection (same env-var mutation reason as `Phase2AcceptanceTests` / `Phase3AcceptanceTests`).
 - [x] **23. Runbook — MFA enrolment + recovery.** New `docs/runbooks/mfa-enrolment.md` covering: operator-side seed-admin enrolment on first deploy, recovery-code storage guidance, the `mfa-setup` and `mfa-challenge` rate-limit policies, and the break-glass procedure (Phase 3 step 10 + the new `mfa_policy_break_glass` audit event). Mirrors the structure of [`docs/runbooks/openfga-bootstrap.md`](../runbooks/openfga-bootstrap.md).
 
