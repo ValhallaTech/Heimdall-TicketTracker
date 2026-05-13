@@ -13,6 +13,12 @@ namespace Heimdall.DAL.Migrations;
 /// hardened or rolled back. The audit trigger writes
 /// <c>token.signing_key.&#42;</c> rows into <c>audit_events</c> so out-of-band
 /// row manipulation (not just orchestrated rotation) is recorded.
+/// Ownership of <c>signing_keys</c> is transferred to <c>heimdall_signer</c> so the
+/// <c>SECURITY DEFINER</c> insert function (owned by that role) can write under RLS.
+/// RLS is <c>ENABLE</c>d as defence in depth but deliberately <strong>not</strong>
+/// <c>FORCE</c>d — the column-level <c>GRANT</c>s are the real confidentiality control,
+/// and forcing RLS would break the <c>SECURITY DEFINER</c> write path with no
+/// corresponding security benefit.
 /// </summary>
 [Migration(202605130001, "Create signing_keys with RLS, two-role access, and audit trigger")]
 public class M202605130001_CreateSigningKeys : Migration
@@ -21,10 +27,13 @@ public class M202605130001_CreateSigningKeys : Migration
     /// Creates the <c>signing_keys</c> table, the
     /// <c>ix_signing_keys_not_after_active</c> / <c>ix_signing_keys_validity_window</c>
     /// indexes, the <c>heimdall_app</c> and <c>heimdall_signer</c> roles with the
-    /// column-scoped grant pattern from hardening §2.2, enables (and forces) Row Level
-    /// Security with defence-in-depth permissive policies, installs the
+    /// column-scoped grant pattern from hardening §2.2, transfers table ownership to
+    /// <c>heimdall_signer</c>, enables (but does not force) Row Level Security with
+    /// defence-in-depth permissive policies, installs the
     /// <c>signing_keys_insert</c> and <c>signing_keys_read_private</c>
-    /// <c>SECURITY DEFINER</c> helpers, and attaches the audit trigger.
+    /// <c>SECURITY DEFINER</c> helpers, grants <c>INSERT ON audit_events</c> to both
+    /// application roles so the audit trigger can fire from either write path, and
+    /// attaches the audit trigger.
     /// </summary>
     public override void Up()
     {
@@ -95,6 +104,20 @@ $$;
 ");
 
         // -------------------------------------------------------------------
+        // 3a) Transfer table ownership to heimdall_signer.
+        // The SECURITY DEFINER signing_keys_insert() function (defined in
+        // section 6) is owned by heimdall_signer, so its body INSERTs into
+        // signing_keys with heimdall_signer's privileges. Making
+        // heimdall_signer the table owner lets that INSERT succeed under
+        // RLS without requiring per-DML policies — see the RLS rationale
+        // in section 5 for why we chose this path over FORCE ROW LEVEL
+        // SECURITY plus explicit FOR INSERT / FOR UPDATE policies.
+        // heimdall_app continues to write through the column-level GRANTs
+        // declared in section 4 and the permissive policies in section 5.
+        // -------------------------------------------------------------------
+        Execute.Sql("ALTER TABLE signing_keys OWNER TO heimdall_signer;");
+
+        // -------------------------------------------------------------------
         // 4) Column-level grants — the PRIMARY access control.
         // heimdall_app sees every column EXCEPT private_key_protected.
         // heimdall_app cannot INSERT or UPDATE that column directly either —
@@ -119,24 +142,35 @@ GRANT UPDATE (kid, alg, public_jwk, created_at, not_before, not_after, retired_a
 GRANT DELETE ON signing_keys TO heimdall_app;
 
 GRANT SELECT ON signing_keys TO heimdall_signer;
+
+-- Audit-trigger writes: the trg_signing_keys_audit trigger (section 7) is a
+-- regular (non-SECURITY DEFINER) trigger, so its body executes in whatever
+-- role context fired it. Two paths feed it:
+--   * signing_keys_insert() runs as heimdall_signer (SECURITY DEFINER) —
+--     the trigger then INSERTs into audit_events as heimdall_signer.
+--   * The retired_at UPDATE is performed directly by heimdall_app — the
+--     trigger then INSERTs into audit_events as heimdall_app.
+-- Both roles therefore need INSERT on audit_events or the trigger fails
+-- with SQLSTATE 42501. These GRANTs are idempotent if Phase 1's
+-- M202605050002_CreateAuditEvents migration (or a later one) already
+-- granted them.
+GRANT INSERT ON audit_events TO heimdall_signer;
+GRANT INSERT ON audit_events TO heimdall_app;
 ");
 
         // -------------------------------------------------------------------
         // 5) Row Level Security.
         // RLS is row-level, not column-level — it does NOT, by itself, hide
         // private_key_protected from heimdall_app. The column-level GRANT
-        // above is the actual control. RLS is enabled here as DEFENCE IN
-        // DEPTH: it ensures any future policy refinement (e.g. tenant
-        // scoping) has a fail-closed substrate, and FORCE ROW LEVEL
-        // SECURITY makes the table owner subject to policies too — closing
-        // the common managed-Postgres footgun where the migrations role
-        // happens to also own the table.
+        // above is the actual control. RLS is ENABLEd here as DEFENCE IN
+        // DEPTH so any future policy refinement (e.g. tenant scoping) has
+        // a fail-closed substrate.
         // The two permissive SELECT policies grant *row visibility* to
         // each role; column visibility is still controlled by the GRANTs.
         // -------------------------------------------------------------------
         Execute.Sql(@"
 ALTER TABLE signing_keys ENABLE ROW LEVEL SECURITY;
-ALTER TABLE signing_keys FORCE ROW LEVEL SECURITY;
+-- RLS is ENABLEd (defence-in-depth) but NOT FORCEd — the column-level GRANTs above are the real confidentiality control. FORCE was tried and rejected because it makes the SECURITY DEFINER write path (function body running as table owner heimdall_signer) require explicit FOR INSERT / FOR UPDATE policies, with no security benefit since heimdall_app is already column-grant-blocked.
 
 CREATE POLICY signing_key_signer_full
     ON signing_keys
@@ -291,14 +325,35 @@ DROP POLICY IF EXISTS signing_key_signer_full ON signing_keys;
 
         // Revoke before DROP TABLE so that if the table is recreated later
         // by re-running Up() we know we start from a clean grant slate.
+        // The audit_events INSERT grants added by Up() are revoked here in
+        // reverse order; this is best-effort (the grants may pre-exist
+        // from an earlier migration or operator action, in which case the
+        // REVOKE simply has no effect for that role's other grant paths).
         Execute.Sql(@"
 DO $$
 BEGIN
     IF EXISTS (SELECT 1 FROM pg_catalog.pg_roles WHERE rolname = 'heimdall_app') THEN
+        REVOKE INSERT ON audit_events FROM heimdall_app;
         REVOKE ALL ON signing_keys FROM heimdall_app;
     END IF;
     IF EXISTS (SELECT 1 FROM pg_catalog.pg_roles WHERE rolname = 'heimdall_signer') THEN
+        REVOKE INSERT ON audit_events FROM heimdall_signer;
         REVOKE ALL ON signing_keys FROM heimdall_signer;
+    END IF;
+END
+$$;
+");
+
+        // table owner reverted to the migration-runner role on drop — we
+        // do not know the operator role name at migration-author time, so
+        // use CURRENT_USER (the role executing this Down()). This keeps
+        // the DROP TABLE below executable regardless of which role owns
+        // the table at teardown time.
+        Execute.Sql(@"
+DO $$
+BEGIN
+    IF EXISTS (SELECT 1 FROM pg_catalog.pg_class WHERE relname = 'signing_keys' AND relnamespace = 'public'::regnamespace) THEN
+        EXECUTE format('ALTER TABLE signing_keys OWNER TO %I', CURRENT_USER);
     END IF;
 END
 $$;

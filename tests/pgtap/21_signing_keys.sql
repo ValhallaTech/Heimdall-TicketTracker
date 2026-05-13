@@ -27,7 +27,7 @@
 
 BEGIN;
 
-SELECT plan(40);
+SELECT plan(43);
 
 -- ===========================================================================
 -- Table & columns exist
@@ -157,6 +157,36 @@ SELECT is(
         WHERE oid = 'public.signing_keys'::regclass),
     true,
     'Row Level Security is enabled on signing_keys'
+);
+
+-- ===========================================================================
+-- Ownership & RLS-force posture — the SECURITY DEFINER signing_keys_insert()
+-- function is owned by heimdall_signer, so for its INSERT body to succeed
+-- under RLS the table must be owned by heimdall_signer AND RLS must NOT be
+-- FORCEd (which would re-subject the owner to policies). Both facts are
+-- asserted so a future migration cannot silently regress them.
+-- The trg_signing_keys_audit trigger fires as the invoking role
+-- (heimdall_signer for SECURITY-DEFINER inserts, heimdall_app for direct
+-- retired_at UPDATEs), so both roles need INSERT on audit_events or the
+-- trigger fails with SQLSTATE 42501.
+-- ===========================================================================
+SELECT is(
+    (SELECT relowner::regrole::text FROM pg_class
+        WHERE oid = 'public.signing_keys'::regclass),
+    'heimdall_signer',
+    'signing_keys is owned by heimdall_signer'
+);
+
+SELECT ok(
+    (SELECT relrowsecurity AND NOT relforcerowsecurity FROM pg_class
+        WHERE oid = 'public.signing_keys'::regclass),
+    'signing_keys has RLS ENABLEd but NOT FORCEd'
+);
+
+SELECT ok(
+    has_table_privilege('heimdall_signer', 'audit_events', 'INSERT')
+        AND has_table_privilege('heimdall_app', 'audit_events', 'INSERT'),
+    'heimdall_signer and heimdall_app both hold INSERT on audit_events'
 );
 
 -- ===========================================================================

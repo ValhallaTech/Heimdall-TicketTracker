@@ -221,35 +221,13 @@ public class SigningKeyRepositoryTests : IAsyncLifetime
         await using var conn = NewSuperConnection();
         await conn.OpenAsync();
 
-        // Test-only fixup: in production deployments the Phase-5 migration is
-        // expected to be applied by an operator session that already runs as
-        // (or transfers ownership to) `heimdall_signer`, so the SECURITY
-        // DEFINER functions own — and thus can INSERT into — `signing_keys`.
-        // Inside the Testcontainers fixture FluentMigrator runs as the
-        // superuser `heimdall`, leaving the table owned by that role. The
-        // SECURITY DEFINER functions then execute as `heimdall_signer`, which
-        // only holds SELECT on the row, so an INSERT path would fail with
-        // 42501. Transfer ownership here so the SECURITY DEFINER boundary
-        // exercised in production is what the tests actually observe. The
-        // migration also `FORCE`s RLS and only declares SELECT-class policies
-        // for `heimdall_signer`; relax the FORCE so the (now-)owner bypasses
-        // RLS for INSERT/UPDATE while keeping policies in place for
-        // `heimdall_app` writes that still flow through the policy stack.
-        await conn.ExecuteAsync(
-            "ALTER TABLE signing_keys OWNER TO heimdall_signer; "
-            + "ALTER TABLE signing_keys NO FORCE ROW LEVEL SECURITY; "
-            // The signing_keys audit trigger fires from the SECURITY DEFINER
-            // INSERT path, so it executes as `heimdall_signer`. Production
-            // grants this transitively by way of the audit role chain (see
-            // the operator runbook); the test fixture must replicate that
-            // grant or the trigger fails 42501 on `audit_events`.
-            + "GRANT INSERT ON audit_events TO heimdall_signer; "
-            // UpdateRetiredAt + any direct heimdall_app write fires the
-            // audit trigger as the invoking role (the trigger function is
-            // not SECURITY DEFINER), so heimdall_app needs INSERT on
-            // audit_events too. The trigger is the only audit-write path.
-            + "GRANT INSERT ON audit_events TO heimdall_app;");
-
+        // Per-test cleanup. The Phase-5 migration
+        // (M202605130001_CreateSigningKeys) now owns the table-ownership
+        // transfer, the un-FORCE of RLS, and the audit_events INSERT
+        // grants for both heimdall_signer and heimdall_app — those used
+        // to live here as a test-only fixup but are required for the
+        // production SECURITY DEFINER write path, so they belong in the
+        // migration itself.
         await conn.ExecuteAsync(
             "DELETE FROM signing_keys; DELETE FROM audit_events;");
     }
