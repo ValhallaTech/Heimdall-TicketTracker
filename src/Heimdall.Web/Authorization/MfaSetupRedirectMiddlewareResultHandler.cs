@@ -74,22 +74,91 @@ public sealed class MfaSetupRedirectMiddlewareResultHandler : IAuthorizationMidd
         {
             // Preserve the originally-requested path + query so the user lands
             // back where they were heading after completing enrolment.
-            string originalPathAndQuery =
-                $"{context.Request.Path.Value ?? string.Empty}{context.Request.QueryString.Value ?? string.Empty}";
-            string redirectTarget = string.IsNullOrEmpty(originalPathAndQuery)
-                ? MfaSetupPath
-                : $"{MfaSetupPath}?returnUrl={Uri.EscapeDataString(originalPathAndQuery)}";
+            //
+            // Defence-in-depth: `Request.Path` / `Request.QueryString` are
+            // user-controlled. ASP.NET parses them into a PathString that
+            // already starts with '/' for absolute-path requests, but we
+            // re-validate here to keep CodeQL's open-redirect / log-injection
+            // checkers happy and to avoid forwarding anything weird into the
+            // returnUrl query parameter.
+            string rawPath = context.Request.Path.Value ?? string.Empty;
+            string rawQuery = context.Request.QueryString.Value ?? string.Empty;
+            string originalPathAndQuery = $"{rawPath}{rawQuery}";
+
+            string redirectTarget = IsSafeLocalReturnPath(originalPathAndQuery)
+                ? $"{MfaSetupPath}?returnUrl={Uri.EscapeDataString(originalPathAndQuery)}"
+                : MfaSetupPath;
 
             _logger.LogInformation(
                 "Redirecting admin to MFA setup. UserId={UserId} OriginalPath={OriginalPath}",
-                context.User?.Identity?.Name ?? "(unknown)",
-                originalPathAndQuery);
+                SanitizeForLog(context.User?.Identity?.Name) ?? "(unknown)",
+                SanitizeForLog(originalPathAndQuery));
 
             context.Response.Redirect(redirectTarget);
             return;
         }
 
         await _defaultHandler.HandleAsync(next, context, policy, authorizeResult).ConfigureAwait(false);
+    }
+
+    /// <summary>
+    /// Validates that the candidate string is a same-origin local path. Matches
+    /// the conservative shape used by the rest of <c>AccountEndpoints</c>:
+    /// must be non-empty, start with a single '/', and not start with '//' or
+    /// '/\' (which browsers can interpret as protocol-relative or
+    /// network-path-reference URLs).
+    /// </summary>
+    private static bool IsSafeLocalReturnPath(string? candidate)
+    {
+        if (string.IsNullOrEmpty(candidate))
+        {
+            return false;
+        }
+
+        if (candidate[0] != '/')
+        {
+            return false;
+        }
+
+        if (candidate.Length >= 2 && (candidate[1] == '/' || candidate[1] == '\\'))
+        {
+            return false;
+        }
+
+        return true;
+    }
+
+    /// <summary>
+    /// Strips CR/LF (and other control characters that would forge new log
+    /// lines) before emitting a user-controlled value through the structured
+    /// logger. Returns <c>null</c> for <c>null</c> input so callers can keep
+    /// their own null-coalescing semantics.
+    /// </summary>
+    private static string? SanitizeForLog(string? value)
+    {
+        if (value is null)
+        {
+            return null;
+        }
+
+        // Capping protects log buffers from arbitrarily long user input.
+        const int MaxLogChars = 256;
+        ReadOnlySpan<char> source =
+            value.Length > MaxLogChars ? value.AsSpan(0, MaxLogChars) : value.AsSpan();
+
+        Span<char> buffer = stackalloc char[source.Length];
+        int written = 0;
+        foreach (char c in source)
+        {
+            // Strip C0 control chars (including CR/LF) and DEL. Printable
+            // characters in the safe range are kept verbatim.
+            if (c >= 0x20 && c != 0x7F)
+            {
+                buffer[written++] = c;
+            }
+        }
+
+        return new string(buffer[..written]);
     }
 
     private static bool ShouldRedirectToMfaSetup(
