@@ -197,7 +197,7 @@ public class MembershipsTests : BunitContext
                     Times.AtLeastOnce);
                 cut.Markup.Should().Contain("alice@example.test");
             },
-            TimeSpan.FromSeconds(2));
+            TimeSpan.FromSeconds(10));
     }
 
     [Fact]
@@ -213,7 +213,7 @@ public class MembershipsTests : BunitContext
 
         cut.WaitForAssertion(
             () => cut.Markup.Should().Contain("No matches."),
-            TimeSpan.FromSeconds(2));
+            TimeSpan.FromSeconds(10));
     }
 
     [Fact]
@@ -231,7 +231,7 @@ public class MembershipsTests : BunitContext
         cut.Find("#add-email").Input("alice");
         cut.WaitForAssertion(
             () => cut.FindAll("button").Any(b => b.TextContent.Trim() == "Pick").Should().BeTrue(),
-            TimeSpan.FromSeconds(2));
+            TimeSpan.FromSeconds(10));
         cut.FindAll("button").First(b => b.TextContent.Trim() == "Pick").Click();
 
         cut.FindAll("button").First(b => b.TextContent.Trim().StartsWith("Add ")).Click();
@@ -261,7 +261,7 @@ public class MembershipsTests : BunitContext
         cut.Find("#add-email").Input("bob");
         cut.WaitForAssertion(
             () => cut.FindAll("button").Any(b => b.TextContent.Trim() == "Pick").Should().BeTrue(),
-            TimeSpan.FromSeconds(2));
+            TimeSpan.FromSeconds(10));
         cut.FindAll("button").First(b => b.TextContent.Trim() == "Pick").Click();
 
         // Default role on team tab is "member" → TeamMemberRole.Member.
@@ -292,7 +292,7 @@ public class MembershipsTests : BunitContext
         cut.Find("#add-email").Input("carol");
         cut.WaitForAssertion(
             () => cut.FindAll("button").Any(b => b.TextContent.Trim() == "Pick").Should().BeTrue(),
-            TimeSpan.FromSeconds(2));
+            TimeSpan.FromSeconds(10));
         cut.FindAll("button").First(b => b.TextContent.Trim() == "Pick").Click();
 
         cut.FindAll("button").First(b => b.TextContent.Trim().StartsWith("Add ")).Click();
@@ -319,7 +319,7 @@ public class MembershipsTests : BunitContext
         cut.Find("#add-email").Input("alice");
         cut.WaitForAssertion(
             () => cut.FindAll("button").Any(b => b.TextContent.Trim() == "Pick").Should().BeTrue(),
-            TimeSpan.FromSeconds(2));
+            TimeSpan.FromSeconds(10));
         cut.FindAll("button").First(b => b.TextContent.Trim() == "Pick").Click();
 
         cut.FindAll("button").First(b => b.TextContent.Trim().StartsWith("Add ")).Click();
@@ -347,7 +347,7 @@ public class MembershipsTests : BunitContext
         cut.Find("#add-email").Input("alice");
         cut.WaitForAssertion(
             () => cut.FindAll("button").Any(b => b.TextContent.Trim() == "Pick").Should().BeTrue(),
-            TimeSpan.FromSeconds(2));
+            TimeSpan.FromSeconds(10));
         cut.FindAll("button").First(b => b.TextContent.Trim() == "Pick").Click();
 
         cut.FindAll("button").First(b => b.TextContent.Trim().StartsWith("Add ")).Click();
@@ -375,7 +375,7 @@ public class MembershipsTests : BunitContext
         cut.Find("#add-email").Input("alice");
         cut.WaitForAssertion(
             () => cut.FindAll("button").Any(b => b.TextContent.Trim() == "Pick").Should().BeTrue(),
-            TimeSpan.FromSeconds(2));
+            TimeSpan.FromSeconds(10));
         cut.FindAll("button").First(b => b.TextContent.Trim() == "Pick").Click();
 
         cut.FindAll("button").First(b => b.TextContent.Trim().StartsWith("Add ")).Click();

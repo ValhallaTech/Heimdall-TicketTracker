@@ -178,18 +178,27 @@ builder
     // the Phase 4.5 step 12 TwoFactorAuthenticatorSignInAsync challenge path.
     .AddSignInManager<SignInManager<HeimdallUser>>()
 
-    // Default token providers (DataProtector / Email / Phone / Authenticator).
-    // Required by the password-reset and email-confirmation flows that land in
-    // step 10; registered now so the DI graph is stable across phases.
-    .AddDefaultTokenProviders()
+    // Token providers — registered explicitly (rather than via
+    // AddDefaultTokenProviders) so the DI graph contains only providers
+    // Heimdall actually supports. AddDefaultTokenProviders additionally
+    // registers PhoneNumberTokenProvider, which calls
+    // IUserPhoneNumberStore<TUser> from
+    // SignInManager.GetValidTwoFactorProvidersAsync during every MFA login —
+    // HeimdallUserStore deliberately does not implement that interface (no
+    // phone-number column, no SMS transport), so registering it would crash
+    // the login pipeline with NotSupportedException on the first 2FA sign-in.
+    //
+    //   - DataProtector  → password-reset / email-confirmation tokens
+    //   - Email          → email-channel 2FA token surface (verify path uses
+    //                      IUserEmailStore which we DO implement)
+    //   - Authenticator  → TOTP MFA (Phase 4.3 step 7 — re-registered below
+    //                      to keep the audit trail required by the checklist)
+    .AddTokenProvider<DataProtectorTokenProvider<HeimdallUser>>(TokenOptions.DefaultProvider)
+    .AddTokenProvider<EmailTokenProvider<HeimdallUser>>(TokenOptions.DefaultEmailProvider)
 
     // Phase 4.3 step 7 — explicit AuthenticatorTokenProvider<HeimdallUser>
-    // registration under TokenOptions.DefaultAuthenticatorProvider. Identity's
-    // AddDefaultTokenProviders already registers a provider under this name,
-    // so this call is functionally a duplicate (AddTokenProvider overwrites
-    // by name) — kept here intentionally as the audit trail required by the
-    // Phase 4.3 step 7 checklist entry. The explicit registration is the
-    // single source of truth that Heimdall consumes a TOTP provider.
+    // registration under TokenOptions.DefaultAuthenticatorProvider. Kept as
+    // the single source of truth that Heimdall consumes a TOTP provider.
     .AddTokenProvider<AuthenticatorTokenProvider<HeimdallUser>>(
         TokenOptions.DefaultAuthenticatorProvider);
 
@@ -247,7 +256,33 @@ builder
             // can recognise the auth cookie at a glance.
             options.Cookie.Name = ".Heimdall.Auth";
         }
-    );
+    )
+    // Phase 4.5 step 12 — short-lived cookie that carries the
+    // TwoFactorUserId across the password→challenge hop. SignInManager
+    // signs into this scheme from PasswordSignInAsync when
+    // RequiresTwoFactor, and reads it back from
+    // TwoFactorAuthenticatorSignInAsync. Identity's defaults are fine:
+    // session-lifetime cookie, HttpOnly, SameSite=Lax.
+    .AddCookie(IdentityConstants.TwoFactorUserIdScheme, options =>
+    {
+        options.Cookie.Name = ".Heimdall.TwoFactorUserId";
+        options.Cookie.HttpOnly = true;
+        options.Cookie.SecurePolicy = CookieSecurePolicy.SameAsRequest;
+        options.Cookie.SameSite = SameSiteMode.Lax;
+        options.ExpireTimeSpan = TimeSpan.FromMinutes(5);
+    })
+    // Phase 4.5 step 12 — long-lived "remember this device" cookie used
+    // when the user opts into rememberMachine on the challenge form.
+    // Registered so SignInManager.RememberTwoFactorClientAsync /
+    // ForgetTwoFactorClientAsync resolve a scheme; the actual lifetime
+    // is controlled by Identity's TwoFactorRememberMe expiration option.
+    .AddCookie(IdentityConstants.TwoFactorRememberMeScheme, options =>
+    {
+        options.Cookie.Name = ".Heimdall.TwoFactorRememberMe";
+        options.Cookie.HttpOnly = true;
+        options.Cookie.SecurePolicy = CookieSecurePolicy.SameAsRequest;
+        options.Cookie.SameSite = SameSiteMode.Lax;
+    });
 
 // Authorization services + the global authenticated-only fallback policy
 // (Phase 1 step 9 of docs/proposals/security-and-authorization.md §9.3). The
