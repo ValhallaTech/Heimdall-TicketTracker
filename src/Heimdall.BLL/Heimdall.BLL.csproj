@@ -1,5 +1,17 @@
 <Project Sdk="Microsoft.NET.Sdk">
   <ItemGroup>
+    <!--
+      Phase 5.1 step 2: SigningKeyService consumes IDataProtectionProvider from
+      Microsoft.AspNetCore.DataProtection.Abstractions, which is part of the
+      Microsoft.AspNetCore.App shared framework. The FrameworkReference also
+      transitively provides the Microsoft.Extensions.* packages previously listed
+      explicitly; NuGet's NU1510 advisory flags them as redundant once the shared
+      framework is referenced, so they have been removed below.
+    -->
+    <FrameworkReference Include="Microsoft.AspNetCore.App" />
+  </ItemGroup>
+
+  <ItemGroup>
     <ProjectReference Include="..\Heimdall.Core\Heimdall.Core.csproj" />
     <ProjectReference Include="..\Heimdall.DAL\Heimdall.DAL.csproj" />
   </ItemGroup>
@@ -7,27 +19,7 @@
   <ItemGroup>
     <PackageReference Include="MailKit" Version="4.16.0" />
     <PackageReference Include="Mapster" Version="10.0.7" />
-    <PackageReference
-      Include="Microsoft.Extensions.Configuration.Abstractions"
-      Version="10.0.7"
-    />
-    <PackageReference
-      Include="Microsoft.Extensions.Configuration.Binder"
-      Version="10.0.7"
-    />
-    <PackageReference
-      Include="Microsoft.Extensions.DependencyInjection.Abstractions"
-      Version="10.0.7"
-    />
-    <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" Version="10.0.7" />
-    <PackageReference Include="Microsoft.Extensions.Options" Version="10.0.7" />
-    <PackageReference Include="Microsoft.Extensions.Options.DataAnnotations" Version="10.0.7" />
-    <PackageReference
-      Include="Microsoft.Extensions.Options.ConfigurationExtensions"
-      Version="10.0.7"
-    />
     <PackageReference Include="MimeKit" Version="4.16.0" />
-    <PackageReference Include="Microsoft.Extensions.Caching.Memory" Version="10.0.7" />
     <PackageReference Include="OpenFga.Sdk" Version="0.10.0" />
     <PackageReference Include="OpenTelemetry.Api" Version="1.15.3" />
   </ItemGroup>

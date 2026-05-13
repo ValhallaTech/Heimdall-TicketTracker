@@ -490,6 +490,24 @@ builder.Services.AddSingleton<EmailFlowGate>();
 builder.Services.AddOptions<RegistrationOptions>()
     .Bind(builder.Configuration.GetSection("Registration"));
 
+// --- Token / signing-key options (Phase 5.1 step 2) -----------------------
+// Strongly-typed Heimdall.Core.Tokens.TokenOptions bound to the "Token"
+// config section. Carries the access-token lifetime and the signing-key
+// rotation/overlap windows that SigningKeyService consults to enforce the
+// hardening proposal §2.5 overlap-window invariant.
+builder.Services.Configure<Heimdall.Core.Tokens.TokenOptions>(
+    builder.Configuration.GetSection("Token"));
+
+// --- Phase 5.1 step 2/3: signing-key service + JWKS cache invalidator -----
+// JWKS cache invalidator is a singleton (stateless; just removes one key from
+// IMemoryCache). SigningKeyService is scoped because it composes scoped DAL
+// repositories and a per-request IDataProtector view. Hardening §2.1 forbids
+// caching the decrypted key in a longer-lived component.
+builder.Services.AddSingleton<Heimdall.BLL.Tokens.IJwksCacheInvalidator,
+    Heimdall.BLL.Tokens.MemoryCacheJwksCacheInvalidator>();
+builder.Services.AddScoped<Heimdall.BLL.Tokens.ISigningKeyService,
+    Heimdall.BLL.Tokens.SigningKeyService>();
+
 // --- SystemAdmin bootstrap registration (Phase 1 step 8) ------------------
 // Resolved per-scope from the startup bootstrap block below. Scoped lifetime
 // matches the Identity stores it composes (UserManager, IUserStore).
@@ -732,6 +750,12 @@ app.MapRazorComponents<App>().AddInteractiveServerRenderMode();
 // Razor components so they participate in the same routing namespace, and
 // after UseAntiforgery so form posts go through antiforgery validation.
 app.MapAccountEndpoints();
+
+// --- JWKS endpoint (Phase 5.1 step 3) ------------------------------------
+// Publishes the public halves of the trusted signing keys at
+// /.well-known/jwks.json. Anonymous; response cached for 5 minutes with
+// in-process invalidation on rotation via IJwksCacheInvalidator.
+app.MapJwksEndpoint();
 
 app.Run();
 
