@@ -1,6 +1,6 @@
 # Phase 4 — MFA (TOTP + Recovery Codes): Implementation Checklist
 
-**Status:** Planning. No steps started. Phase 3 steps 1–12 complete on `main` (PRs [#34](https://github.com/ValhallaTech/Heimdall-TicketTracker/pull/34), [#37](https://github.com/ValhallaTech/Heimdall-TicketTracker/pull/37), [#38](https://github.com/ValhallaTech/Heimdall-TicketTracker/pull/38), [#41](https://github.com/ValhallaTech/Heimdall-TicketTracker/pull/41)); Phase 3 steps 13 (performance verification) and 14 (decommission) still outstanding. Phase 4 must not start until Phase 3 is signed off (see [`phase-3-checklist.md`](./phase-3-checklist.md) "Phase 3 sign-off").
+**Status:** Phase 4.1–4.6 (steps 1–18) merged on `main` via PRs [#44](https://github.com/ValhallaTech/Heimdall-TicketTracker/pull/44), [#45](https://github.com/ValhallaTech/Heimdall-TicketTracker/pull/45), and [#47](https://github.com/ValhallaTech/Heimdall-TicketTracker/pull/47). Phase 4.7 (steps 19–23 — tests, acceptance suite, and runbook) is being completed in the current PR. Phase 3 steps 13 (performance verification) and 14 (decommission) remain outstanding from the upstream phase but do not block Phase 4 closure (see [`phase-3-checklist.md`](./phase-3-checklist.md) "Phase 3 sign-off").
 **Source of truth:** [`docs/proposals/security-and-authorization.md`](../proposals/security-and-authorization.md) §4 (factor menu and policy stance), §9.3 Phase 4 (steps 1–5), and the 2026-05-05 decision-log entry that pins the admin predicate to the **seed organization's stable UUID** (not its slug).
 **Upstream:** [ASP.NET Core Identity 2FA](https://learn.microsoft.com/aspnet/core/security/authentication/identity-enable-qrcodes) — built-in TOTP token provider, `SignInManager.TwoFactorAuthenticatorSignInAsync`, recovery-code primitives.
 **Depends on:**
@@ -55,17 +55,17 @@
 
 ## Phase 4.7 — Tests and acceptance
 
-- [ ] **19. pgTAP — schema invariants.** New file `tests/pgtap/20_mfa.sql`. Cover `users.two_factor_enabled` default + NOT NULL; `user_authenticator_keys` PK / FK CASCADE / NOT NULL columns; `user_recovery_codes` PK / FK CASCADE / NOT NULL columns + composite `(user_id, used_at)` index. Matches the assertion-density of `tests/pgtap/08_team_members.sql` and `tests/pgtap/10_tickets.sql`.
-- [ ] **20. xUnit — Dapper 2FA store unit tests.** Exercise every method on the three new stores against `postgres:18-alpine` via Testcontainers (consistent with the Phase 1 Identity-store fixture). Include the concurrent-redeem race test called out in step 6. Coverage target: parity with Phase 1 (100% line; 100% branch on state transitions).
-- [ ] **21. xUnit — `RequireMfaPolicy` handler tests.** Mock `IAuthorizationService` (the OpenFGA adapter, **not** the framework one) and `IOptionsMonitor<SeedOrganizationOptions>`; cover (a) non-admin always allowed, (b) admin without `amr=mfa` denied, (c) admin with `amr=mfa` but `two_factor_enabled = false` denied, (d) admin with both allowed, (e) sidecar outage denied, (f) break-glass allowed + audit-event written. 100% branch coverage on the handler.
-- [ ] **22. xUnit — `Phase4AcceptanceTests`.** End-to-end via `WebApplicationFactory` + `postgres:18-alpine` + a real `docker.io/openfga/openfga` Testcontainer (reusing the Phase 3.7 step 12 OpenFGA fixture from PR #41). Scenarios:
+- [x] **19. pgTAP — schema invariants.** New file `tests/pgtap/20_mfa.sql`. Cover `users.two_factor_enabled` default + NOT NULL; `user_authenticator_keys` PK / FK CASCADE / NOT NULL columns; `user_recovery_codes` PK / FK CASCADE / NOT NULL columns + composite `(user_id, used_at)` index. Matches the assertion-density of `tests/pgtap/08_team_members.sql` and `tests/pgtap/10_tickets.sql`.
+- [x] **20. xUnit — Dapper 2FA store unit tests.** Exercise every method on the three new stores against `postgres:18-alpine` via Testcontainers (consistent with the Phase 1 Identity-store fixture). Include the concurrent-redeem race test called out in step 6. Coverage target: parity with Phase 1 (100% line; 100% branch on state transitions).
+- [x] **21. xUnit — `RequireMfaPolicy` handler tests.** Mock `IAuthorizationService` (the OpenFGA adapter, **not** the framework one) and `IOptionsMonitor<SeedOrganizationOptions>`; cover (a) non-admin always allowed, (b) admin without `amr=mfa` denied, (c) admin with `amr=mfa` but `two_factor_enabled = false` denied, (d) admin with both allowed, (e) sidecar outage denied, (f) break-glass allowed + audit-event written. 100% branch coverage on the handler.
+- [x] **22. xUnit — `Phase4AcceptanceTests`.** End-to-end via `WebApplicationFactory` + `postgres:18-alpine` + a real `docker.io/openfga/openfga` Testcontainer (reusing the Phase 3.7 step 12 OpenFGA fixture from PR #41). Scenarios:
   1. Seed admin user (`system_admin = true`, also written to OpenFGA as `organization:<seed>#admin@user:<id>` via the Phase 3 backfill helper) logs in → redirected to `/account/mfa/setup` on first protected-page access.
   2. After enrolment + recovery-code generation, the admin can reach `/admin/*` pages.
   3. Disabling MFA logs the admin out (security-stamp rotation tears the circuit per the Phase 1 revalidating provider) and re-flips the redirect.
   4. A non-admin user can log in without MFA and is **not** redirected to setup.
   5. `mfa_enrolled`, `mfa_disabled`, `mfa_challenge_succeeded`, `mfa_challenge_failed`, `mfa_recovery_codes_regenerated` audit-event rows are persisted with the correct shape.
   Shares the `Phase1Acceptance` xUnit collection (same env-var mutation reason as `Phase2AcceptanceTests` / `Phase3AcceptanceTests`).
-- [ ] **23. Runbook — MFA enrolment + recovery.** New `docs/runbooks/mfa-enrolment.md` covering: operator-side seed-admin enrolment on first deploy, recovery-code storage guidance, the `mfa-setup` and `mfa-challenge` rate-limit policies, and the break-glass procedure (Phase 3 step 10 + the new `mfa_policy_break_glass` audit event). Mirrors the structure of [`docs/runbooks/openfga-bootstrap.md`](../runbooks/openfga-bootstrap.md).
+- [x] **23. Runbook — MFA enrolment + recovery.** New `docs/runbooks/mfa-enrolment.md` covering: operator-side seed-admin enrolment on first deploy, recovery-code storage guidance, the `mfa-setup` and `mfa-challenge` rate-limit policies, and the break-glass procedure (Phase 3 step 10 + the new `mfa_policy_break_glass` audit event). Mirrors the structure of [`docs/runbooks/openfga-bootstrap.md`](../runbooks/openfga-bootstrap.md).
 
 ## Phase 4 sign-off
 
@@ -74,7 +74,7 @@
 - [ ] At least one production org admin has completed enrolment and verified a recovery-code redemption against a non-production environment.
 - [ ] Phase 1 + Phase 2 + Phase 3 acceptance suites still green; new MFA acceptance test added (step 22).
 - [ ] Coverage targets met across every new file (consistent with Phase 1–3: 100% line on the Dapper stores and the policy handler; branch coverage on every state transition).
-- [ ] `docs/runbooks/mfa-enrolment.md` published and linked from `README.md` alongside the OpenFGA runbook.
+- [x] `docs/runbooks/mfa-enrolment.md` published and linked from `README.md` alongside the OpenFGA runbook.
 
 ## References
 

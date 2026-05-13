@@ -129,6 +129,13 @@ Heimdall has three parallel test suites, all gated at **≥80% line and branch c
 
 The pgTAP runner expects `PGHOST`, `PGPORT` (default `55432` for the Compose stack), `PGUSER`, `PGPASSWORD`, and `PGDATABASE` to be set. See [`tests/pgtap/README.md`](tests/pgtap/README.md) for full details.
 
+## Runbooks
+
+Operator-facing runbooks live under [`docs/runbooks/`](docs/runbooks/):
+
+- [`docs/runbooks/openfga-bootstrap.md`](docs/runbooks/openfga-bootstrap.md) — one-time bootstrap of the OpenFGA sidecar (store + model + env-var wiring) and the Phase 3.4 tuple backfill.
+- [`docs/runbooks/mfa-enrolment.md`](docs/runbooks/mfa-enrolment.md) — operator-side MFA: seed-admin enrolment, recovery-code storage, the `mfa-setup` / `mfa-challenge` rate-limit policies, and the break-glass procedure.
+
 ## Deployment
 
 The project includes a Render Blueprint (`render.yaml`) that provisions:
