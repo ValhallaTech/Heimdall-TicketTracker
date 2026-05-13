@@ -72,12 +72,20 @@ public sealed class MfaSetupRedirectMiddlewareResultHandler : IAuthorizationMidd
 
         if (ShouldRedirectToMfaSetup(context, authorizeResult))
         {
+            // Preserve the originally-requested path + query so the user lands
+            // back where they were heading after completing enrolment.
+            string originalPathAndQuery =
+                $"{context.Request.Path.Value ?? string.Empty}{context.Request.QueryString.Value ?? string.Empty}";
+            string redirectTarget = string.IsNullOrEmpty(originalPathAndQuery)
+                ? MfaSetupPath
+                : $"{MfaSetupPath}?returnUrl={Uri.EscapeDataString(originalPathAndQuery)}";
+
             _logger.LogInformation(
                 "Redirecting admin to MFA setup. UserId={UserId} OriginalPath={OriginalPath}",
                 context.User?.Identity?.Name ?? "(unknown)",
-                context.Request.Path.Value);
+                originalPathAndQuery);
 
-            context.Response.Redirect(MfaSetupPath);
+            context.Response.Redirect(redirectTarget);
             return;
         }
 
@@ -99,17 +107,33 @@ public sealed class MfaSetupRedirectMiddlewareResultHandler : IAuthorizationMidd
             return false;
         }
 
-        bool failedOnRequireMfa = false;
+        // Only redirect when the user is authenticated — an anonymous caller
+        // belongs on /login, not /account/mfa/setup, and the default handler
+        // will produce the correct 401/redirect-to-login result.
+        if (context.User?.Identity?.IsAuthenticated != true)
+        {
+            return false;
+        }
+
+        // Only redirect when RequireMfaRequirement is the *only* failed
+        // requirement. If the user also failed e.g. SystemAdmin, sending them
+        // to /account/mfa/setup is misleading — enrolling will not unlock the
+        // page they were denied on. Defer those cases to the default 403.
+        bool foundRequireMfa = false;
         foreach (IAuthorizationRequirement requirement in failure.FailedRequirements)
         {
             if (requirement is RequireMfaRequirement)
             {
-                failedOnRequireMfa = true;
-                break;
+                foundRequireMfa = true;
+            }
+            else
+            {
+                // A non-MFA requirement also failed — let the default handler decide.
+                return false;
             }
         }
 
-        if (!failedOnRequireMfa)
+        if (!foundRequireMfa)
         {
             return false;
         }

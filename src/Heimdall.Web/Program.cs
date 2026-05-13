@@ -1,5 +1,7 @@
 using System;
 using System.Security.Claims;
+using System.Security.Cryptography;
+using System.Text;
 using System.Threading.RateLimiting;
 using AspNetCore.DataProtection.CustomStorage.Dapper.PostgreSQL;
 using Autofac;
@@ -359,16 +361,35 @@ builder.Services.AddRateLimiter(options =>
     // Phase 4.5 step 12 — MFA challenge / recovery throttle. The challenge
     // endpoint is reached on the post-password 2FA hand-off, BEFORE the
     // ApplicationScheme cookie is issued — so httpContext.User is anonymous
-    // at the policy callback. Keying on (ip, two-factor-cookie-fingerprint)
-    // would force a sync read of the body, so we settle for a per-IP key
-    // (same shape and limits as mfa-setup — tight enough to neuter
-    // brute-force, loose enough not to lock real users out on the second
-    // try). The two-factor user-id cookie name is internal to ASP.NET
-    // Identity and not part of the stable surface, so we avoid depending on it.
+    // at the policy callback. Identity stores the pending 2FA user id in a
+    // cookie whose name is the public constant IdentityConstants.TwoFactorUserIdScheme;
+    // its value is the encrypted auth ticket and therefore unique per pending
+    // 2FA session. We partition on (ip, sha256(cookie-value)) so two users
+    // behind the same NAT cannot exhaust each other's challenge budget. Hash
+    // (not the raw cookie) keeps the partition key short and avoids leaking
+    // ticket bytes into limiter state. When the cookie is absent (the only
+    // legitimate caller without it is a noise request that the endpoint will
+    // 302 to /login anyway) we still partition by ip so noise cannot escape
+    // the limiter.
     options.AddPolicy("mfa-challenge", httpContext =>
     {
         string ip = httpContext.Connection.RemoteIpAddress?.ToString() ?? "unknown";
-        return RateLimitPartition.GetFixedWindowLimiter(ip, _ => new FixedWindowRateLimiterOptions
+        string? twoFactorCookie =
+            httpContext.Request.Cookies[IdentityConstants.TwoFactorUserIdScheme];
+        string sessionFingerprint;
+        if (string.IsNullOrEmpty(twoFactorCookie))
+        {
+            sessionFingerprint = "no-2fa-cookie";
+        }
+        else
+        {
+            byte[] hash = SHA256.HashData(Encoding.UTF8.GetBytes(twoFactorCookie));
+            // First 16 hex chars (8 bytes) is ample to disambiguate concurrent
+            // 2FA sessions on the same IP without ballooning limiter state.
+            sessionFingerprint = Convert.ToHexString(hash, 0, 8);
+        }
+        string key = $"{ip}|{sessionFingerprint}";
+        return RateLimitPartition.GetFixedWindowLimiter(key, _ => new FixedWindowRateLimiterOptions
         {
             PermitLimit = 10,
             Window = TimeSpan.FromMinutes(5),

@@ -90,7 +90,7 @@ public class AccountEndpointsMfaChallengeTests
 
         var result = await AccountEndpoints.HandleMfaChallengeAsync(
             ctx, "123456", rememberMachine: false, rememberMe: false, returnUrl: "/",
-            sm.Object, um.Object, _audit.Object, default);
+            sm.Object, _audit.Object, default);
 
         result.Should().BeOfType<RedirectHttpResult>()
               .Subject.Url.Should().Be("/login?error=mfa-expired");
@@ -114,7 +114,7 @@ public class AccountEndpointsMfaChallengeTests
 
         var result = await AccountEndpoints.HandleMfaChallengeAsync(
             ctx, "123 456", rememberMachine: false, rememberMe: false, returnUrl: "/admin/audit",
-            sm.Object, um.Object, _audit.Object, default);
+            sm.Object, _audit.Object, default);
 
         result.Should().BeOfType<RedirectHttpResult>()
               .Subject.Url.Should().Be("/admin/audit");
@@ -134,7 +134,7 @@ public class AccountEndpointsMfaChallengeTests
 
         var result = await AccountEndpoints.HandleMfaChallengeAsync(
             ctx, "123-456", rememberMachine: true, rememberMe: true, returnUrl: null,
-            sm.Object, um.Object, _audit.Object, default);
+            sm.Object, _audit.Object, default);
 
         result.Should().BeOfType<RedirectHttpResult>();
         sm.Verify(x => x.TwoFactorAuthenticatorSignInAsync("123456", true, true), Times.Once);
@@ -158,7 +158,7 @@ public class AccountEndpointsMfaChallengeTests
 
         var result = await AccountEndpoints.HandleMfaChallengeAsync(
             ctx, "000000", rememberMachine: false, rememberMe: false, returnUrl: "/",
-            sm.Object, um.Object, _audit.Object, default);
+            sm.Object, _audit.Object, default);
 
         result.Should().BeOfType<RedirectHttpResult>()
               .Subject.Url.Should().Be("/login?error=locked-out");
@@ -179,7 +179,7 @@ public class AccountEndpointsMfaChallengeTests
 
         var result = await AccountEndpoints.HandleMfaChallengeAsync(
             ctx, "000000", rememberMachine: false, rememberMe: true, returnUrl: "/x",
-            sm.Object, um.Object, _audit.Object, default);
+            sm.Object, _audit.Object, default);
 
         var redirect = result.Should().BeOfType<RedirectHttpResult>().Subject;
         redirect.Url.Should().StartWith("/account/mfa/challenge?returnUrl=");

@@ -1046,13 +1046,11 @@ public static class AccountEndpoints
         [FromForm] bool? rememberMe,
         [FromForm] string? returnUrl,
         [FromServices] SignInManager<HeimdallUser> signInManager,
-        [FromServices] UserManager<HeimdallUser> userManager,
         [FromServices] IAuditEventWriter auditWriter,
         CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(httpContext);
         ArgumentNullException.ThrowIfNull(signInManager);
-        ArgumentNullException.ThrowIfNull(userManager);
         ArgumentNullException.ThrowIfNull(auditWriter);
 
         code ??= string.Empty;
