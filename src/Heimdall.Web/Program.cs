@@ -1,5 +1,7 @@
 using System;
 using System.Security.Claims;
+using System.Security.Cryptography;
+using System.Text;
 using System.Threading.RateLimiting;
 using AspNetCore.DataProtection.CustomStorage.Dapper.PostgreSQL;
 using Autofac;
@@ -21,6 +23,8 @@ using Heimdall.Web.Email;
 using Heimdall.Web.Endpoints;
 using Heimdall.Web.Identity;
 using Heimdall.Web.RateLimiting;
+using Microsoft.AspNetCore.Authorization;
+using Microsoft.AspNetCore.Authorization.Policy;
 using Microsoft.AspNetCore.Authentication.Cookies;
 using Microsoft.AspNetCore.Components.Authorization;
 using Microsoft.AspNetCore.DataProtection;
@@ -29,6 +33,8 @@ using Microsoft.AspNetCore.HttpOverrides;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
+using Microsoft.Extensions.Options;
 using Serilog;
 using StackExchange.Redis;
 
@@ -261,6 +267,26 @@ builder.Services.AddAuthorization(AuthorizationConfiguration.Configure);
 // resolves them via the request scope.
 builder.Services.AddHeimdallAuthorizationPolicies();
 
+// Phase 4.6 step 15 — seed-organization id resolution. The accessor is a
+// singleton mutable holder, populated by either ConfigureSeedOrganizationOptions
+// (env var path) or DefaultHierarchyBootstrapper (fresh-DB path). The
+// SeedOrganizationHealthProbe below aborts startup if neither path resolves a
+// value. Phase 4.6 step 16 RequireMfaAuthorizationHandler reads the id via
+// IOptionsMonitor<SeedOrganizationOptions>.
+builder.Services.AddSingleton<SeedOrganizationAccessor>();
+builder.Services.AddOptions<SeedOrganizationOptions>();
+builder.Services.TryAddEnumerable(
+    ServiceDescriptor.Singleton<IConfigureOptions<SeedOrganizationOptions>, ConfigureSeedOrganizationOptions>());
+builder.Services.AddScoped<SeedOrganizationHealthProbe>();
+
+// Phase 4.6 step 17 — custom authorization-result handler that redirects admins
+// missing MFA to /account/mfa/setup instead of emitting a 403. Registered as a
+// singleton (the handler is stateless and the default base type is also a
+// singleton). Replaces the framework default AuthorizationMiddlewareResultHandler.
+builder.Services.AddSingleton<
+    IAuthorizationMiddlewareResultHandler,
+    MfaSetupRedirectMiddlewareResultHandler>();
+
 // --- Rate limiting (Phase 1 step 7 / §3.5) --------------------------------
 // /account/login throttle keyed on (client IP, submitted username) per §3.5:
 // IP alone enables credential-stuffing through botnets; username alone hands
@@ -323,6 +349,46 @@ builder.Services.AddRateLimiter(options =>
         string userId =
             httpContext.User?.FindFirstValue(ClaimTypes.NameIdentifier) ?? "anonymous";
         string key = $"{ip}|{userId}";
+        return RateLimitPartition.GetFixedWindowLimiter(key, _ => new FixedWindowRateLimiterOptions
+        {
+            PermitLimit = 10,
+            Window = TimeSpan.FromMinutes(5),
+            QueueLimit = 0,
+            AutoReplenishment = true,
+        });
+    });
+
+    // Phase 4.5 step 12 — MFA challenge / recovery throttle. The challenge
+    // endpoint is reached on the post-password 2FA hand-off, BEFORE the
+    // ApplicationScheme cookie is issued — so httpContext.User is anonymous
+    // at the policy callback. Identity stores the pending 2FA user id in a
+    // cookie whose name is the public constant IdentityConstants.TwoFactorUserIdScheme;
+    // its value is the encrypted auth ticket and therefore unique per pending
+    // 2FA session. We partition on (ip, sha256(cookie-value)) so two users
+    // behind the same NAT cannot exhaust each other's challenge budget. Hash
+    // (not the raw cookie) keeps the partition key short and avoids leaking
+    // ticket bytes into limiter state. When the cookie is absent (the only
+    // legitimate caller without it is a noise request that the endpoint will
+    // 302 to /login anyway) we still partition by ip so noise cannot escape
+    // the limiter.
+    options.AddPolicy("mfa-challenge", httpContext =>
+    {
+        string ip = httpContext.Connection.RemoteIpAddress?.ToString() ?? "unknown";
+        string? twoFactorCookie =
+            httpContext.Request.Cookies[IdentityConstants.TwoFactorUserIdScheme];
+        string sessionFingerprint;
+        if (string.IsNullOrEmpty(twoFactorCookie))
+        {
+            sessionFingerprint = "no-2fa-cookie";
+        }
+        else
+        {
+            byte[] hash = SHA256.HashData(Encoding.UTF8.GetBytes(twoFactorCookie));
+            // First 16 hex chars (8 bytes) is ample to disambiguate concurrent
+            // 2FA sessions on the same IP without ballooning limiter state.
+            sessionFingerprint = Convert.ToHexString(hash, 0, 8);
+        }
+        string key = $"{ip}|{sessionFingerprint}";
         return RateLimitPartition.GetFixedWindowLimiter(key, _ => new FixedWindowRateLimiterOptions
         {
             PermitLimit = 10,
@@ -481,6 +547,25 @@ try
 catch (Exception ex) when (ex is not OperationCanceledException)
 {
     Log.Error(ex, "Default-hierarchy bootstrap raised an unexpected exception; continuing startup.");
+}
+
+// --- Seed-organization health probe (Phase 4.6 step 15) -------------------
+// After the bootstrapper has populated SeedOrganizationAccessor (and/or the
+// env-var path has resolved one already), force-rebuild the
+// SeedOrganizationOptions snapshot and abort startup if the resolved id is
+// still empty. A missing id would silently disable the Phase 4.6 step 16
+// RequireMfa policy — admins could reach /admin/* without MFA — so the
+// failure mode is intentionally loud.
+try
+{
+    using var seedOrgProbeScope = app.Services.CreateScope();
+    var seedOrgProbe = seedOrgProbeScope.ServiceProvider.GetRequiredService<SeedOrganizationHealthProbe>();
+    _ = seedOrgProbe.Run();
+}
+catch (InvalidOperationException ex)
+{
+    Log.Fatal(ex, "Seed-organization health probe failed; aborting startup.");
+    throw;
 }
 
 // --- Ticket-defaults backfill (Phase 2.4 / 2.5 steps 10–14) ---------------

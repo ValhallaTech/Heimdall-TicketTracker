@@ -1,0 +1,90 @@
+@page "/account/mfa/recovery"
+@attribute [AllowAnonymous]
+@using System
+@using Microsoft.AspNetCore.Authorization
+
+@*
+    Server-rendered MFA recovery-code page (Phase 4.5 step 13 of
+    docs/implementation/phase-4-checklist.md). Reached from
+    /account/mfa/challenge when the user has lost their authenticator
+    device. Single-use codes; redeeming one decrements the available
+    count.
+*@
+
+<PageTitle>Use recovery code &middot; Heimdall TicketTracker</PageTitle>
+
+<div class="container py-5">
+    <div class="row justify-content-center">
+        <div class="col-md-6 col-lg-5 col-xl-4">
+            <div class="card shadow-sm">
+                <div class="card-body p-4 p-md-5">
+
+                    <div class="text-center mb-4">
+                        <div class="splash-icon mb-3" aria-hidden="true">
+                            <i class="fa-solid fa-key"></i>
+                        </div>
+                        <h1 class="h3 fw-bold mb-0">Use a recovery code</h1>
+                        <p class="text-muted small mt-2 mb-0">
+                            Each recovery code can be used only once.
+                        </p>
+                    </div>
+
+                    @if (HasInvalidCode)
+                    {
+                        <div class="alert alert-danger" role="alert">
+                            <i class="fa-solid fa-triangle-exclamation me-2" aria-hidden="true"></i>
+                            That recovery code isn't valid or has already been used.
+                        </div>
+                    }
+
+                    <form method="post" action="/account/mfa/recovery">
+                        <AntiforgeryToken />
+
+                        <div class="mb-3">
+                            <label for="mfa-recovery-code" class="form-label">Recovery code</label>
+                            <input id="mfa-recovery-code"
+                                   name="code"
+                                   type="text"
+                                   autocomplete="one-time-code"
+                                   class="form-control"
+                                   maxlength="32"
+                                   required
+                                   autofocus
+                                   aria-invalid="@AriaInvalid" />
+                        </div>
+
+                        @if (!string.IsNullOrEmpty(ReturnUrl))
+                        {
+                            <input type="hidden" name="returnUrl" value="@ReturnUrl" />
+                        }
+
+                        <button type="submit" class="btn btn-primary w-100 py-2">
+                            <i class="fa-solid fa-right-to-bracket me-2" aria-hidden="true"></i>
+                            Use code and sign in
+                        </button>
+                    </form>
+
+                    <div class="text-center mt-3">
+                        <a href="/account/mfa/challenge?returnUrl=@(Uri.EscapeDataString(ReturnUrl ?? "/"))"
+                           class="small text-decoration-none">
+                            Back to authenticator code
+                        </a>
+                    </div>
+
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+@code {
+    /// <summary>Optional <c>?returnUrl=</c> echoed back into the form so post-MFA redirect lands on the requested page.</summary>
+    [SupplyParameterFromQuery] public string? ReturnUrl { get; set; }
+
+    /// <summary>Optional <c>?error=</c> query param. <c>"invalid-code"</c> renders the error banner.</summary>
+    [SupplyParameterFromQuery] public string? Error { get; set; }
+
+    private bool HasInvalidCode => string.Equals(Error, "invalid-code", StringComparison.Ordinal);
+
+    private string? AriaInvalid => HasInvalidCode ? "true" : null;
+}

@@ -1,0 +1,113 @@
+@page "/account/mfa/challenge"
+@attribute [AllowAnonymous]
+@using System
+@using Microsoft.AspNetCore.Authorization
+
+@*
+    Server-rendered MFA challenge page (Phase 4.5 step 12 of
+    docs/implementation/phase-4-checklist.md). Reached only when a
+    successful password login returned RequiresTwoFactor; Identity has
+    stashed a TwoFactorUserId cookie that the POST handler consumes.
+
+    AllowAnonymous because the application-scheme cookie has not been
+    issued yet — the user is in the 2FA hand-off state. Posts to
+    /account/mfa/challenge so the "mfa-challenge" rate-limiter and
+    antiforgery validation run on the HTTP pipeline.
+*@
+
+<PageTitle>Two-factor sign-in &middot; Heimdall TicketTracker</PageTitle>
+
+<div class="container py-5">
+    <div class="row justify-content-center">
+        <div class="col-md-6 col-lg-5 col-xl-4">
+            <div class="card shadow-sm">
+                <div class="card-body p-4 p-md-5">
+
+                    <div class="text-center mb-4">
+                        <div class="splash-icon mb-3" aria-hidden="true">
+                            <i class="fa-solid fa-shield-halved"></i>
+                        </div>
+                        <h1 class="h3 fw-bold mb-0">Two-factor sign-in</h1>
+                        <p class="text-muted small mt-2 mb-0">
+                            Enter the 6-digit code from your authenticator app.
+                        </p>
+                    </div>
+
+                    @if (HasInvalidCode)
+                    {
+                        <div class="alert alert-danger" role="alert">
+                            <i class="fa-solid fa-triangle-exclamation me-2" aria-hidden="true"></i>
+                            That code didn't match. Codes change every 30 seconds — try the current one.
+                        </div>
+                    }
+
+                    <form method="post" action="/account/mfa/challenge">
+                        <AntiforgeryToken />
+
+                        <div class="mb-3">
+                            <label for="mfa-challenge-code" class="form-label">Authenticator code</label>
+                            <input id="mfa-challenge-code"
+                                   name="code"
+                                   type="text"
+                                   inputmode="numeric"
+                                   autocomplete="one-time-code"
+                                   class="form-control"
+                                   maxlength="10"
+                                   required
+                                   autofocus
+                                   aria-invalid="@AriaInvalid" />
+                        </div>
+
+                        <div class="form-check mb-3">
+                            <input id="mfa-challenge-remember-machine"
+                                   name="rememberMachine"
+                                   type="checkbox"
+                                   class="form-check-input"
+                                   value="true" />
+                            <label for="mfa-challenge-remember-machine" class="form-check-label small">
+                                Trust this device for 30 days
+                            </label>
+                        </div>
+
+                        <input type="hidden" name="rememberMe" value="@(RememberMe ? "true" : "false")" />
+                        @if (!string.IsNullOrEmpty(ReturnUrl))
+                        {
+                            <input type="hidden" name="returnUrl" value="@ReturnUrl" />
+                        }
+
+                        <button type="submit" class="btn btn-primary w-100 py-2">
+                            <i class="fa-solid fa-right-to-bracket me-2" aria-hidden="true"></i>
+                            Verify and sign in
+                        </button>
+                    </form>
+
+                    <div class="text-center mt-3">
+                        <a href="/account/mfa/recovery?returnUrl=@(Uri.EscapeDataString(ReturnUrl ?? "/"))"
+                           class="small text-decoration-none">
+                            Use a recovery code instead
+                        </a>
+                    </div>
+                    <div class="text-center mt-2">
+                        <a href="/login" class="small text-decoration-none">Cancel and sign out</a>
+                    </div>
+
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+@code {
+    /// <summary>Optional <c>?returnUrl=</c> echoed back into the form so post-MFA redirect lands on the requested page.</summary>
+    [SupplyParameterFromQuery] public string? ReturnUrl { get; set; }
+
+    /// <summary>Mirrors the login form's <c>rememberMe</c> across the challenge step.</summary>
+    [SupplyParameterFromQuery] public bool RememberMe { get; set; }
+
+    /// <summary>Optional <c>?error=</c> query param. <c>"invalid-code"</c> renders the error banner.</summary>
+    [SupplyParameterFromQuery] public string? Error { get; set; }
+
+    private bool HasInvalidCode => string.Equals(Error, "invalid-code", StringComparison.Ordinal);
+
+    private string? AriaInvalid => HasInvalidCode ? "true" : null;
+}

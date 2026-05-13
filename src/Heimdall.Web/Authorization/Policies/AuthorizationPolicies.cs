@@ -70,10 +70,10 @@ public static class AuthorizationPolicies
 
     /// <summary>
     /// Policy name: actor has satisfied the MFA gate. Applied to admin surfaces
-    /// in Phase 4.6 step 18. The handler currently registered in Phase 4.3
-    /// step 8 is a fail-closed placeholder (see
-    /// <see cref="RequireMfaPlaceholderAuthorizationHandler"/>); the real
-    /// OpenFGA + <c>amr</c>-aware handler lands in Phase 4.6 step 16.
+    /// in Phase 4.6 step 18. Served by <see cref="RequireMfaAuthorizationHandler"/>
+    /// (Phase 4.6 step 16): non-admins satisfy unconditionally; seed-organization
+    /// admins must additionally present <c>amr=mfa</c> and have
+    /// <c>users.two_factor_enabled = true</c>.
     /// </summary>
     public const string RequireMfa = nameof(RequireMfa);
 

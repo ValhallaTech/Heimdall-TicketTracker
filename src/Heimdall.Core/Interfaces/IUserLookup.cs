@@ -38,6 +38,19 @@ public interface IUserLookup
     Task<bool> IsSystemAdminAsync(Guid userId, CancellationToken cancellationToken = default);
 
     /// <summary>
+    /// Returns <c>true</c> if the user identified by <paramref name="userId"/>
+    /// exists and has <c>users.two_factor_enabled = true</c>; otherwise <c>false</c>
+    /// (deny-closed: unknown / missing user maps to <c>false</c>, never an exception).
+    /// Used by the Phase 4.6 step 16 <c>RequireMfa</c> handler as a sidecar-free,
+    /// claim-independent defence-in-depth check that an org-admin's MFA is
+    /// currently active (the <c>amr</c> claim alone could be replayed from a
+    /// session predating an MFA disable).
+    /// </summary>
+    /// <param name="userId">The user id to look up.</param>
+    /// <param name="cancellationToken">Cooperative cancellation token.</param>
+    Task<bool> IsTwoFactorEnabledAsync(Guid userId, CancellationToken cancellationToken = default);
+
+    /// <summary>
     /// Returns a compact <see cref="UserSummary"/> for the user identified by
     /// <paramref name="userId"/>, or <c>null</c> if no such user exists. Used by
     /// display-name resolution in the UI layer (Phase 2.8 step 24).

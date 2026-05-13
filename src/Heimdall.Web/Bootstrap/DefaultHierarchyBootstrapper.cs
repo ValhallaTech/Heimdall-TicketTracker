@@ -66,6 +66,7 @@ public sealed class DefaultHierarchyBootstrapper
     private readonly ITeamMemberRepository _teamMemberRepository;
     private readonly IProjectMemberRepository _projectMemberRepository;
     private readonly ITupleWriter _tupleWriter;
+    private readonly SeedOrganizationAccessor? _seedOrganizationAccessor;
     private readonly ILogger<DefaultHierarchyBootstrapper> _logger;
 
     /// <summary>
@@ -88,7 +89,15 @@ public sealed class DefaultHierarchyBootstrapper
     /// <c>WriteFailedDueToInvalidInput</c> response.
     /// </param>
     /// <param name="logger">Structured logger.</param>
-    /// <exception cref="ArgumentNullException">If any argument is <c>null</c>.</exception>
+    /// <param name="seedOrganizationAccessor">
+    /// Optional mutable accessor that the bootstrapper populates with the
+    /// resolved seed-organization id after <see cref="EnsureOrganizationAsync"/>.
+    /// Phase 4.6 step 15 wiring — the Phase 4.6 step 16 <c>RequireMfa</c>
+    /// handler reads this id to scope its FGA <c>organization#admin</c> check.
+    /// Optional only so existing tests that construct the bootstrapper without
+    /// the Phase 4.6 wiring continue to compile.
+    /// </param>
+    /// <exception cref="ArgumentNullException">If any required argument is <c>null</c>.</exception>
     public DefaultHierarchyBootstrapper(
         UserManager<HeimdallUser> userManager,
         IOrganizationRepository organizationRepository,
@@ -98,7 +107,8 @@ public sealed class DefaultHierarchyBootstrapper
         ITeamMemberRepository teamMemberRepository,
         IProjectMemberRepository projectMemberRepository,
         ITupleWriter tupleWriter,
-        ILogger<DefaultHierarchyBootstrapper> logger)
+        ILogger<DefaultHierarchyBootstrapper> logger,
+        SeedOrganizationAccessor? seedOrganizationAccessor = null)
     {
         ArgumentNullException.ThrowIfNull(userManager);
         ArgumentNullException.ThrowIfNull(organizationRepository);
@@ -118,6 +128,7 @@ public sealed class DefaultHierarchyBootstrapper
         _teamMemberRepository = teamMemberRepository;
         _projectMemberRepository = projectMemberRepository;
         _tupleWriter = tupleWriter;
+        _seedOrganizationAccessor = seedOrganizationAccessor;
         _logger = logger;
     }
 
@@ -160,6 +171,16 @@ public sealed class DefaultHierarchyBootstrapper
             }
 
             Guid orgId = await EnsureOrganizationAsync(admin.Id, cancellationToken).ConfigureAwait(false);
+
+            // Phase 4.6 step 15 — publish the seed-org id so the RequireMfa
+            // handler and the SeedOrganizationHealthProbe can read it. Only
+            // publish if the accessor is still empty so an explicit env-var
+            // pin (resolved into the accessor earlier) wins over the DB lookup.
+            if (_seedOrganizationAccessor is not null && _seedOrganizationAccessor.OrganizationId is null)
+            {
+                _seedOrganizationAccessor.OrganizationId = orgId;
+            }
+
             Guid teamId = await EnsureTeamAsync(orgId, admin.Id, cancellationToken).ConfigureAwait(false);
             Guid projectId = await EnsureProjectAsync(teamId, admin.Id, cancellationToken).ConfigureAwait(false);
 

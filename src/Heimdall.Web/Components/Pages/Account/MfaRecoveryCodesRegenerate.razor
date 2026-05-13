@@ -1,0 +1,110 @@
+@page "/account/mfa/recovery-codes/regenerate"
+@attribute [Authorize(Policy = AuthorizationPolicies.IsAuthenticated)]
+@using System
+@using Heimdall.Core.Models
+@using Heimdall.Web.Authorization.Policies
+@using Microsoft.AspNetCore.Authorization
+@using Microsoft.AspNetCore.Components.Authorization
+@using Microsoft.AspNetCore.Identity
+@inject UserManager<HeimdallUser> UserManager
+@inject AuthenticationStateProvider AuthenticationStateProvider
+@inject NavigationManager Navigation
+
+@*
+    Server-rendered recovery-code regenerate page (Phase 4.5 step 14 of
+    docs/implementation/phase-4-checklist.md). Posts to
+    /account/mfa/recovery-codes/regenerate with the user's current
+    password — same stolen-cookie defence pattern as MfaDisable. On
+    success, the POST handler stashes the fresh codes in the recovery-
+    code display cache and redirects to /account/mfa/recovery-codes for
+    one-time display.
+*@
+
+<PageTitle>Regenerate recovery codes &middot; Heimdall TicketTracker</PageTitle>
+
+<div class="container py-5">
+    <div class="row justify-content-center">
+        <div class="col-md-6 col-lg-5 col-xl-4">
+            <div class="card shadow-sm">
+                <div class="card-body p-4 p-md-5">
+
+                    <div class="text-center mb-4">
+                        <div class="splash-icon mb-3" aria-hidden="true">
+                            <i class="fa-solid fa-rotate-right"></i>
+                        </div>
+                        <h1 class="h3 fw-bold mb-0">Regenerate recovery codes</h1>
+                    </div>
+
+                    <div class="alert alert-warning" role="alert">
+                        <i class="fa-solid fa-triangle-exclamation me-2" aria-hidden="true"></i>
+                        Generating new recovery codes will invalidate every existing code.
+                        You'll see the new codes once — copy or print them before leaving
+                        the next page.
+                    </div>
+
+                    @if (HasInvalidPassword)
+                    {
+                        <div class="alert alert-danger" role="alert">
+                            <i class="fa-solid fa-triangle-exclamation me-2" aria-hidden="true"></i>
+                            That password didn't match.
+                        </div>
+                    }
+
+                    <form method="post" action="/account/mfa/recovery-codes/regenerate">
+                        <AntiforgeryToken />
+
+                        <div class="mb-3">
+                            <label for="mfa-regen-password" class="form-label">Current password</label>
+                            <input id="mfa-regen-password"
+                                   name="password"
+                                   type="password"
+                                   class="form-control"
+                                   autocomplete="current-password"
+                                   required
+                                   aria-invalid="@AriaInvalid" />
+                        </div>
+
+                        <button type="submit" class="btn btn-warning w-100 py-2">
+                            <i class="fa-solid fa-rotate-right me-2" aria-hidden="true"></i>
+                            Generate new codes
+                        </button>
+                    </form>
+
+                    <div class="text-center mt-3">
+                        <a href="/" class="small text-decoration-none">Cancel</a>
+                    </div>
+
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+@code {
+    /// <summary>Optional <c>?error=</c> query param. <c>"invalid-password"</c> renders the error banner.</summary>
+    [SupplyParameterFromQuery] public string? Error { get; set; }
+
+    private bool HasInvalidPassword => string.Equals(Error, "invalid-password", StringComparison.Ordinal);
+
+    private string? AriaInvalid => HasInvalidPassword ? "true" : null;
+
+    /// <inheritdoc />
+    protected override async Task OnInitializedAsync()
+    {
+        AuthenticationState authState =
+            await AuthenticationStateProvider.GetAuthenticationStateAsync().ConfigureAwait(false);
+
+        HeimdallUser? user = await UserManager.GetUserAsync(authState.User).ConfigureAwait(false);
+        if (user is null)
+        {
+            Navigation.NavigateTo("/login", forceLoad: false);
+            return;
+        }
+
+        // No MFA enrolled — regeneration is meaningless. Bounce to enrolment.
+        if (!user.TwoFactorEnabled)
+        {
+            Navigation.NavigateTo("/account/mfa/setup", forceLoad: false);
+        }
+    }
+}

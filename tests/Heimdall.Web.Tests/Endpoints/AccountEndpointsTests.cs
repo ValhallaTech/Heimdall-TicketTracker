@@ -91,7 +91,7 @@ public class AccountEndpointsTests
 
         var result = await AccountEndpoints.HandleLoginAsync(
             ctx, user.Email, "pw", returnUrl: null,
-            um.Object, sm.Object, _audit.Object, default);
+            rememberMe: false, um.Object, sm.Object, _audit.Object, default);
 
         var redirect = result.Should().BeOfType<RedirectHttpResult>().Subject;
         redirect.Url.Should().Be("/");
@@ -109,7 +109,7 @@ public class AccountEndpointsTests
           .ReturnsAsync(SignInResult.Failed);
 
         var result = await AccountEndpoints.HandleLoginAsync(
-            ctx, user.Email, "bad", null, um.Object, sm.Object, _audit.Object, default);
+            ctx, user.Email, "bad", null, rememberMe: false, um.Object, sm.Object, _audit.Object, default);
 
         var redirect = result.Should().BeOfType<RedirectHttpResult>().Subject;
         redirect.Url.Should().Be("/login?error=invalid-credentials");
@@ -124,7 +124,7 @@ public class AccountEndpointsTests
         var sm = CreateSignInManagerMock(um.Object);
 
         var result = await AccountEndpoints.HandleLoginAsync(
-            ctx, "ghost@example.com", "pw", null, um.Object, sm.Object, _audit.Object, default);
+            ctx, "ghost@example.com", "pw", null, rememberMe: false, um.Object, sm.Object, _audit.Object, default);
 
         var redirect = result.Should().BeOfType<RedirectHttpResult>().Subject;
         redirect.Url.Should().Be("/login?error=invalid-credentials");
@@ -145,7 +145,7 @@ public class AccountEndpointsTests
           .ReturnsAsync(SignInResult.Success);
 
         var result = await AccountEndpoints.HandleLoginAsync(
-            ctx, user.Email, "pw", "/tickets", um.Object, sm.Object, _audit.Object, default);
+            ctx, user.Email, "pw", "/tickets", rememberMe: false, um.Object, sm.Object, _audit.Object, default);
 
         var redirect = result.Should().BeOfType<RedirectHttpResult>().Subject;
         redirect.Url.Should().Be("/tickets");
@@ -164,7 +164,7 @@ public class AccountEndpointsTests
 
         var result = await AccountEndpoints.HandleLoginAsync(
             ctx, user.Email, "pw", "https://evil.example.com",
-            um.Object, sm.Object, _audit.Object, default);
+            rememberMe: false, um.Object, sm.Object, _audit.Object, default);
 
         var redirect = result.Should().BeOfType<RedirectHttpResult>().Subject;
         redirect.Url.Should().Be("/");
@@ -183,7 +183,7 @@ public class AccountEndpointsTests
 
         var result = await AccountEndpoints.HandleLoginAsync(
             ctx, user.Email, "pw", "//evil.example.com",
-            um.Object, sm.Object, _audit.Object, default);
+            rememberMe: false, um.Object, sm.Object, _audit.Object, default);
 
         var redirect = result.Should().BeOfType<RedirectHttpResult>().Subject;
         redirect.Url.Should().Be("/");
@@ -202,7 +202,7 @@ public class AccountEndpointsTests
 
         var result = await AccountEndpoints.HandleLoginAsync(
             ctx, user.Email, "pw", "/\\evil.example.com",
-            um.Object, sm.Object, _audit.Object, default);
+            rememberMe: false, um.Object, sm.Object, _audit.Object, default);
 
         var redirect = result.Should().BeOfType<RedirectHttpResult>().Subject;
         redirect.Url.Should().Be("/");
@@ -224,7 +224,7 @@ public class AccountEndpointsTests
           .ReturnsAsync(SignInResult.Success);
 
         await AccountEndpoints.HandleLoginAsync(
-            ctx, user.Email, "pw", null, um.Object, sm.Object, _audit.Object, default);
+            ctx, user.Email, "pw", null, rememberMe: false, um.Object, sm.Object, _audit.Object, default);
 
         _audit.Verify(
             x => x.WriteAsync(It.Is<AuditEvent>(e => e.EventType == "login.success" && e.ActorUserId == user.Id),
@@ -244,7 +244,7 @@ public class AccountEndpointsTests
           .ReturnsAsync(SignInResult.Failed);
 
         await AccountEndpoints.HandleLoginAsync(
-            ctx, user.Email, "bad", null, um.Object, sm.Object, _audit.Object, default);
+            ctx, user.Email, "bad", null, rememberMe: false, um.Object, sm.Object, _audit.Object, default);
 
         _audit.Verify(
             x => x.WriteAsync(It.Is<AuditEvent>(e => e.EventType == "login.failure.bad_password"
@@ -262,7 +262,7 @@ public class AccountEndpointsTests
         var sm = CreateSignInManagerMock(um.Object);
 
         await AccountEndpoints.HandleLoginAsync(
-            ctx, "ghost@example.com", "pw", null, um.Object, sm.Object, _audit.Object, default);
+            ctx, "ghost@example.com", "pw", null, rememberMe: false, um.Object, sm.Object, _audit.Object, default);
 
         _audit.Verify(
             x => x.WriteAsync(It.Is<AuditEvent>(e => e.EventType == "login.failure.unknown_user"
@@ -284,7 +284,7 @@ public class AccountEndpointsTests
           .ReturnsAsync(SignInResult.LockedOut);
 
         await AccountEndpoints.HandleLoginAsync(
-            ctx, user.Email, "pw", null, um.Object, sm.Object, _audit.Object, default);
+            ctx, user.Email, "pw", null, rememberMe: false, um.Object, sm.Object, _audit.Object, default);
 
         _audit.Verify(
             x => x.WriteAsync(It.Is<AuditEvent>(e => e.EventType == "login.lockout"),
@@ -304,7 +304,7 @@ public class AccountEndpointsTests
           .ReturnsAsync(SignInResult.NotAllowed);
 
         await AccountEndpoints.HandleLoginAsync(
-            ctx, user.Email, "pw", null, um.Object, sm.Object, _audit.Object, default);
+            ctx, user.Email, "pw", null, rememberMe: false, um.Object, sm.Object, _audit.Object, default);
 
         _audit.Verify(
             x => x.WriteAsync(It.Is<AuditEvent>(e => e.EventType == "login.not_allowed"),
@@ -326,7 +326,7 @@ public class AccountEndpointsTests
               .ThrowsAsync(new InvalidOperationException("db down"));
 
         var result = await AccountEndpoints.HandleLoginAsync(
-            ctx, user.Email, "pw", null, um.Object, sm.Object, _audit.Object, default);
+            ctx, user.Email, "pw", null, rememberMe: false, um.Object, sm.Object, _audit.Object, default);
 
         result.Should().BeOfType<RedirectHttpResult>();
     }

@@ -212,13 +212,21 @@ public sealed class Phase2AcceptanceTests : IClassFixture<HeimdallWebApplication
         // -------------------- Assert: admin audit feed renders --------------------
         // The page itself is server-rendered Blazor InteractiveServer; the row
         // contents are fetched after the initial response streams (in
-        // OnInitializedAsync), so HTML scraping isn't deterministic. We assert
-        // only that the page is reachable for the seeded system admin (i.e. the
-        // AdminGate accepts the cookie) — the row content is already verified
-        // against the database above.
+        // OnInitializedAsync), so HTML scraping isn't deterministic.
+        //
+        // Phase 4.6 step 18 added [Authorize(Policy = RequireMfa)] to every
+        // /admin/* page. The seeded admin in this test has no MFA enrolment,
+        // so the MfaSetupRedirectMiddlewareResultHandler now diverts the GET
+        // to /account/mfa/setup with a 302. Asserting on the redirect target
+        // proves both legs of the new wiring: the policy denied (admin without
+        // amr=mfa) AND the redirect handler converted the deny into a setup
+        // bounce rather than a flat 403.
         var auditFeedResponse = await client.GetAsync("/admin/audit");
-        auditFeedResponse.StatusCode.Should().Be(HttpStatusCode.OK,
-            because: "the seeded system admin must be able to reach /admin/audit");
+        auditFeedResponse.StatusCode.Should().Be(HttpStatusCode.Found,
+            because: "Phase 4.6 step 16 routes the seeded admin (no MFA enrolled) through the RequireMfa setup redirect.");
+        auditFeedResponse.Headers.Location?.ToString().Should().StartWith(
+            "/account/mfa/setup",
+            because: "the RequireMfa redirect handler bounces admins without amr=mfa to enrolment.");
     }
 
     // -------------------- helpers --------------------

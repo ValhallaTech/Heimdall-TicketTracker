@@ -6,6 +6,7 @@
 
 @page "/admin/access"
 @attribute [Authorize(Policy = AuthorizationPolicies.SystemAdmin)]
+@attribute [Authorize(Policy = AuthorizationPolicies.RequireMfa)]
 @rendermode InteractiveServer
 @using Heimdall.Web.Authorization.Policies
 @using Microsoft.AspNetCore.Authorization

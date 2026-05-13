@@ -92,6 +92,26 @@ public static class AccountEndpoints
             .WithName("Account_MfaDisable")
             .RequireRateLimiting("mfa-setup");
 
+        // --- Phase 4.5 steps 12–14: MFA challenge / recovery / regenerate -----
+        // Challenge + recovery run BEFORE the application cookie is issued (the
+        // user is in the 2FA hand-off state), so they're AllowAnonymous and
+        // rely on Identity's TwoFactorUserId cookie. Regenerate is post-login,
+        // so it's gated on IsAuthenticated.
+        endpoints.MapPost("/account/mfa/challenge", HandleMfaChallengeAsync)
+            .AllowAnonymous()
+            .WithName("Account_MfaChallenge")
+            .RequireRateLimiting("mfa-challenge");
+
+        endpoints.MapPost("/account/mfa/recovery", HandleMfaRecoveryAsync)
+            .AllowAnonymous()
+            .WithName("Account_MfaRecovery")
+            .RequireRateLimiting("mfa-challenge");
+
+        endpoints.MapPost("/account/mfa/recovery-codes/regenerate", HandleMfaRecoveryCodesRegenerateAsync)
+            .RequireAuthorization(AuthorizationPolicies.IsAuthenticated)
+            .WithName("Account_MfaRecoveryCodesRegenerate")
+            .RequireRateLimiting("mfa-setup");
+
         return endpoints;
     }
 
@@ -104,6 +124,7 @@ public static class AccountEndpoints
         [FromForm] string email,
         [FromForm] string password,
         [FromForm] string? returnUrl,
+        [FromForm] bool? rememberMe,
         [FromServices] UserManager<HeimdallUser> userManager,
         [FromServices] SignInManager<HeimdallUser> signInManager,
         [FromServices] IAuditEventWriter auditWriter,
@@ -162,7 +183,7 @@ public static class AccountEndpoints
         }
 
         var result = await signInManager
-            .PasswordSignInAsync(user, password, isPersistent: false, lockoutOnFailure: true)
+            .PasswordSignInAsync(user, password, isPersistent: rememberMe == true, lockoutOnFailure: true)
             .ConfigureAwait(false);
 
         string successPayload = JsonSerializer.Serialize(new { email_domain = emailDomain });
@@ -182,6 +203,32 @@ public static class AccountEndpoints
 
             string redirectTo = IsLocalReturnUrl(returnUrl) ? returnUrl! : "/";
             return Results.Redirect(redirectTo, permanent: false);
+        }
+
+        // Phase 4.5 step 12 — RequiresTwoFactor: the password was correct but
+        // the user has MFA enabled. PasswordSignInAsync has already stashed the
+        // two-factor user id in the Identity TwoFactorUserId cookie, so we do
+        // NOT call SignInAsync here. The challenge POST consumes that cookie
+        // via signInManager.TwoFactorAuthenticatorSignInAsync, which then
+        // upgrades to the ApplicationScheme cookie with amr=mfa.
+        if (result.RequiresTwoFactor)
+        {
+            string twoFactorPayload = JsonSerializer.Serialize(new { user_id = user.Id });
+            await TryWriteAuditAsync(httpContext, auditWriter, new AuditEvent
+            {
+                ActorUserId = user.Id,
+                EventType = "mfa.challenge_required",
+                Target = user.Id.ToString(),
+                Ip = ip,
+                UserAgent = userAgent,
+                PayloadJson = twoFactorPayload,
+            }, cancellationToken).ConfigureAwait(false);
+
+            string safeReturnUrl = IsLocalReturnUrl(returnUrl) ? returnUrl! : "/";
+            string challengeRedirect =
+                $"/account/mfa/challenge?returnUrl={Uri.EscapeDataString(safeReturnUrl)}"
+                + $"&rememberMe={(rememberMe == true ? "true" : "false")}";
+            return Results.Redirect(challengeRedirect, permanent: false);
         }
 
         string failureType;
@@ -978,6 +1025,298 @@ public static class AccountEndpoints
         await signInManager.SignOutAsync().ConfigureAwait(false);
 
         return Results.Redirect("/login?info=mfa-disabled", permanent: false);
+    }
+
+    /// <summary>
+    /// Phase 4.5 step 12. Consumes a TOTP code entered after a successful
+    /// password login when the user has MFA enabled. On success, Identity
+    /// upgrades the pending TwoFactorUserId cookie to the application cookie
+    /// with the <c>amr=mfa</c> claim — that claim is what
+    /// <c>RequireMfaAuthorizationHandler</c> looks for on admin-scoped pages.
+    /// </summary>
+    /// <remarks>
+    /// AllowAnonymous because the user is in the Identity 2FA hand-off state
+    /// (the application cookie has not been issued yet). The submitted code is
+    /// never logged and never included in audit payloads.
+    /// </remarks>
+    internal static async Task<IResult> HandleMfaChallengeAsync(
+        HttpContext httpContext,
+        [FromForm] string code,
+        [FromForm] bool? rememberMachine,
+        [FromForm] bool? rememberMe,
+        [FromForm] string? returnUrl,
+        [FromServices] SignInManager<HeimdallUser> signInManager,
+        [FromServices] IAuditEventWriter auditWriter,
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(httpContext);
+        ArgumentNullException.ThrowIfNull(signInManager);
+        ArgumentNullException.ThrowIfNull(auditWriter);
+
+        code ??= string.Empty;
+
+        string? ip = httpContext.Connection.RemoteIpAddress?.ToString();
+        string? userAgent = TruncateUserAgent(httpContext.Request.Headers.UserAgent.ToString());
+        string safeReturnUrl = IsLocalReturnUrl(returnUrl) ? returnUrl! : "/";
+        string encodedReturn = Uri.EscapeDataString(safeReturnUrl);
+        string rememberMeStr = rememberMe == true ? "true" : "false";
+
+        HeimdallUser? user = await signInManager
+            .GetTwoFactorAuthenticationUserAsync()
+            .ConfigureAwait(false);
+        if (user is null)
+        {
+            // The 2FA cookie has expired or was never minted; force the user
+            // back to the login page rather than silently failing.
+            return Results.Redirect("/login?error=mfa-expired", permanent: false);
+        }
+
+        // Strip whitespace and any in-code separators that authenticator apps
+        // sometimes insert when the human re-types from another device.
+        string authenticatorCode = code
+            .Replace(" ", string.Empty, StringComparison.Ordinal)
+            .Replace("-", string.Empty, StringComparison.Ordinal);
+
+        Microsoft.AspNetCore.Identity.SignInResult result = await signInManager
+            .TwoFactorAuthenticatorSignInAsync(authenticatorCode, isPersistent: rememberMe == true, rememberClient: rememberMachine == true)
+            .ConfigureAwait(false);
+
+        if (result.Succeeded)
+        {
+            string successPayload = JsonSerializer.Serialize(new { user_id = user.Id });
+            await TryWriteAuditAsync(httpContext, auditWriter, new AuditEvent
+            {
+                ActorUserId = user.Id,
+                EventType = "mfa.challenge.succeeded",
+                Target = user.Id.ToString(),
+                Ip = ip,
+                UserAgent = userAgent,
+                PayloadJson = successPayload,
+            }, cancellationToken).ConfigureAwait(false);
+
+            return Results.Redirect(safeReturnUrl, permanent: false);
+        }
+
+        string failureReason = result.IsLockedOut
+            ? "locked_out"
+            : result.IsNotAllowed ? "not_allowed" : "invalid_code";
+
+        string failurePayload = JsonSerializer.Serialize(new
+        {
+            user_id = user.Id,
+            reason = failureReason,
+        });
+        await TryWriteAuditAsync(httpContext, auditWriter, new AuditEvent
+        {
+            ActorUserId = user.Id,
+            EventType = "mfa.challenge.failed",
+            Target = user.Id.ToString(),
+            Ip = ip,
+            UserAgent = userAgent,
+            PayloadJson = failurePayload,
+        }, cancellationToken).ConfigureAwait(false);
+
+        if (result.IsLockedOut)
+        {
+            return Results.Redirect("/login?error=locked-out", permanent: false);
+        }
+
+        return Results.Redirect(
+            $"/account/mfa/challenge?returnUrl={encodedReturn}&rememberMe={rememberMeStr}&error=invalid-code",
+            permanent: false);
+    }
+
+    /// <summary>
+    /// Phase 4.5 step 13. Redeems a single-use recovery code in lieu of a TOTP
+    /// at the MFA challenge step. On success, behaves identically to the TOTP
+    /// path (Identity issues the application cookie with <c>amr=mfa</c>) and
+    /// surfaces a low-codes warning on the post-redirect page when fewer than
+    /// three codes remain.
+    /// </summary>
+    internal static async Task<IResult> HandleMfaRecoveryAsync(
+        HttpContext httpContext,
+        [FromForm] string code,
+        [FromForm] string? returnUrl,
+        [FromServices] SignInManager<HeimdallUser> signInManager,
+        [FromServices] UserManager<HeimdallUser> userManager,
+        [FromServices] IAuditEventWriter auditWriter,
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(httpContext);
+        ArgumentNullException.ThrowIfNull(signInManager);
+        ArgumentNullException.ThrowIfNull(userManager);
+        ArgumentNullException.ThrowIfNull(auditWriter);
+
+        code ??= string.Empty;
+
+        string? ip = httpContext.Connection.RemoteIpAddress?.ToString();
+        string? userAgent = TruncateUserAgent(httpContext.Request.Headers.UserAgent.ToString());
+        string safeReturnUrl = IsLocalReturnUrl(returnUrl) ? returnUrl! : "/";
+        string encodedReturn = Uri.EscapeDataString(safeReturnUrl);
+
+        HeimdallUser? user = await signInManager
+            .GetTwoFactorAuthenticationUserAsync()
+            .ConfigureAwait(false);
+        if (user is null)
+        {
+            return Results.Redirect("/login?error=mfa-expired", permanent: false);
+        }
+
+        // Recovery codes are presented to the user with hyphen separators —
+        // strip them and whitespace before handing to Identity, which expects
+        // the raw code as stored.
+        string recoveryCode = code
+            .Replace(" ", string.Empty, StringComparison.Ordinal)
+            .Replace("-", string.Empty, StringComparison.Ordinal);
+
+        Microsoft.AspNetCore.Identity.SignInResult result = await signInManager
+            .TwoFactorRecoveryCodeSignInAsync(recoveryCode)
+            .ConfigureAwait(false);
+
+        if (result.Succeeded)
+        {
+            int remaining = await userManager.CountRecoveryCodesAsync(user).ConfigureAwait(false);
+
+            string successPayload = JsonSerializer.Serialize(new
+            {
+                user_id = user.Id,
+                remaining_count = remaining,
+            });
+            await TryWriteAuditAsync(httpContext, auditWriter, new AuditEvent
+            {
+                ActorUserId = user.Id,
+                EventType = "mfa.recovery.redeemed",
+                Target = user.Id.ToString(),
+                Ip = ip,
+                UserAgent = userAgent,
+                PayloadJson = successPayload,
+            }, cancellationToken).ConfigureAwait(false);
+
+            // Low-codes warning surfaces via a query-string flag the post-redirect
+            // page reads. We avoid baking the count into the URL to keep the
+            // surface minimal — the warning is binary.
+            string redirect = remaining < 3
+                ? $"{safeReturnUrl}{(safeReturnUrl.Contains('?', StringComparison.Ordinal) ? "&" : "?")}mfaRecoveryWarning=low"
+                : safeReturnUrl;
+            return Results.Redirect(redirect, permanent: false);
+        }
+
+        string failureReason = result.IsLockedOut ? "locked_out" : "invalid_code";
+        string failurePayload = JsonSerializer.Serialize(new
+        {
+            user_id = user.Id,
+            reason = failureReason,
+        });
+        await TryWriteAuditAsync(httpContext, auditWriter, new AuditEvent
+        {
+            ActorUserId = user.Id,
+            EventType = "mfa.recovery.failed",
+            Target = user.Id.ToString(),
+            Ip = ip,
+            UserAgent = userAgent,
+            PayloadJson = failurePayload,
+        }, cancellationToken).ConfigureAwait(false);
+
+        if (result.IsLockedOut)
+        {
+            return Results.Redirect("/login?error=locked-out", permanent: false);
+        }
+
+        return Results.Redirect(
+            $"/account/mfa/recovery?returnUrl={encodedReturn}&error=invalid-code",
+            permanent: false);
+    }
+
+    /// <summary>
+    /// Phase 4.5 step 14. Re-prompts for the current password (stolen-cookie
+    /// defence) and, on success, generates a fresh batch of ten recovery
+    /// codes — invalidating the previous batch — and redirects to the existing
+    /// one-time recovery-codes display page via <see cref="IRecoveryCodeDisplayCache"/>.
+    /// </summary>
+    /// <remarks>
+    /// The submitted password is never logged. The new codes are flashed via
+    /// the existing in-memory display cache rather than written into the
+    /// redirect URL or session state.
+    /// </remarks>
+    internal static async Task<IResult> HandleMfaRecoveryCodesRegenerateAsync(
+        HttpContext httpContext,
+        [FromForm] string password,
+        [FromServices] UserManager<HeimdallUser> userManager,
+        [FromServices] SignInManager<HeimdallUser> signInManager,
+        [FromServices] IRecoveryCodeDisplayCache recoveryCodeCache,
+        [FromServices] IAuditEventWriter auditWriter,
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(httpContext);
+        ArgumentNullException.ThrowIfNull(userManager);
+        ArgumentNullException.ThrowIfNull(signInManager);
+        ArgumentNullException.ThrowIfNull(recoveryCodeCache);
+        ArgumentNullException.ThrowIfNull(auditWriter);
+
+        password ??= string.Empty;
+
+        string? ip = httpContext.Connection.RemoteIpAddress?.ToString();
+        string? userAgent = TruncateUserAgent(httpContext.Request.Headers.UserAgent.ToString());
+
+        HeimdallUser? user = await userManager.GetUserAsync(httpContext.User).ConfigureAwait(false);
+        if (user is null)
+        {
+            return Results.Redirect("/login", permanent: false);
+        }
+
+        // No lockout-on-failure here — see HandleMfaDisableAsync for the
+        // matching rationale: the user is signed in, so a bad re-entry is not
+        // the same threat model as a bad login attempt.
+        Microsoft.AspNetCore.Identity.SignInResult passwordResult = await signInManager
+            .CheckPasswordSignInAsync(user, password, lockoutOnFailure: false)
+            .ConfigureAwait(false);
+
+        if (!passwordResult.Succeeded)
+        {
+            string badPayload = JsonSerializer.Serialize(new { user_id = user.Id });
+            await TryWriteAuditAsync(httpContext, auditWriter, new AuditEvent
+            {
+                ActorUserId = user.Id,
+                EventType = "mfa.recovery_codes.regenerate.bad_password",
+                Target = user.Id.ToString(),
+                Ip = ip,
+                UserAgent = userAgent,
+                PayloadJson = badPayload,
+            }, cancellationToken).ConfigureAwait(false);
+
+            return Results.Redirect(
+                "/account/mfa/recovery-codes/regenerate?error=invalid-password",
+                permanent: false);
+        }
+
+        IEnumerable<string>? generated = await userManager
+            .GenerateNewTwoFactorRecoveryCodesAsync(user, 10)
+            .ConfigureAwait(false);
+
+        IReadOnlyList<string> codes = generated is null
+            ? Array.Empty<string>()
+            : new List<string>(generated);
+
+        Guid displayToken = recoveryCodeCache.Stash(user.Id, codes);
+
+        string successPayload = JsonSerializer.Serialize(new
+        {
+            user_id = user.Id,
+            recovery_code_count = codes.Count,
+        });
+        await TryWriteAuditAsync(httpContext, auditWriter, new AuditEvent
+        {
+            ActorUserId = user.Id,
+            EventType = "mfa.recovery_codes.regenerated",
+            Target = user.Id.ToString(),
+            Ip = ip,
+            UserAgent = userAgent,
+            PayloadJson = successPayload,
+        }, cancellationToken).ConfigureAwait(false);
+
+        string redirect =
+            $"/account/mfa/recovery-codes?token={Uri.EscapeDataString(displayToken.ToString())}&from=regenerate";
+        return Results.Redirect(redirect, permanent: false);
     }
 
     // -----------------------------------------------------------------------------

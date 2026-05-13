@@ -10,14 +10,13 @@ namespace Heimdall.Web.Authorization.Policies;
 /// </summary>
 /// <remarks>
 /// <para>
-/// <strong>Phase 4.3 step 8 placeholder.</strong> The real handler is wired in
-/// Phase 4.6 step 16 (<c>docs/implementation/phase-4-checklist.md</c>), which
-/// consults OpenFGA + <c>amr</c> claims + the seed-organization admin set to
-/// decide whether to grant. Until that handler exists, the requirement is
-/// served by <see cref="RequireMfaPlaceholderAuthorizationHandler"/>, which
-/// is a fail-closed no-op: any page that opts into
-/// <see cref="AuthorizationPolicies.RequireMfa"/> before step 16 lands will
-/// 403 rather than silently allow.
+/// Served by <see cref="RequireMfaAuthorizationHandler"/> (Phase 4.6 step 16),
+/// which consults OpenFGA to determine whether the actor is an admin of the
+/// seed organization, inspects the <c>amr</c> claim for <c>mfa</c>, and reads
+/// the live <c>users.two_factor_enabled</c> flag from the database. Non-admins
+/// satisfy the requirement unconditionally; admins must satisfy all three
+/// invariants. Break-glass parity with <see cref="OpenFgaAuthorizationHandler"/>
+/// applies — see that handler's remarks for the contract.
 /// </para>
 /// </remarks>
 public sealed class RequireMfaRequirement : IAuthorizationRequirement
