@@ -65,10 +65,16 @@ public sealed class SigningKeyRepository : ISigningKeyRepository
             "SELECT signing_keys_insert(@Kid::text, @Alg::text, @PublicJwk::jsonb, "
             + "@PrivateKeyProtected::bytea, @NotBefore, @NotAfter);";
 
-        // bytea must be bound explicitly — Dapper's default mapping for byte[] is fine
-        // for Npgsql, but we use DynamicParameters to set NpgsqlDbType for the timestamp
-        // columns to TimestampTz (matches the column types and survives DateTimeKind
-        // conversions across the wire).
+        // Bind via DynamicParameters for clarity even though every value here is a
+        // type Dapper + Npgsql already round-trip correctly:
+        //   * string  -> text     (cast to ::text / ::jsonb in the SQL above so the
+        //                          SECURITY DEFINER function signature matches),
+        //   * byte[]  -> bytea    (cast to ::bytea in the SQL),
+        //   * DateTime (UtcKind) -> timestamptz.
+        // We force DateTimeKind.Utc on the two timestamps so Npgsql binds them as UTC
+        // rather than Unspecified (which would throw under modern Npgsql when the
+        // column is timestamptz). No NpgsqlDbType is set explicitly — Dapper picks
+        // the right one for each CLR type and the SQL-level casts pin the rest.
         var parameters = new DynamicParameters();
         parameters.Add("Kid", kid);
         parameters.Add("Alg", alg);

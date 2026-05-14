@@ -119,27 +119,34 @@ $$;
 
         // -------------------------------------------------------------------
         // 4) Column-level grants — the PRIMARY access control.
-        // heimdall_app sees every column EXCEPT private_key_protected.
-        // heimdall_app cannot INSERT or UPDATE that column directly either —
-        // those columns are deliberately omitted from the column lists below
-        // so the only path that writes ciphertext is the signing_keys_insert
-        // SECURITY DEFINER function (granted EXECUTE further down).
-        // DELETE is a row operation (no column-level form), and heimdall_app
-        // gets DELETE on the whole row — retirement is typically a soft
-        // delete (UPDATE retired_at = now()), but operators may purge
-        // long-expired rows.
+        //
+        // heimdall_app holds LEAST PRIVILEGE on signing_keys:
+        //   * SELECT on every column EXCEPT private_key_protected.
+        //   * UPDATE on retired_at ONLY (the soft-delete retirement path).
+        //   * NO direct INSERT — new rows MUST go through the
+        //     signing_keys_insert() SECURITY DEFINER function (section 6),
+        //     whose body runs as heimdall_signer (the table owner). This
+        //     keeps the ciphertext write path on one auditable code path.
+        //   * NO DELETE — operator-only via psql/admin tooling. The data
+        //     model uses retired_at as a soft delete; hard deletes of
+        //     expired keys are an operational task, not an application
+        //     responsibility.
+        //
+        // Column-level UPDATE(retired_at) means heimdall_app cannot mutate
+        // kid, alg, public_jwk, not_before, not_after, or created_at after
+        // a row is created. created_at is effectively immutable; kid/alg/
+        // public_jwk/not_before/not_after are set once via the SECURITY
+        // DEFINER insert and never changed thereafter.
+        //
         // heimdall_signer holds full SELECT on the row so the SECURITY
-        // DEFINER reader function (owned by heimdall_signer) can return the
-        // private ciphertext.
+        // DEFINER reader function (owned by heimdall_signer) can return
+        // the private ciphertext.
         // -------------------------------------------------------------------
         Execute.Sql(@"
 GRANT SELECT (kid, alg, public_jwk, created_at, not_before, not_after, retired_at)
     ON signing_keys TO heimdall_app;
-GRANT INSERT (kid, alg, public_jwk, created_at, not_before, not_after, retired_at)
+GRANT UPDATE (retired_at)
     ON signing_keys TO heimdall_app;
-GRANT UPDATE (kid, alg, public_jwk, created_at, not_before, not_after, retired_at)
-    ON signing_keys TO heimdall_app;
-GRANT DELETE ON signing_keys TO heimdall_app;
 
 GRANT SELECT ON signing_keys TO heimdall_signer;
 
@@ -184,9 +191,9 @@ CREATE POLICY signing_key_app_read
     TO heimdall_app
     USING (true);
 
-CREATE POLICY signing_key_app_write
+CREATE POLICY signing_key_app_update
     ON signing_keys
-    FOR ALL
+    FOR UPDATE
     TO heimdall_app
     USING (true)
     WITH CHECK (true);
@@ -318,7 +325,7 @@ DROP FUNCTION IF EXISTS signing_keys_audit_trg();
 DROP FUNCTION IF EXISTS signing_keys_insert(text, text, jsonb, bytea, timestamptz, timestamptz);
 DROP FUNCTION IF EXISTS signing_keys_read_private(text);
 
-DROP POLICY IF EXISTS signing_key_app_write  ON signing_keys;
+DROP POLICY IF EXISTS signing_key_app_update ON signing_keys;
 DROP POLICY IF EXISTS signing_key_app_read   ON signing_keys;
 DROP POLICY IF EXISTS signing_key_signer_full ON signing_keys;
 ");

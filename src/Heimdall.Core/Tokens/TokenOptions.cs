@@ -29,10 +29,11 @@ public class TokenOptions
     public TimeSpan AccessTokenLifetime { get; set; } = TimeSpan.FromMinutes(15);
 
     /// <summary>
-    /// Gets or sets the minimum overlap window between consecutive signing keys. Must be
-    /// at least <see cref="AccessTokenLifetime"/>; <see cref="Heimdall.Core.Tokens"/>
-    /// consumers (specifically <c>SigningKeyService.GenerateAsync</c>) reject a rotation
-    /// that would shrink the overlap below this floor.
+    /// Gets or sets the minimum overlap window between consecutive signing keys.
+    /// <c>SigningKeyService.GenerateAsync</c> rejects a rotation whose computed overlap is
+    /// shorter than this value. Must be at least <see cref="AccessTokenLifetime"/> so
+    /// tokens in flight stay verifiable across rotation — this floor is enforced at
+    /// startup by <c>Heimdall.BLL.Tokens.TokenOptionsValidator</c>.
     /// Default: 15 minutes (matches <see cref="AccessTokenLifetime"/>; hardening §2.5).
     /// </summary>
     public TimeSpan SigningKeyOverlap { get; set; } = TimeSpan.FromMinutes(15);

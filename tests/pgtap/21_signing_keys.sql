@@ -27,7 +27,7 @@
 
 BEGIN;
 
-SELECT plan(43);
+SELECT plan(47);
 
 -- ===========================================================================
 -- Table & columns exist
@@ -133,13 +133,15 @@ SELECT has_index(
     ARRAY['not_after']
 );
 
--- pg_indexes.indexdef carries the predicate text. Match case-insensitively
--- against the canonical "WHERE (retired_at IS NULL)" form Postgres emits.
-SELECT like_match(
+-- pg_indexes.indexdef carries the predicate text. Assert the canonical
+-- "WHERE (retired_at IS NULL)" form Postgres emits via plain SQL LIKE —
+-- pgTAP has no like_match() function (was a wrong guess); ok() with a
+-- LIKE comparison is the portable replacement.
+SELECT ok(
     (SELECT indexdef FROM pg_indexes
         WHERE schemaname = 'public'
-          AND indexname = 'ix_signing_keys_not_after_active'),
-    '%WHERE (retired_at IS NULL)%',
+          AND indexname = 'ix_signing_keys_not_after_active')
+    LIKE '%WHERE (retired_at IS NULL)%',
     'ix_signing_keys_not_after_active is partial on retired_at IS NULL'
 );
 
@@ -204,6 +206,35 @@ SELECT is(
           AND privilege_type = 'SELECT'),
     0,
     'heimdall_app has no column-level SELECT on signing_keys.private_key_protected'
+);
+
+-- ===========================================================================
+-- Least-privilege grants for heimdall_app (PR review hardening, 2026-05-14):
+--   * NO direct INSERT — new rows route through signing_keys_insert().
+--   * NO direct DELETE — operator-only via admin tooling.
+--   * UPDATE limited to retired_at only — kid/alg/public_jwk/not_before/
+--     not_after/created_at are effectively immutable after INSERT.
+-- These four assertions pin the posture so a future migration cannot
+-- silently re-broaden it.
+-- ===========================================================================
+SELECT ok(
+    NOT has_table_privilege('heimdall_app', 'signing_keys', 'INSERT'),
+    'heimdall_app does NOT hold INSERT on signing_keys (must use signing_keys_insert())'
+);
+
+SELECT ok(
+    NOT has_table_privilege('heimdall_app', 'signing_keys', 'DELETE'),
+    'heimdall_app does NOT hold DELETE on signing_keys (operator-only)'
+);
+
+SELECT ok(
+    has_column_privilege('heimdall_app', 'public.signing_keys', 'retired_at', 'UPDATE'),
+    'heimdall_app holds UPDATE on signing_keys.retired_at (retirement path)'
+);
+
+SELECT ok(
+    NOT has_column_privilege('heimdall_app', 'public.signing_keys', 'not_after', 'UPDATE'),
+    'heimdall_app does NOT hold UPDATE on signing_keys.not_after (immutable after insert)'
 );
 
 -- ===========================================================================

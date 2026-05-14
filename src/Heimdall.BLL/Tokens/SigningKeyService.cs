@@ -101,19 +101,22 @@ public sealed class SigningKeyService : ISigningKeyService
 
         // Overlap-window enforcement (hardening §2.5). The current key, if any, must
         // remain valid for at least one access-token lifetime after the new key takes
-        // effect so tokens in flight stay verifiable across the cutover.
+        // effect so tokens in flight stay verifiable across the cutover. The configured
+        // floor is TokenOptions.SigningKeyOverlap; TokenOptionsValidator (registered at
+        // startup) guarantees SigningKeyOverlap >= AccessTokenLifetime so this check
+        // remains at least as strict as one access-token TTL.
         SigningKeyRecord? current = await _repository
             .GetCurrentAsync(notBefore, ct)
             .ConfigureAwait(false);
         if (current is not null && current.NotAfter > notBefore)
         {
             TimeSpan overlap = current.NotAfter - notBefore;
-            TimeSpan required = _options.Value.AccessTokenLifetime;
+            TimeSpan required = _options.Value.SigningKeyOverlap;
             if (overlap < required)
             {
                 throw new InvalidOperationException(
-                    $"Rotation rejected: overlap window {overlap} is shorter than the access-token "
-                    + $"lifetime {required}. Extend the outgoing key's not_after before rotating.");
+                    $"Rotation rejected: overlap window {overlap} is shorter than the configured "
+                    + $"SigningKeyOverlap {required}. Extend the outgoing key's not_after before rotating.");
             }
         }
 

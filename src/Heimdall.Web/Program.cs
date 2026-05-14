@@ -494,9 +494,17 @@ builder.Services.AddOptions<RegistrationOptions>()
 // Strongly-typed Heimdall.Core.Tokens.TokenOptions bound to the "Token"
 // config section. Carries the access-token lifetime and the signing-key
 // rotation/overlap windows that SigningKeyService consults to enforce the
-// hardening proposal §2.5 overlap-window invariant.
-builder.Services.Configure<Heimdall.Core.Tokens.TokenOptions>(
-    builder.Configuration.GetSection("Token"));
+// hardening proposal §2.5 overlap-window invariant. TokenOptionsValidator
+// runs at startup (ValidateOnStart) so a misconfigured floor — e.g.
+// SigningKeyOverlap < AccessTokenLifetime — fails fast instead of silently
+// shrinking the safety margin.
+builder.Services
+    .AddOptions<Heimdall.Core.Tokens.TokenOptions>()
+    .Bind(builder.Configuration.GetSection("Token"))
+    .ValidateOnStart();
+builder.Services.AddSingleton<
+    Microsoft.Extensions.Options.IValidateOptions<Heimdall.Core.Tokens.TokenOptions>,
+    Heimdall.BLL.Tokens.TokenOptionsValidator>();
 
 // --- Phase 5.1 step 2/3: signing-key service + JWKS cache invalidator -----
 // JWKS cache invalidator is a singleton (stateless; just removes one key from
