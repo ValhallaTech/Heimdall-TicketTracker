@@ -58,6 +58,13 @@ public static class ServiceCollectionExtensions
         services.AddScoped<ITeamMemberRepository, TeamMemberRepository>();
         services.AddScoped<IProjectMemberRepository, ProjectMemberRepository>();
 
+        // Phase 5.1 step 2 (docs/implementation/phase-5-checklist.md): the signing-key
+        // repository routes writes/reads of private_key_protected through the
+        // signing_keys_insert / signing_keys_read_private SECURITY DEFINER functions
+        // installed by M202605130001_CreateSigningKeys. Scoped to match the rest of
+        // the repository layer; each call opens its own NpgsqlConnection.
+        services.AddScoped<ISigningKeyRepository, SigningKeyRepository>();
+
         // Phase 2.6 step 18 (docs/proposals/team-collaboration.md §3): the
         // permission service short-circuits on system_admin without taking a
         // dependency on Microsoft.AspNetCore.Identity. Same per-request lifetime
