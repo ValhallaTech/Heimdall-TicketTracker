@@ -90,14 +90,22 @@ builder.Services.Configure<DataOptions>(options =>
 // --- Redis multiplexer (singleton) ----------------------------------------
 // AbortOnConnectFail = false so a transient Redis outage at startup degrades gracefully
 // (the cache layer's catches turn cache misses into DB hits) instead of crashing the app.
-// SyncTimeout / ConnectTimeout are left at the StackExchange.Redis defaults (5s each)
-// — explicitly NOT 0 / infinite. ClientName surfaces this app in `CLIENT LIST` / Redis
-// monitoring, mirroring the Application Name we set on the Postgres side.
+// Timeouts are pinned explicitly (rather than relying on StackExchange.Redis defaults) so
+// they remain stable across client upgrades and so a slow Redis cannot stall a request
+// thread for longer than ConnectTimeout / SyncTimeout / AsyncTimeout. ClientName surfaces
+// this app in `CLIENT LIST` / Redis monitoring, mirroring the Application Name we set on
+// the Postgres side. ConnectRetry + KeepAlive give us faster recovery from transient
+// network blips between Render's web service and its Key-Value (Redis) service.
 builder.Services.AddSingleton<IConnectionMultiplexer>(_ =>
 {
     var options = ConfigurationOptions.Parse(redisConnectionString);
     options.AbortOnConnectFail = false;
     options.ClientName = "Heimdall.Web";
+    options.ConnectTimeout = 5_000;
+    options.SyncTimeout = 5_000;
+    options.AsyncTimeout = 5_000;
+    options.ConnectRetry = 3;
+    options.KeepAlive = 60;
     return ConnectionMultiplexer.Connect(options);
 });
 

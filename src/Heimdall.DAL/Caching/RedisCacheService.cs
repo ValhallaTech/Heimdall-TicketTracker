@@ -49,17 +49,20 @@ public class RedisCacheService : ICacheService
     public async Task<T?> GetAsync<T>(string key, CancellationToken cancellationToken = default)
         where T : class
     {
+        cancellationToken.ThrowIfCancellationRequested();
         try
         {
             var value = await GetDatabase().StringGetAsync(key).ConfigureAwait(false);
             if (value.IsNullOrEmpty)
             {
+                _logger.LogDebug("Redis GET miss for key {CacheKey}.", key);
                 return null;
             }
 
+            _logger.LogDebug("Redis GET hit for key {CacheKey}.", key);
             return JsonSerializer.Deserialize<T>((string)value!, SerializerOptions);
         }
-        catch (Exception ex) when (ex is RedisException or JsonException)
+        catch (Exception ex) when (ex is RedisException or JsonException or ObjectDisposedException)
         {
             _logger.LogWarning(ex, "Redis GET failed for key {CacheKey}; returning null.", key);
             return null;
@@ -75,6 +78,7 @@ public class RedisCacheService : ICacheService
     )
         where T : class
     {
+        cancellationToken.ThrowIfCancellationRequested();
         try
         {
             var payload = JsonSerializer.Serialize(value, SerializerOptions);
@@ -82,7 +86,7 @@ public class RedisCacheService : ICacheService
                 .StringSetAsync(key, payload, ttl, When.Always)
                 .ConfigureAwait(false);
         }
-        catch (Exception ex) when (ex is RedisException or JsonException)
+        catch (Exception ex) when (ex is RedisException or JsonException or ObjectDisposedException)
         {
             _logger.LogWarning(
                 ex,
@@ -95,11 +99,12 @@ public class RedisCacheService : ICacheService
     /// <inheritdoc />
     public async Task RemoveAsync(string key, CancellationToken cancellationToken = default)
     {
+        cancellationToken.ThrowIfCancellationRequested();
         try
         {
             await GetDatabase().KeyDeleteAsync(key).ConfigureAwait(false);
         }
-        catch (RedisException ex)
+        catch (Exception ex) when (ex is RedisException or ObjectDisposedException)
         {
             _logger.LogWarning(ex, "Redis DEL failed for key {CacheKey}.", key);
         }

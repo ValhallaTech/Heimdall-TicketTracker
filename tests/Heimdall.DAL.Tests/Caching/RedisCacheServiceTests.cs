@@ -151,4 +151,78 @@ public class RedisCacheServiceTests
         Func<Task> act = () => sut.RemoveAsync("k");
         await act.Should().NotThrowAsync();
     }
+
+    [Fact]
+    public async Task Should_ReturnNull_When_GetAsyncThrowsObjectDisposedException()
+    {
+        // Simulates the multiplexer being disposed during shutdown — must degrade
+        // gracefully (cache miss) rather than propagate the exception into request
+        // pipelines.
+        var (sut, _, db) = CreateSut();
+        db.Setup(d => d.StringGetAsync("k", CommandFlags.None))
+          .ThrowsAsync(new ObjectDisposedException("multiplexer"));
+
+        var result = await sut.GetAsync<Box>("k");
+
+        result.Should().BeNull();
+    }
+
+    [Fact]
+    public async Task Should_SwallowObjectDisposedException_When_SetAsyncFails()
+    {
+        var (sut, _, db) = CreateSut();
+        db.Setup(d => d.StringSetAsync(
+                It.IsAny<RedisKey>(),
+                It.IsAny<RedisValue>(),
+                It.IsAny<TimeSpan?>(),
+                When.Always))
+          .ThrowsAsync(new ObjectDisposedException("multiplexer"));
+
+        Func<Task> act = () => sut.SetAsync("k", new Box());
+        await act.Should().NotThrowAsync();
+    }
+
+    [Fact]
+    public async Task Should_SwallowObjectDisposedException_When_RemoveAsyncFails()
+    {
+        var (sut, _, db) = CreateSut();
+        db.Setup(d => d.KeyDeleteAsync(It.IsAny<RedisKey>(), CommandFlags.None))
+          .ThrowsAsync(new ObjectDisposedException("multiplexer"));
+
+        Func<Task> act = () => sut.RemoveAsync("k");
+        await act.Should().NotThrowAsync();
+    }
+
+    [Fact]
+    public async Task Should_ThrowOperationCanceled_When_GetAsyncCalledWithCanceledToken()
+    {
+        var (sut, _, _) = CreateSut();
+        using var cts = new CancellationTokenSource();
+        cts.Cancel();
+
+        Func<Task> act = () => sut.GetAsync<Box>("k", cts.Token);
+        await act.Should().ThrowAsync<OperationCanceledException>();
+    }
+
+    [Fact]
+    public async Task Should_ThrowOperationCanceled_When_SetAsyncCalledWithCanceledToken()
+    {
+        var (sut, _, _) = CreateSut();
+        using var cts = new CancellationTokenSource();
+        cts.Cancel();
+
+        Func<Task> act = () => sut.SetAsync("k", new Box(), TimeSpan.FromMinutes(1), cts.Token);
+        await act.Should().ThrowAsync<OperationCanceledException>();
+    }
+
+    [Fact]
+    public async Task Should_ThrowOperationCanceled_When_RemoveAsyncCalledWithCanceledToken()
+    {
+        var (sut, _, _) = CreateSut();
+        using var cts = new CancellationTokenSource();
+        cts.Cancel();
+
+        Func<Task> act = () => sut.RemoveAsync("k", cts.Token);
+        await act.Should().ThrowAsync<OperationCanceledException>();
+    }
 }
