@@ -1,6 +1,6 @@
 # Proposal: Migrate the Heimdall frontend from Blazor Server to Svelte 5 / SvelteKit 2
 
-**Status:** **Draft / Planning** (2026-05-15)
+**Status:** **Approved** (2026-05-15)
 **Author:** Orchestrator (Copilot)
 **Scope:** `Heimdall.Web` (Blazor host today; reduced to an API + static-asset host after migration), a new `Heimdall.Frontend` SvelteKit project, `tests/Heimdall.Web.Tests` (bUnit retirement).
 **Decision required:** Should we replace the Blazor Server UI with a Svelte 5 / SvelteKit 2 frontend, and if so under which hosting topology, on what timeline, and against which authentication model?
@@ -107,6 +107,7 @@ The org's standard Frontend Expert toolchain applies. No version pinning appears
 - **Vitest** — replaces bUnit and complements the existing Jest config. Vitest is preferred over Jest specifically for the SvelteKit subtree because Vitest shares Vite's module resolver and natively understands `$lib`, `$app/*` and `.svelte` imports without extra transforms. Jest stays where it is for non-Svelte JS under `src/Heimdall.Web/__tests__/`.
 - **`@testing-library/svelte`** — component-test API used from Vitest. Standard `render` / `screen` / `userEvent` patterns.
 - **Playwright** — recommended for end-to-end / smoke tests, unchanged from the org default. No bUnit equivalent today; this is a *net new* layer.
+- **Component library:** `bits-ui` for accessibility primitives plus `shadcn-svelte` for styled components built on top of them. `shadcn-svelte` brings Tailwind CSS in as a transitive design-system dependency. Bootstrap 5 / Font Awesome are deprecated within the SvelteKit project once shadcn-svelte parity is reached; the Razor host retains them until the Blazor retirement step.
 
 **Reference baselines (non-binding, Renovate-managed):** Svelte v5.55.7, SvelteKit 2.60.1, Vitest v4.1.6 were the versions cited at proposal-drafting time. They appear here only so reviewers can match docs against what was current when this was written; **the implementation PR must not pin to these numbers** — Renovate will land whatever is current at implementation time, and the proposal explicitly does not gate on a version.
 
@@ -195,6 +196,7 @@ Bootstrap 5 + Font Awesome assets continue to be built by the existing Yarn pipe
 | Contributor onboarding (Razor → Svelte)                                                    | Frontend Expert agent is wired to the Svelte MCP server; `agents/frontend-expert.md` documents the runes-only / SvelteKit-2-only stance. The org docs already require following Svelte 5 conventions. Pair-programming the first few page ports is the cheapest mitigation.        |
 | Two frontends running simultaneously during the port                                       | Time-bounded: each phase below ships a coherent slice. The reverse proxy on `Heimdall.Web` routes specific paths to Razor or to SvelteKit until the final cutover, after which Razor is removed.                                                                                  |
 | bUnit coverage drops to zero between port and Vitest port-in                               | Mitigation is procedural: a Razor page is removed only in the same PR that lands its Svelte equivalent **and** its Vitest spec. CI keeps a coverage floor.                                                                                                                       |
+| Tailwind CSS arrives as a transitive design-system dependency via shadcn-svelte            | Accepted in the design-system decision (§11.5); contained within `Heimdall.Frontend` only. The Razor host keeps Bootstrap until retirement. Tailwind config is committed at the repo root for `Heimdall.Frontend` so it's discoverable. |
 
 ## 9. Phased implementation plan
 
@@ -210,6 +212,8 @@ This plan is written so it can be lifted into [`security-and-authorization.md`](
 8. **Flip default to SvelteKit.** Reverse proxy now routes all UI traffic to SvelteKit; Razor host stays mounted but unreachable for one release.
 9. **Retire Blazor.** Remove `Components/`, `App.razor`, Razor packages, and the Blazor middleware from `Heimdall.Web/Program.cs`. Drop the `tests/Heimdall.Web.Tests` bUnit project (or repurpose it as a Razor-free integration-test project — to be decided at cleanup time). `Heimdall.Web.csproj` may shift from a Blazor-host SDK shape to a slimmer API host.
 10. **Acceptance.** Vitest coverage ≥ 80% on `Heimdall.Frontend`; Playwright smoke suite green; OpenFGA integration tests unchanged and green; auth integration tests cover the bearer + refresh-cookie flow end-to-end; visual diff on critical pages reviewed by the Frontend Expert.
+
+The authoritative ordered plan now lives in [`docs/implementation/phase-6-checklist.md`](../implementation/phase-6-checklist.md).
 
 ## 10. Viability verdict (recommendation)
 
@@ -230,18 +234,19 @@ The case for **no**: if the team's bandwidth is committed to Phases 1–5 plus t
 
 ### Open questions
 
-1. **Adapter choice — `adapter-node` is the recommendation; do we want to revisit if Render adds first-party SvelteKit support or if we move off Render entirely?** Default: stay on `adapter-node` for portability.
-2. **Deployment topology — single container (`Heimdall.Web` + Node sidecar) or two separate Render services?** The choice affects ops, log aggregation, and the reverse-proxy story. Phase 5's deployment model is the closest precedent.
-3. **SSR vs CSR for ticket lists.** SvelteKit can do either per route. Authenticated, paginated, filterable lists are a classic CSR-with-skeleton case, but SSR-first improves time-to-interactive on cold loads. Default proposal: SSR for the first page of results, CSR for subsequent navigation/filters.
-4. **i18n.** Heimdall has no localisation today. If localisation is on the near-term roadmap, picking a Svelte i18n library (e.g., Paraglide, `svelte-i18n`) should happen during step 1 of §9, not later. Default: defer; English-only at cutover.
-5. **Design-system reuse.** Bootstrap 5 + Font Awesome stay. Do we additionally adopt a Svelte-native component layer (e.g., `bits-ui`, `shadcn-svelte`) for accessibility primitives, or hand-build against Bootstrap classes? Default: hand-build against Bootstrap, escalate to a primitives library only if a11y gaps appear.
-6. **Frontend test ownership.** Vitest specs live under `Heimdall.Frontend/`. Confirm the JavaScript/TypeScript Unit Test Engineer agent owns authorship per `agents/javascript-unit-tests.md`, not the Frontend Expert.
+1. ~~Adapter choice — `adapter-node` is the recommendation; do we want to revisit if Render adds first-party SvelteKit support or if we move off Render entirely?~~ **Resolved 2026-05-15:** stay on `adapter-node` for portability.
+2. ~~Deployment topology — single container (`Heimdall.Web` + Node sidecar) or two separate Render services?~~ **Resolved 2026-05-15:** single-container — one Docker image composes the ASP.NET Core API and the SvelteKit `adapter-node` Node server; the existing `Dockerfile` and `render.yaml` are updated in Phase 6, not split into two Render services.
+3. ~~SSR vs CSR for ticket lists.~~ **Resolved 2026-05-15:** use SvelteKit's default hybrid rendering — initial-load SSR, hydration, then CSR for subsequent navigation. No per-route overrides at cutover.
+4. ~~i18n.~~ **Resolved 2026-05-15:** English-only at cutover. No i18n library adopted in Phase 6.
+5. ~~Design-system reuse.~~ **Resolved 2026-05-15:** adopt Svelte-native components — `bits-ui` for accessibility primitives and `shadcn-svelte` for styled components composed over them. Bootstrap 5 / Font Awesome are deprecated in the SvelteKit project and removed in the Blazor retirement step once parity is proven. `shadcn-svelte` brings Tailwind CSS in as a transitive design-system dependency.
+6. ~~Frontend test ownership.~~ **Resolved 2026-05-15:** the JavaScript/TypeScript Unit Test Engineer agent owns Vitest spec authorship per `agents/javascript-unit-tests.md`; the Frontend Expert authors production Svelte/SvelteKit code only. Separation-of-concerns retained.
 
 ### Decision log
 
 | Date       | Decision                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            |
 | ---------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | 2026-05-15 | Proposal drafted; new Phase 6 (Blazor → Svelte/SvelteKit migration) proposed; existing Phase 6 (Admin UI) renumbered to Phase 7. Recommendation: **YES with conditions** — Topology B (`adapter-node`, standalone SvelteKit origin + `Heimdall.Web` reduced to an API), gated on Phases 3 (OpenFGA) and 5 (API + tokens) being merged first. Svelte MCP server adopted for Frontend Expert; `eslint-plugin-svelte` + `prettier-plugin-svelte` integrate into existing flat configs; bUnit retires in favour of Vitest + `@testing-library/svelte`; Playwright added as a net-new end-to-end layer. No version pinning per Renovate ownership; user-cited baselines (Svelte v5.55.7, SvelteKit 2.60.1, Vitest v4.1.6) recorded as non-binding reference points only. |
+| 2026-05-15 | **Proposal approved.** All six §11 open questions resolved (see inline strikethrough): `adapter-node` retained; single-container deployment (one Docker image); SvelteKit default hybrid rendering (SSR initial-load → hydration → CSR navigation); English-only at cutover; `bits-ui` + `shadcn-svelte` adopted with Bootstrap 5 / Font Awesome deprecation scheduled for the Blazor retirement step (Tailwind CSS enters as a transitive design-system dependency via shadcn-svelte); Vitest spec authorship owned by the JavaScript/TypeScript Unit Test Engineer agent. Implementation checklist tracked in [`docs/implementation/phase-6-checklist.md`](../implementation/phase-6-checklist.md). |
 
 ---
 

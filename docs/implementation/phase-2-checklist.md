@@ -87,6 +87,6 @@
 - OpenFGA model file, sidecar, SDK integration, tuple writes, policy-based `[Authorize]` → Phase 3 ([`openfga.md`](../proposals/openfga.md)).
 - TOTP / WebAuthn / MFA → Phase 4.
 - JWT / API tokens → Phase 5.
-- Tuple-aware admin write surfaces → Phase 6 ([`openfga.md`](../proposals/openfga.md) step 11).
+- Tuple-aware admin write surfaces → Phase 7 ([`openfga.md`](../proposals/openfga.md) step 11).
 - Auto-enrollment **implementations** (admin-invite flow, LDAP) → Phase 3+ via `IUserEnrollmentService`.
 - Group-role catalogue beyond `system_admin` → not scheduled; revisit when a second group-wide privilege is required.

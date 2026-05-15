@@ -92,6 +92,6 @@
 - **WebAuthn / passkeys** → follow-up (proposal §9.3 Phase 4 step 5; §4 lists `Fido2NetLib` as the candidate library). Phase 4 lays the policy infrastructure WebAuthn will reuse — adding a second factor type does not require re-opening the policy or the redirect filter.
 - **SMS OTP** — explicitly rejected in proposal §4 (SIM-swap, deliverability).
 - **JWT / API tokens** → Phase 5.
-- **Tuple-aware admin write surfaces** → Phase 6 ([`openfga.md`](../proposals/openfga.md) §4 open question 4).
+- **Tuple-aware admin write surfaces** → Phase 7 ([`openfga.md`](../proposals/openfga.md) §4 open question 4).
 - **Per-tenant MFA opt-out / opt-in policy knobs.** The §4 "optional but encouraged for regular users" stance is realised in this phase as "non-admins are not redirected"; making MFA *mandatory* for non-admins on a per-org basis is a future configuration surface, not a Phase 4 step.
 - **Hardware token (YubiKey OTP non-FIDO) support.** Not on the §4 menu; revisit only if a customer requires it.

@@ -97,6 +97,6 @@
 - **WebAuthn / passkeys.** Deferred from Phase 4 per [`phase-4-checklist.md`](./phase-4-checklist.md) "Out of scope for Phase 4"; still deferred — Phase 4's `RequireMfaPolicy` and the `amr` claim plumbing carry forward unchanged when a second factor type is added.
 - **SMS OTP.** Explicitly rejected in proposal §4 (SIM-swap, deliverability).
 - **API client (CLI / native) refresh-token storage.** Proposal §5.2 calls out OS secret store (Keychain / Credential Manager / libsecret) as the eventual home; this phase only addresses browser callers via the `__Host-heimdall_refresh` cookie. The CLI binding lands when the first CLI surface ships.
-- **Tuple-aware admin write surfaces** → Phase 6 ([`openfga.md`](../proposals/openfga.md) §4 open question 4).
+- **Tuple-aware admin write surfaces** → Phase 7 ([`openfga.md`](../proposals/openfga.md) §4 open question 4).
 - **Per-tenant API token issuance policy knobs** (e.g. disabling password-grant for specific orgs, mandating client credentials for service-to-service). Future configuration surface, not a Phase 5 step.
 - **mTLS / sender-constrained tokens (RFC 8705).** Not on the §5 menu; revisit only if a customer requires it.
