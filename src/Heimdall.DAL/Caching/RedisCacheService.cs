@@ -49,17 +49,29 @@ public class RedisCacheService : ICacheService
     public async Task<T?> GetAsync<T>(string key, CancellationToken cancellationToken = default)
         where T : class
     {
+        cancellationToken.ThrowIfCancellationRequested();
         try
         {
-            var value = await GetDatabase().StringGetAsync(key).ConfigureAwait(false);
+            // SE.Redis IDatabase.*Async methods do not accept a CancellationToken, so we
+            // bridge the token via Task.WaitAsync. Combined with the pre-dispatch
+            // ThrowIfCancellationRequested above, this propagates cancellation
+            // end-to-end (both before dispatch and while the call is in flight) and
+            // surfaces as OperationCanceledException, which the graceful-degradation
+            // filter below intentionally does NOT catch.
+            var value = await GetDatabase()
+                .StringGetAsync(key)
+                .WaitAsync(cancellationToken)
+                .ConfigureAwait(false);
             if (value.IsNullOrEmpty)
             {
+                _logger.LogDebug("Redis GET miss for key {CacheKey}.", key);
                 return null;
             }
 
+            _logger.LogDebug("Redis GET hit for key {CacheKey}.", key);
             return JsonSerializer.Deserialize<T>((string)value!, SerializerOptions);
         }
-        catch (Exception ex) when (ex is RedisException or JsonException)
+        catch (Exception ex) when (ex is RedisException or JsonException or ObjectDisposedException)
         {
             _logger.LogWarning(ex, "Redis GET failed for key {CacheKey}; returning null.", key);
             return null;
@@ -75,14 +87,16 @@ public class RedisCacheService : ICacheService
     )
         where T : class
     {
+        cancellationToken.ThrowIfCancellationRequested();
         try
         {
             var payload = JsonSerializer.Serialize(value, SerializerOptions);
             await GetDatabase()
                 .StringSetAsync(key, payload, ttl, When.Always)
+                .WaitAsync(cancellationToken)
                 .ConfigureAwait(false);
         }
-        catch (Exception ex) when (ex is RedisException or JsonException)
+        catch (Exception ex) when (ex is RedisException or JsonException or ObjectDisposedException)
         {
             _logger.LogWarning(
                 ex,
@@ -95,11 +109,15 @@ public class RedisCacheService : ICacheService
     /// <inheritdoc />
     public async Task RemoveAsync(string key, CancellationToken cancellationToken = default)
     {
+        cancellationToken.ThrowIfCancellationRequested();
         try
         {
-            await GetDatabase().KeyDeleteAsync(key).ConfigureAwait(false);
+            await GetDatabase()
+                .KeyDeleteAsync(key)
+                .WaitAsync(cancellationToken)
+                .ConfigureAwait(false);
         }
-        catch (RedisException ex)
+        catch (Exception ex) when (ex is RedisException or ObjectDisposedException)
         {
             _logger.LogWarning(ex, "Redis DEL failed for key {CacheKey}.", key);
         }
