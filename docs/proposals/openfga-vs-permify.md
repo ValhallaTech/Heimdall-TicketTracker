@@ -250,7 +250,7 @@ The current proposal-set sequence is:
 - **Phase 1 — Authenticated foundation** ([`security-and-authorization.md`](./security-and-authorization.md) §9.3 Phase 1). Identity + cookie auth, Dapper user store, MailKit/MimeKit email seam, **"authenticated-only" placeholder gate** (no RBAC, no PBAC, no roles/permissions/groups tables — those were dropped from Phase 1 because OpenFGA replaces them end-to-end and shipping them would mean migrating them away).
 - **Phase 2 — Team collaboration data model** ([`team-collaboration.md`](./team-collaboration.md)). Organizations, teams, projects, membership tables, ticket reporter/assignee FKs. Strictly data-and-domain; ships zero ReBAC changes; the temporary `system_admin` write-side gate from `team-collaboration.md` §3 covers Phase-2-only privilege-escalation risk on write surfaces.
 - **Phase 3 — OpenFGA ReBAC** ([`openfga.md`](./openfga.md)). Replaces the Phase-1 placeholder with policy-based `[Authorize]` resolved through OpenFGA `Check()`. Tuples are backfilled directly from the Phase-2 `*_members` and `tickets` rows (per the mapping in [`team-collaboration.md`](./team-collaboration.md) step 17), **not** from any RBAC role/group state — there is no such state under the current sequencing.
-- **Phase 4 — MFA**, **Phase 5 — API + tokens**, **Phase 6 — Admin UI** all follow OpenFGA so each goes through one policy mechanism.
+- **Phase 4 — MFA**, **Phase 5 — API + tokens**, **Phase 6 — Blazor → Svelte/SvelteKit migration**, **Phase 7 — Admin UI** all follow OpenFGA so each goes through one policy mechanism.
 
 The OpenFGA selection in §8 of this proposal is unaffected by the resequencing; only the *order* and *upstream data sources* of the implementation steps changed.
 

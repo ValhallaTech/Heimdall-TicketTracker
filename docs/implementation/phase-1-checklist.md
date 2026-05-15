@@ -35,5 +35,5 @@
 - OpenFGA, ReBAC, policy-based `[Authorize]` → Phase 3 ([`openfga.md`](../proposals/openfga.md)).
 - TOTP / WebAuthn / MFA → Phase 4.
 - JWT / API tokens → Phase 5.
-- Admin tuple-management UI → Phase 6.
+- Admin tuple-management UI → Phase 7.
 - Any RBAC/PBAC catalogues — explicitly **dropped** in PR #25.

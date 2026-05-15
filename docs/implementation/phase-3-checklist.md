@@ -70,5 +70,5 @@
 
 - TOTP / WebAuthn / MFA → Phase 4.
 - JWT / API tokens → Phase 5.
-- Tuple-aware admin **write** surfaces and the `ticket#watcher` future relation → Phase 6 (per [`openfga.md`](../proposals/openfga.md) §4 open question 4).
+- Tuple-aware admin **write** surfaces and the `ticket#watcher` future relation → Phase 7 (per [`openfga.md`](../proposals/openfga.md) §4 open question 4).
 - Auto-enrollment **implementations** (admin-invite flow, LDAP) — still deferred. The seam (`IUserEnrollmentService`) exists from Phase 2.9 step 26; concrete bindings land in Phase 3.6 (admin-invite) and beyond (LDAP).
