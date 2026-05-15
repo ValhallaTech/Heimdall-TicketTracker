@@ -243,7 +243,7 @@ All FluentMigrator migrations; all access via Dapper repositories (DAL conventio
 2. **MFA:** TOTP + recovery codes; required for admins; WebAuthn in Phase 2.
 3. **AuthZ:** Phase 1 ships an **"authenticated-only"** gate as a deliberate placeholder. Real authorization is **ReBAC via OpenFGA** ([`openfga.md`](./openfga.md)), introduced after the team-collaboration data model ([`team-collaboration.md`](./team-collaboration.md)). RBAC+PBAC is **dropped** from Phase 1 because OpenFGA replaces it end-to-end; keeping it would mean shipping a roles/permissions/groups schema that gets migrated away.
 4. **Tokens:** short-lived RS256/ES256 access tokens; opaque, hashed, rotating, family-bound refresh tokens; JWKS endpoint; Redis denylist for emergency revoke.
-5. **Admin:** deferred to Phase 4, post-OpenFGA, as a tuple-management surface (see §8 banner and [`openfga.md`](./openfga.md) step 11).
+5. **Admin:** deferred to Phase 7, post-OpenFGA, as a tuple-management surface (see §8 banner and [`openfga.md`](./openfga.md) step 11).
 
 ### 9.2 Scoring against goals
 
@@ -308,7 +308,11 @@ Content unchanged from earlier drafts.
 5. Redis denylist for emergency revoke.
 6. First `/api/v1/...` endpoints, authorized via the **same** OpenFGA `Check()` adapter as the UI (no parallel policy stack).
 
-#### Phase 6 — Admin UI
+#### Phase 6 — Blazor → Svelte/SvelteKit migration
+
+Replace the Blazor Server UI with a Svelte 5 (runes) + SvelteKit 2 frontend on `adapter-node`. Full design, topology analysis, page inventory, and ordered cutover plan live in [`blazor-to-svelte-transition.md`](./blazor-to-svelte-transition.md); the recommendation is **Topology B** (standalone SvelteKit origin + `Heimdall.Web` reduced to an API), which is why this phase depends on **Phase 3 (OpenFGA)** and **Phase 5 (API + tokens)** being merged first — without Phase 5's JWT bearer + refresh-token rotation, Topology B has no auth model. The Frontend Expert agent is now wired to the official Svelte MCP server (`https://mcp.svelte.dev/mcp`) for live Svelte 5 / SvelteKit 2 documentation. `eslint-plugin-svelte` and `prettier-plugin-svelte` extend the existing flat `eslint.config.cjs` / `.prettierrc.json` in `src/Heimdall.Web/`. bUnit retires in favour of **Vitest + `@testing-library/svelte`** for component tests, with Playwright added as a net-new end-to-end layer. Razor and SvelteKit run side-by-side behind a reverse proxy during the per-page port; the Blazor host is removed only after all pages are migrated.
+
+#### Phase 7 — Admin UI
 
 Returns *after* OpenFGA lands as a **tuple-management surface**, not a roles/groups surface. Detailed steps in [`openfga.md`](./openfga.md) step 11.
 
@@ -334,6 +338,7 @@ Each phase is independently shippable and independently testable.
 | 2026-05-04 | **Phase 1 retopologised and RBAC+PBAC dropped.** §9.3 rewritten as 11 strictly-ordered steps (`users` migration → `audit_events` → Dapper Identity stores → `AddIdentityCore` + cookie + Data Protection → `RevalidatingServerAuthenticationStateProvider` → `IEmailSender` seam → login POST + Blazor pages → env-var `SystemAdmin` bootstrap → "authenticated-only" gate → email-gated reset/register → tests). RBAC+PBAC and the `roles`/`permissions`/`groups` migrations removed from Phase 1 because OpenFGA ([`openfga.md`](./openfga.md)) replaces them end-to-end. §8 admin surface deferred to post-OpenFGA as a tuple-management surface. §9.1 line 3 (AuthZ) and §9.1 line 5 (Admin) updated accordingly. MFA, API+tokens, and Admin UI repositioned to phases 4–6, after OpenFGA, so policy evaluation goes through one mechanism. Added "Depends on: nothing" line in the header; sibling proposals [`team-collaboration.md`](./team-collaboration.md) and [`openfga.md`](./openfga.md) added in the same review. |
 | 2026-05-04 | **Email transport selected: MailKit + MimeKit** (§9.3 step 6). The production `IEmailSender` implementation is `MailKitEmailSender`, built on [MailKit](https://github.com/jstedfast/MailKit) for SMTP and [MimeKit](https://github.com/jstedfast/MimeKit) for message construction. `System.Net.Mail.SmtpClient` is officially deprecated for new development by Microsoft. The `IEmailSender` interface and its DTO stay in `Heimdall.Core`; the MimeKit-bound implementation lives in `Heimdall.BLL` so `Heimdall.Core` does not take a transitive dependency on MimeKit. The `NoOpEmailSender` fallback (local dev / SMTP-not-yet-provisioned) is unchanged. |
 | 2026-05-05 | Phase 4 (MFA) admin predicate changed from `Check(organization:heimdall#admin@user:X)` to `Check(organization:<seed-org-uuid>#admin@user:X)`. The `heimdall` slug is admin-renamable per [`team-collaboration.md`](./team-collaboration.md) §5 Q4, so a slug-keyed policy could silently stop applying after a rename; the seed org's stable UUID, captured at bootstrap, is the correct stable identifier. |
+| 2026-05-15 | **Phase 6 inserted: Blazor → Svelte/SvelteKit migration** ([`blazor-to-svelte-transition.md`](./blazor-to-svelte-transition.md)). The Admin UI phase shifts to Phase 7. Phase 6 depends on Phases 3 (OpenFGA) and 5 (API + tokens) being merged. Frontend Expert now has Svelte MCP server access; ESLint and Prettier Svelte plugins adopted; bUnit retired in favour of Vitest. |
 
 ---
 
