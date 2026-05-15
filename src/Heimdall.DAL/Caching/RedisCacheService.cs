@@ -52,7 +52,16 @@ public class RedisCacheService : ICacheService
         cancellationToken.ThrowIfCancellationRequested();
         try
         {
-            var value = await GetDatabase().StringGetAsync(key).ConfigureAwait(false);
+            // SE.Redis IDatabase.*Async methods do not accept a CancellationToken, so we
+            // bridge the token via Task.WaitAsync. Combined with the pre-dispatch
+            // ThrowIfCancellationRequested above, this propagates cancellation
+            // end-to-end (both before dispatch and while the call is in flight) and
+            // surfaces as OperationCanceledException, which the graceful-degradation
+            // filter below intentionally does NOT catch.
+            var value = await GetDatabase()
+                .StringGetAsync(key)
+                .WaitAsync(cancellationToken)
+                .ConfigureAwait(false);
             if (value.IsNullOrEmpty)
             {
                 _logger.LogDebug("Redis GET miss for key {CacheKey}.", key);
@@ -84,6 +93,7 @@ public class RedisCacheService : ICacheService
             var payload = JsonSerializer.Serialize(value, SerializerOptions);
             await GetDatabase()
                 .StringSetAsync(key, payload, ttl, When.Always)
+                .WaitAsync(cancellationToken)
                 .ConfigureAwait(false);
         }
         catch (Exception ex) when (ex is RedisException or JsonException or ObjectDisposedException)
@@ -102,7 +112,10 @@ public class RedisCacheService : ICacheService
         cancellationToken.ThrowIfCancellationRequested();
         try
         {
-            await GetDatabase().KeyDeleteAsync(key).ConfigureAwait(false);
+            await GetDatabase()
+                .KeyDeleteAsync(key)
+                .WaitAsync(cancellationToken)
+                .ConfigureAwait(false);
         }
         catch (Exception ex) when (ex is RedisException or ObjectDisposedException)
         {

@@ -225,4 +225,59 @@ public class RedisCacheServiceTests
         Func<Task> act = () => sut.RemoveAsync("k", cts.Token);
         await act.Should().ThrowAsync<OperationCanceledException>();
     }
+
+    [Fact]
+    public async Task Should_CancelInFlightGet_When_TokenCancelsDuringDispatch()
+    {
+        // Verifies that WaitAsync(token) propagates cancellation while the Redis
+        // call is in flight (not only pre-dispatch). The IDatabase mock never
+        // completes its task, simulating a hung call; the SUT must abandon the
+        // await as soon as the token is canceled.
+        var (sut, _, db) = CreateSut();
+        var tcs = new TaskCompletionSource<RedisValue>();
+        db.Setup(d => d.StringGetAsync("k", CommandFlags.None)).Returns(tcs.Task);
+        using var cts = new CancellationTokenSource();
+
+        var pending = sut.GetAsync<Box>("k", cts.Token);
+        cts.Cancel();
+
+        Func<Task> act = () => pending;
+        await act.Should().ThrowAsync<OperationCanceledException>();
+    }
+
+    [Fact]
+    public async Task Should_CancelInFlightSet_When_TokenCancelsDuringDispatch()
+    {
+        var (sut, _, db) = CreateSut();
+        var tcs = new TaskCompletionSource<bool>();
+        db.Setup(d => d.StringSetAsync(
+                It.IsAny<RedisKey>(),
+                It.IsAny<RedisValue>(),
+                It.IsAny<TimeSpan?>(),
+                When.Always))
+          .Returns(tcs.Task);
+        using var cts = new CancellationTokenSource();
+
+        var pending = sut.SetAsync("k", new Box(), TimeSpan.FromMinutes(1), cts.Token);
+        cts.Cancel();
+
+        Func<Task> act = () => pending;
+        await act.Should().ThrowAsync<OperationCanceledException>();
+    }
+
+    [Fact]
+    public async Task Should_CancelInFlightRemove_When_TokenCancelsDuringDispatch()
+    {
+        var (sut, _, db) = CreateSut();
+        var tcs = new TaskCompletionSource<bool>();
+        db.Setup(d => d.KeyDeleteAsync(It.IsAny<RedisKey>(), CommandFlags.None))
+          .Returns(tcs.Task);
+        using var cts = new CancellationTokenSource();
+
+        var pending = sut.RemoveAsync("k", cts.Token);
+        cts.Cancel();
+
+        Func<Task> act = () => pending;
+        await act.Should().ThrowAsync<OperationCanceledException>();
+    }
 }

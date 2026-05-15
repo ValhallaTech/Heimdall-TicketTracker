@@ -6,7 +6,7 @@
 **Decision required:** Which of the staged Redis improvements below should we promote from "findings" to "implement now," and at what phase boundary should the larger architectural items (key-space versioning, hash-tag-aware multi-key invalidation, Redis Streams-backed audit fan-out, Redis Query Engine for ticket search, semantic caching) ship?
 **Depends on:** [`security-and-authorization.md`](./security-and-authorization.md) (cache must not become a source of truth for auth state), [`openfga.md`](./openfga.md) §3 step 7 (tuple-write hooks already cooperate with the cache via list-key invalidation), [`phase-5-signing-key-hardening.md`](./phase-5-signing-key-hardening.md) (the JWKS cache is `IMemoryCache`-backed today and is **not** part of this proposal).
 
-> This document is **research and findings only**. The companion PR that publishes it has already landed a small, low-risk set of in-scope changes (timeouts on `ConfigurationOptions`, `LogDebug` hit/miss tracing, `ObjectDisposedException` graceful-degradation guard, and a `redis-cli ping` healthcheck on the dev compose service). **Everything below the "Decision Log" line is planning only**; nothing here implies follow-up work has shipped.
+> This document is **research and findings only**. The companion PR that publishes it has already landed a small, low-risk set of in-scope changes (timeouts on `ConfigurationOptions`, `LogDebug` hit/miss tracing, `ObjectDisposedException` graceful-degradation guard, end-to-end `CancellationToken` propagation, and a `redis-cli ping` healthcheck on the dev compose service). **Sections 3 (Findings) and 4 (Recommendations) are planning only** — they describe work that has not shipped. The `Decision Log` at the bottom records what was actually decided.
 
 ---
 
@@ -25,7 +25,7 @@ Now is the right time to (a) lock down the connection-management posture, (b) do
 ### 2.1 Connection management
 
 - `IConnectionMultiplexer` is registered as a singleton in `src/Heimdall.Web/Program.cs` (~line 96) — correct per StackExchange.Redis guidance.
-- After the in-scope companion changes, the multiplexer is configured with: `AbortOnConnectFail = false`, `ClientName = "Heimdall.Web"`, `ConnectTimeout = SyncTimeout = AsyncTimeout = 5_000ms`, `ConnectRetry = 3`, `KeepAlive = 60s`. TLS, AUTH, and `db=` index are negotiated through `ConnectionStringTranslator.ToRedisConfiguration` from the `REDIS_URL` env var (or `ConnectionStrings:Redis`).
+- After the in-scope companion changes, the multiplexer is configured with: `AbortOnConnectFail = false`, `ClientName = "Heimdall.Web"`, `ConnectTimeout = SyncTimeout = AsyncTimeout = 5_000ms`, `ConnectRetry = 3`, `KeepAlive = 60s`. TLS and AUTH are negotiated through `ConnectionStringTranslator.ToRedisConfiguration` from the `REDIS_URL` env var (or `ConnectionStrings:Redis`). The `db=` index in the URL path is **not** honored today — see F-2.
 - The translator handles `redis://` → `host:port[,password=...]` and `rediss://` → `...,ssl=true`, with URL-decoding of percent-escaped passwords (test `Should_AddSsl_When_RedissScheme`).
 - On Render, `REDIS_URL` is supplied by `fromService` against the `keyvalue` resource (`render.yaml` line 23–27); the keyvalue service's `ipAllowList: []` keeps it on Render's private network.
 - On `docker-compose.yml`, the dev Redis (`redis:8-alpine`) now exposes a `redis-cli ping` healthcheck. The `web` service still uses `condition: service_started` (not `service_healthy`) — intentional, because `AbortOnConnectFail = false` lets the app boot ahead of Redis without crashing.
@@ -39,7 +39,7 @@ Now is the right time to (a) lock down the connection-management posture, (b) do
 
 ### 2.3 What is **not** Redis-backed today
 
-- ASP.NET Core data protection keys (in-process / file-system).
+- ASP.NET Core data protection keys (PostgreSQL-backed via `PersistKeysWithDapperInPostgreSQL("Heimdall")` in `Program.cs` ~lines 459–465 — shared across instances today, **not** Redis).
 - Antiforgery / session state (in-process).
 - Distributed locks (none in code).
 - Idempotency keys (none in code).
@@ -56,7 +56,7 @@ Now is the right time to (a) lock down the connection-management posture, (b) do
 | F-3 | **Low** | Connection | The translator does not understand multi-host URLs or `redis-cluster://` style config. Single-node only. Acceptable while we are on Render Key-Value (single-node). | Same file |
 | F-4 | **Low** | Cache surface | `CacheKeys` has no version segment. Any breaking change to the `CachedList` schema would deserialize old payloads against the new shape until the TTL elapses. Adding a version (e.g. `heimdall:v1:tickets:all`) up front would be cheap but is a one-shot invalidation event right now. | `src/Heimdall.Core/Caching/CacheKeys.cs` |
 | F-5 | **Low** | Cache surface | TTL constants live next to consumers (`TicketService.ListCacheTtl`). With one key this is fine; with three or more, drift between consumer and invalidator is likely. | `src/Heimdall.BLL/Services/TicketService.cs` line 27 |
-| F-6 | **Low** | Cache surface | `RedisCacheService` does not honour `CancellationToken` in the body of the call (it only checks before dispatch — added in the companion PR). `IDatabase.*Async` methods do not accept a `CancellationToken`; wrapping with `Task.WaitAsync(ct)` would propagate cancellations end-to-end at the cost of an extra await. Worth doing only if a real caller wants to cancel cache reads. | `src/Heimdall.DAL/Caching/RedisCacheService.cs` |
+| F-6 | ~~Low~~ Resolved | Cache surface | `RedisCacheService` now honours `CancellationToken` end-to-end via `Task.WaitAsync(token)`, so callers can cancel both pre-dispatch and in-flight cache calls. Resolved in the companion PR. | `src/Heimdall.DAL/Caching/RedisCacheService.cs` |
 | F-7 | **Info** | Tests | No Testcontainers-backed integration test exercises `RedisCacheService` against a real Redis. The unit tests mock `IDatabase`, which is enough for contract coverage but does not catch SE.Redis version-pin regressions, RESP3 surprises, or serializer round-trip drift on real `RedisValue` boundaries. | `tests/Heimdall.DAL.Tests/Caching/RedisCacheServiceTests.cs` |
 | F-8 | **Info** | Observability | We log hit/miss at `Debug` (added in the companion PR) and warnings on failure, but emit no metrics (`System.Diagnostics.Metrics` counters). Without counters, hit ratio is invisible to Render dashboards. | `src/Heimdall.DAL/Caching/RedisCacheService.cs` |
 | F-9 | **Info** | Security | No AUTH on dev compose Redis. Acceptable for a loopback-bound dev container; would be a finding if the port were published. The compose file does not publish `6379:6379`, so the surface is limited to the compose network. | `docker-compose.yml` |
@@ -92,7 +92,6 @@ This document is the right place to record that contract; the implementation wil
 | Item | Decision needed | Owner |
 |------|-----------------|-------|
 | Move JWKS cache from `IMemoryCache` to Redis | Required if we ever scale `Heimdall.Web` horizontally on Render. Today's single-instance free plan does not need it. | Orchestrator + Security Reviewer |
-| Move data-protection keys to Redis | Required at horizontal scale-out (else cookies / antiforgery tokens stop validating across instances). | Orchestrator + Security Reviewer |
 | Distributed lock for the OpenFGA backfill job | Currently safe because the job is idempotent and runs as a single hosted service. A scaled-out web tier would need RedLock.net or a single-node SET NX EX token. | OpenFGA Expert |
 | Redis Streams for audit-event fan-out | Today `audit_events` is the system of record (Postgres). Streams would be a *secondary* consumer surface for downstream sinks. Adds operational surface (consumer-group lag monitoring). | DB Expert + Orchestrator |
 | Redis Query Engine (RediSearch) for ticket search | Postgres `pg_trgm` / `tsvector` is the documented path in `team-collaboration.md`. Only revisit if Postgres FTS becomes a measured bottleneck. | DB Expert |
