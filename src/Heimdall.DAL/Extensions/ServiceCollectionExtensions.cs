@@ -65,6 +65,15 @@ public static class ServiceCollectionExtensions
         // the repository layer; each call opens its own NpgsqlConnection.
         services.AddScoped<ISigningKeyRepository, SigningKeyRepository>();
 
+        // Phase 5.2 step 5 (docs/implementation/phase-5-checklist.md): the
+        // refresh-token repository talks to refresh_tokens directly — the table
+        // stores only PBKDF2 hashes, so unlike signing_keys there is no
+        // SECURITY DEFINER indirection and the application connection holds
+        // direct CRUD privileges (granted by M202605200001_CreateRefreshTokens).
+        // Scoped to match the rest of the repository layer; each call opens its
+        // own NpgsqlConnection.
+        services.AddScoped<IRefreshTokenRepository, RefreshTokenRepository>();
+
         // Phase 2.6 step 18 (docs/proposals/team-collaboration.md §3): the
         // permission service short-circuits on system_admin without taking a
         // dependency on Microsoft.AspNetCore.Identity. Same per-request lifetime
