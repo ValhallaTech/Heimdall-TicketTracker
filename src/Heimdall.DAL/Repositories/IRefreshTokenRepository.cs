@@ -10,9 +10,14 @@ namespace Heimdall.DAL.Repositories;
 /// created by <see cref="Heimdall.DAL.Migrations.M202605200001_CreateRefreshTokens"/>.
 /// Unlike <c>signing_keys</c> (Phase 5.1, hardened with a two-role +
 /// <c>SECURITY DEFINER</c> + RLS posture), <c>refresh_tokens</c> stores only the
-/// PBKDF2 hash of each token, so the application connection (<c>heimdall_app</c>)
-/// holds direct table-level CRUD privileges and the repository talks to the
-/// table without going through any function indirection.
+/// deterministic <strong>SHA-256</strong> hex digest of each high-entropy random
+/// refresh token, so the application connection (<c>heimdall_app</c>) holds
+/// direct table-level CRUD privileges and the repository talks to the table
+/// without going through any function indirection. The deterministic hash is
+/// also what makes the <see cref="GetByHashAsync"/> equality lookup correct —
+/// salted password-style hashing (the Phase 4 recovery-code precedent) would
+/// require <c>VerifyHashedPassword</c> over every candidate row and forbid the
+/// <c>UNIQUE</c> constraint, neither of which fits an OAuth refresh-token store.
 /// </summary>
 public interface IRefreshTokenRepository
 {
@@ -22,16 +27,19 @@ public interface IRefreshTokenRepository
     /// <see cref="RefreshToken.ParentId"/>, …) are supplied by the caller — the
     /// migration intentionally does not default them.
     /// </summary>
-    /// <param name="row">The row to insert. <see cref="RefreshToken.TokenHash"/> must be the PBKDF2 hash, never the plaintext.</param>
+    /// <param name="row">The row to insert. <see cref="RefreshToken.TokenHash"/> must be the deterministic SHA-256 hex digest of the plaintext refresh token, never the plaintext itself.</param>
     /// <param name="cancellationToken">A cancellation token.</param>
     Task InsertAsync(RefreshToken row, CancellationToken cancellationToken = default);
 
     /// <summary>
     /// Looks up a row by its <c>token_hash</c>. Returns the full row including
     /// <c>revoked_at</c> and <c>replaced_by</c> so the caller can detect a replay
-    /// attempt (a token presented after it was already rotated).
+    /// attempt (a token presented after it was already rotated). The lookup is a
+    /// single equality scan because the hash is deterministic — callers MUST
+    /// compute the same SHA-256 hex digest used at insert time (see step-10
+    /// orchestration in <c>docs/implementation/phase-5-checklist.md</c>).
     /// </summary>
-    /// <param name="tokenHash">The PBKDF2 hash of the presented refresh token.</param>
+    /// <param name="tokenHash">The deterministic SHA-256 hex digest of the presented refresh token.</param>
     /// <param name="cancellationToken">A cancellation token.</param>
     /// <returns>The matching row, or <c>null</c> when no such row exists.</returns>
     Task<RefreshToken?> GetByHashAsync(string tokenHash, CancellationToken cancellationToken = default);

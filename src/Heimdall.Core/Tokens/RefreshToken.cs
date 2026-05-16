@@ -8,16 +8,20 @@ namespace Heimdall.Core.Tokens;
 /// links members of a family through <see cref="ParentId"/> and
 /// <see cref="ReplacedBy"/> so the Phase 5.2 step-10 family-replay detector can
 /// sweep an entire chain on the first observed reuse of a previously-rotated
-/// token. The PBKDF2 hash stored in <see cref="TokenHash"/> is the only form of
-/// the token persisted server-side — the plaintext token never leaves the issue
-/// path. See <c>docs/proposals/security-and-authorization.md</c> §5.1 / §5.2 and
+/// token. The deterministic SHA-256 hex digest stored in <see cref="TokenHash"/>
+/// is the only form of the token persisted server-side — the plaintext token
+/// never leaves the issue path. See
+/// <c>docs/proposals/security-and-authorization.md</c> §5.1 / §5.2 and
 /// <c>docs/implementation/phase-5-checklist.md</c> Phase 5.2 step 5.
 /// </summary>
 /// <param name="Id">Primary key. Caller-supplied (the migration does not default it).</param>
 /// <param name="UserId">FK to <c>users(id)</c>; cascades on user delete.</param>
 /// <param name="TokenHash">
-/// PBKDF2 hash of the opaque refresh token (the string emitted by
-/// <c>IPasswordHasher&lt;HeimdallUser&gt;</c>). Never the plaintext.
+/// Deterministic SHA-256 hex digest of the high-entropy random refresh-token
+/// plaintext. Never the plaintext. Deterministic so the unique constraint and
+/// equality-based <c>GetByHashAsync</c> lookup are valid; refresh tokens are
+/// already 256-bit secrets, so they do not need the per-value salt that
+/// password-style hashing applies to low-entropy human inputs.
 /// </param>
 /// <param name="FamilyId">
 /// Stable identifier shared by every row in a rotation chain. Used by the

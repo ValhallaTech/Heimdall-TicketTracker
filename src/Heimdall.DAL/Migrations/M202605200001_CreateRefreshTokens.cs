@@ -12,14 +12,20 @@ namespace Heimdall.DAL.Migrations;
 /// <para>
 /// Unlike <c>signing_keys</c> (Phase 5.1, hardened with the two-role +
 /// <c>SECURITY DEFINER</c> + RLS posture), <c>refresh_tokens</c> stores only the
-/// PBKDF2 hash of each token — never the plaintext token and never any asymmetric
-/// secret. The checklist therefore does not call for column-level GRANTs, RLS, or
-/// a <c>SECURITY DEFINER</c> write path here. Access is controlled through the
-/// normal application role: when the <c>heimdall_app</c> role exists (it is created
-/// by <c>M202605130001_CreateSigningKeys</c>, but may be absent on databases that
-/// have not yet reached that migration when this one runs in isolation), full
-/// table-level CRUD is granted to it. Other databases on the cluster fall back to
-/// the implicit migration-runner role.
+/// deterministic SHA-256 hex digest of each high-entropy random token — never the
+/// plaintext token and never any asymmetric secret. The deterministic hash is
+/// what enables the <c>UNIQUE (token_hash)</c> constraint and the
+/// <c>GetByHashAsync</c> equality lookup; the salted <c>IPasswordHasher</c>
+/// precedent from Phase 4 recovery codes does not transfer because refresh
+/// tokens are server-generated 256-bit secrets, not user-chosen low-entropy
+/// strings, so they don't need the per-value salt that defeats equality
+/// lookup. The checklist therefore does not call for column-level GRANTs, RLS,
+/// or a <c>SECURITY DEFINER</c> write path here. Access is controlled through
+/// the normal application role: when the <c>heimdall_app</c> role exists (it is
+/// created by <c>M202605130001_CreateSigningKeys</c>, but may be absent on
+/// databases that have not yet reached that migration when this one runs in
+/// isolation), full table-level CRUD is granted to it. Other databases on the
+/// cluster fall back to the implicit migration-runner role.
 /// </para>
 /// </summary>
 [Migration(202605200001, "Create refresh_tokens")]
@@ -37,8 +43,13 @@ public class M202605200001_CreateRefreshTokens : Migration
     {
         // -------------------------------------------------------------------
         // 1) Table.
-        //    token_hash is text (the PBKDF2 string emitted by
-        //    IPasswordHasher<HeimdallUser>) — never plaintext, never bytea.
+        //    token_hash is text — the deterministic SHA-256 hex digest of the
+        //    high-entropy random refresh token plaintext. Refresh tokens are
+        //    256-bit server-generated secrets, so a fast cryptographic hash
+        //    is both correct (the entropy is in the input, not in a salt)
+        //    and required: the UNIQUE constraint and the GetByHashAsync
+        //    equality lookup both depend on the hash being deterministic.
+        //    The plaintext token is never persisted and never logged.
         //    parent_id is NULL only on the family-root row; replaced_by is
         //    set during rotation by step 5's RotateAsync. Both are
         //    ON DELETE SET NULL so a manual purge of one row does not

@@ -4,6 +4,15 @@
 -- per docs/implementation/phase-5-checklist.md (step 4) and
 -- docs/proposals/security-and-authorization.md §5.1, §5.2.
 --
+-- Note on token_hash: the migration's UNIQUE constraint on token_hash is the
+-- correct invariant because refresh tokens are stored as the *deterministic*
+-- SHA-256 hex digest of the high-entropy random plaintext (refresh tokens are
+-- 256-bit server-generated secrets; the salted IPasswordHasher precedent used
+-- for Phase 4 recovery codes does not transfer because those are short
+-- low-entropy human inputs). Deterministic hashing is also what makes the
+-- step-5 GetByHashAsync equality lookup correct, so this file's
+-- col_is_unique('refresh_tokens', 'token_hash') assertion is locked in.
+--
 -- Asserts:
 --   * refresh_tokens exists with all 10 columns at the right types and
 --     nullability (parent_id, replaced_by, revoked_at, revoked_reason are

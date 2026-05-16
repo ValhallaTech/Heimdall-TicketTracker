@@ -15,9 +15,11 @@ namespace Heimdall.DAL.Repositories;
 /// <see cref="SigningKeyRepository"/> pattern: one <see cref="NpgsqlConnection"/> per
 /// call, <see cref="CommandDefinition"/> for cancellation, and
 /// <c>ConfigureAwait(false)</c> on every library-side await. Unlike
-/// <c>signing_keys</c>, <c>refresh_tokens</c> stores only PBKDF2 hashes so the
-/// application connection talks to the table directly — no
-/// <c>SECURITY DEFINER</c> indirection.
+/// <c>signing_keys</c>, <c>refresh_tokens</c> stores only the deterministic
+/// SHA-256 hex digest of each high-entropy refresh token, so the application
+/// connection talks to the table directly — no <c>SECURITY DEFINER</c>
+/// indirection — and lookup is a single equality scan rather than a
+/// password-style verify-each-candidate sweep.
 /// </summary>
 public sealed class RefreshTokenRepository : IRefreshTokenRepository
 {
