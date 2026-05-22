@@ -25,16 +25,23 @@ namespace Heimdall.Web.Endpoints;
 /// <summary>
 /// Phase 5.6 (<c>docs/implementation/phase-5-checklist.md</c> steps 14-15) — the first
 /// <c>/api/v1/*</c> ticket endpoints. Minimal API, JSON in / JSON out, bearer-only
-/// (the cookie surface stays on the Razor pages). Authorisation flows entirely through
-/// the existing Phase 3 named policies (<c>CanViewTicket</c>, <c>CanEditTicket</c>,
-/// <c>CanAssignTicket</c>) so there is one and only one policy stack in the application.
+/// (the cookie surface stays on the Razor pages). Per-instance authorisation flows
+/// entirely through the existing Phase 3 named policies (<c>CanViewTicket</c>,
+/// <c>CanEditTicket</c>, <c>CanAssignTicket</c>) so there is one and only one policy
+/// stack in the application.
 /// </summary>
 /// <remarks>
 /// <para>
-/// The list endpoint mirrors the Razor <c>Tickets.razor</c> data path exactly: it
-/// resolves the allowed ticket ids through
+/// The collection-shaped surfaces (list + create) are gated by <c>IsAuthenticated</c>,
+/// matching the existing <c>Tickets.razor</c> / <c>NewTicket.razor</c> pages: the
+/// per-ticket <c>CanViewTicket</c> / <c>CanEditTicket</c> policies are instance-level
+/// (<see cref="OpenFgaAuthorizationHandler"/> resolves the object id from the
+/// <c>ticketId</c> route value and deny-closes when it cannot — so applying them to a
+/// collection endpoint would 403 every request). The list endpoint applies the
+/// per-instance filter itself via
 /// <see cref="IOpenFgaAuthorizationService.ListObjectsAsync(FgaListObjectsRequest, CancellationToken)"/>
-/// and pages through
+/// (same <c>ListObjects("ticket", "view", user)</c> code path as <c>Tickets.razor</c>),
+/// then pages through
 /// <see cref="ITicketService.GetPagedByIdsAsync(IReadOnlyList{int}, PagedQuery, CancellationToken)"/>.
 /// </para>
 /// <para>
@@ -71,7 +78,7 @@ public static class ApiTicketsEndpoints
             .RequireAuthorization(new AuthorizeAttribute
             {
                 AuthenticationSchemes = JwtBearerDefaults.AuthenticationScheme,
-                Policy = AuthorizationPolicies.CanViewTicket,
+                Policy = AuthorizationPolicies.IsAuthenticated,
             })
             .WithName("ApiTicketsList");
 
@@ -89,7 +96,7 @@ public static class ApiTicketsEndpoints
             .RequireAuthorization(new AuthorizeAttribute
             {
                 AuthenticationSchemes = JwtBearerDefaults.AuthenticationScheme,
-                Policy = AuthorizationPolicies.CanEditTicket,
+                Policy = AuthorizationPolicies.IsAuthenticated,
             })
             .WithName("ApiTicketsCreate");
 
