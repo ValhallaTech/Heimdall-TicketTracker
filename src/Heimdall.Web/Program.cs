@@ -26,6 +26,7 @@ using Heimdall.Web.RateLimiting;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Authorization.Policy;
 using Microsoft.AspNetCore.Authentication.Cookies;
+using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.Components.Authorization;
 using Microsoft.AspNetCore.DataProtection;
 using Microsoft.AspNetCore.Http;
@@ -35,6 +36,7 @@ using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Options;
+using Microsoft.IdentityModel.Tokens;
 using Serilog;
 using StackExchange.Redis;
 
@@ -290,6 +292,87 @@ builder
         options.Cookie.HttpOnly = true;
         options.Cookie.SecurePolicy = CookieSecurePolicy.SameAsRequest;
         options.Cookie.SameSite = SameSiteMode.Lax;
+    })
+
+    // Phase 5.3 step 6 — JWT bearer scheme. ApplicationScheme remains the
+    // default (the browser / Blazor circuit signs in via the cookie); this
+    // scheme is only consumed by [Authorize(AuthenticationSchemes =
+    // JwtBearerDefaults.AuthenticationScheme)] endpoints in the Phase 5.4 /
+    // 5.5 API surface. Issuer + audience come from the Phase 5.1 TokenOptions
+    // section. The IssuerSigningKeyResolver delegates to ISigningKeyService so
+    // a rotated key set is picked up without restarting the bearer middleware.
+    .AddJwtBearer(JwtBearerDefaults.AuthenticationScheme, options =>
+    {
+        // Phase 5.1 TokenOptions are bound below; we capture them here via
+        // PostConfigure so the resolver sees the same Issuer/Audience that
+        // TokenOptionsValidator enforced at startup.
+        options.MapInboundClaims = false;
+        options.RequireHttpsMetadata = true;
+        options.SaveToken = false;
+
+        options.TokenValidationParameters = new TokenValidationParameters
+        {
+            ValidateIssuer = true,
+            ValidateAudience = true,
+            ValidateLifetime = true,
+            ValidateIssuerSigningKey = true,
+            RequireSignedTokens = true,
+            RequireExpirationTime = true,
+
+            // Hardening §2.1 / RFC 8725 §3.1: never accept HS* or "none". The
+            // resolver below also fails closed when the kid is unknown, but the
+            // explicit allow-list short-circuits any attempt to swap algorithms
+            // before the resolver is consulted.
+            ValidAlgorithms = new[] { "RS256", "ES256" },
+
+            ClockSkew = TimeSpan.FromSeconds(30),
+        };
+
+        // PostConfigure runs after TokenOptions are bound, so Issuer/Audience
+        // are populated. Doing the wire-up here (instead of inside AddJwtBearer)
+        // means a misconfigured Token section fails at startup with the
+        // TokenOptionsValidator message rather than a deferred 401 chain.
+    });
+builder.Services.AddOptions<JwtBearerOptions>(JwtBearerDefaults.AuthenticationScheme)
+    .Configure<IServiceProvider>((options, sp) =>
+    {
+        // Re-resolved per-application-startup; safe to capture sp because the
+        // JwtBearer middleware itself is request-scoped through
+        // IHttpContextAccessor for its other needs.
+        var tokenOptions = sp.GetRequiredService<IOptions<Heimdall.Core.Tokens.TokenOptions>>().Value;
+        options.TokenValidationParameters.ValidIssuer = tokenOptions.Issuer;
+        options.TokenValidationParameters.ValidAudience = tokenOptions.Audience;
+
+        // IssuerSigningKeyResolver — return only the key matching the JWT's
+        // kid (or the full trusted set when the JWT did not carry one). The
+        // delegate is synchronous; ISigningKeyService.GetTrustedKeysAsync is
+        // async but talks to a Phase 5.1 in-process IMemoryCache layer in
+        // front of the DB read, so the sync-over-async cost is negligible
+        // and bounded. The middleware caches our response per (kid, token)
+        // for the duration of the validation, not across requests.
+        options.TokenValidationParameters.IssuerSigningKeyResolver = (token, securityToken, kid, validationParameters) =>
+        {
+            using var scope = sp.CreateScope();
+            var signingKeys = scope.ServiceProvider.GetRequiredService<Heimdall.BLL.Tokens.ISigningKeyService>();
+            var trusted = signingKeys.GetTrustedKeysAsync().GetAwaiter().GetResult();
+
+            var keys = new System.Collections.Generic.List<SecurityKey>(trusted.Count);
+            foreach (var record in trusted)
+            {
+                if (!string.IsNullOrEmpty(kid) && !string.Equals(record.Kid, kid, StringComparison.Ordinal))
+                {
+                    continue;
+                }
+
+                SecurityKey? materialised = MaterialisePublicSecurityKey(record);
+                if (materialised is not null)
+                {
+                    keys.Add(materialised);
+                }
+            }
+
+            return keys;
+        };
     });
 
 // Authorization services + the global authenticated-only fallback policy
@@ -440,6 +523,30 @@ builder.Services.AddRateLimiter(options =>
             AutoReplenishment = true,
         });
     });
+
+    // Phase 5.3 step 6 — generic API-token throttle. Composes with the "login"
+    // limiter on /api/v1/auth/token (both must allow) and is the sole limiter
+    // on /api/v1/auth/refresh. Partitioned on (ip, sub) when the request
+    // already carries an authenticated principal (mirroring a future bearer
+    // call) and on (ip,) otherwise, so an attacker cycling refresh-cookie
+    // values from a single host cannot exceed the ceiling by rotating
+    // identities. 60 permits / minute is generous enough for legitimate SPA
+    // burst patterns without making credential-stuffing attractive.
+    options.AddPolicy("api-token", httpContext =>
+    {
+        string ip = httpContext.Connection.RemoteIpAddress?.ToString() ?? "unknown";
+        string sub =
+            httpContext.User?.FindFirstValue(ClaimTypes.NameIdentifier) ?? string.Empty;
+        string key = string.IsNullOrEmpty(sub) ? ip : $"{ip}|{sub}";
+        return RateLimitPartition.GetFixedWindowLimiter(key, _ => new FixedWindowRateLimiterOptions
+        {
+            PermitLimit = 60,
+            Window = TimeSpan.FromMinutes(1),
+            QueueLimit = 0,
+            AutoReplenishment = true,
+        });
+    });
+
     options.RejectionStatusCode = StatusCodes.Status429TooManyRequests;
 });
 
@@ -523,6 +630,15 @@ builder.Services.AddSingleton<Heimdall.BLL.Tokens.IJwksCacheInvalidator,
     Heimdall.BLL.Tokens.MemoryCacheJwksCacheInvalidator>();
 builder.Services.AddScoped<Heimdall.BLL.Tokens.ISigningKeyService,
     Heimdall.BLL.Tokens.SigningKeyService>();
+
+// --- Phase 5.3 step 7: JWT access-token issuer ----------------------------
+// Scoped (matches the SigningKeyService it composes). The issuer resolves
+// SigningCredentialsResult once per IssueAccessTokenAsync call and disposes
+// it inside the method — no decrypted key outlives a single call (hardening
+// §2.1). Refresh-token plaintext / hash generation is also exposed here so
+// the password-grant and refresh-rotation endpoints share one recipe.
+builder.Services.AddScoped<Heimdall.BLL.Tokens.ITokenIssuer,
+    Heimdall.BLL.Tokens.JwtTokenIssuer>();
 
 // --- SystemAdmin bootstrap registration (Phase 1 step 8) ------------------
 // Resolved per-scope from the startup bootstrap block below. Scoped lifetime
@@ -767,6 +883,12 @@ app.MapRazorComponents<App>().AddInteractiveServerRenderMode();
 // after UseAntiforgery so form posts go through antiforgery validation.
 app.MapAccountEndpoints();
 
+// --- API auth endpoints (Phase 5.4 steps 9-10) ---------------------------
+// JSON-bodied /api/v1/auth/token (password grant) and /api/v1/auth/refresh
+// (refresh rotation with family-replay detection). Mapped here so they share
+// the same routing namespace + middleware pipeline as the browser flow.
+app.MapApiAuthEndpoints();
+
 // --- JWKS endpoint (Phase 5.1 step 3) ------------------------------------
 // Publishes the public halves of the trusted signing keys at
 // /.well-known/jwks.json. Anonymous; response cached for 5 minutes with
@@ -776,4 +898,71 @@ app.MapJwksEndpoint();
 app.Run();
 
 /// <summary>Exposes the Program class for integration testing.</summary>
-public partial class Program;
+public partial class Program
+{
+    /// <summary>
+    /// Builds a verification-only <see cref="SecurityKey"/> from a
+    /// <see cref="Heimdall.Core.Tokens.SigningKeyRecord"/>'s public JWK. Used by
+    /// the JwtBearer scheme's <c>IssuerSigningKeyResolver</c> to translate the
+    /// Phase 5.1 <c>signing_keys</c> rows into the form the validator expects.
+    /// </summary>
+    /// <remarks>
+    /// Returns <c>null</c> when the JWK is missing the required public fields
+    /// (defensive — this should be impossible because <see cref="Heimdall.Core.Tokens.PublicJwk.FromRsa"/>
+    /// / <see cref="Heimdall.Core.Tokens.PublicJwk.FromEcdsa"/> always populate
+    /// them, but a corrupted row should fail closed rather than throw out of
+    /// the resolver).
+    /// </remarks>
+    private static SecurityKey? MaterialisePublicSecurityKey(Heimdall.Core.Tokens.SigningKeyRecord record)
+    {
+        if (record.Alg == Heimdall.Core.Tokens.SigningAlgorithm.Rs256)
+        {
+            if (string.IsNullOrEmpty(record.PublicJwk.N) || string.IsNullOrEmpty(record.PublicJwk.E))
+            {
+                return null;
+            }
+
+            var rsa = RSA.Create();
+            rsa.ImportParameters(new RSAParameters
+            {
+                Modulus = Base64UrlDecode(record.PublicJwk.N),
+                Exponent = Base64UrlDecode(record.PublicJwk.E),
+            });
+            return new RsaSecurityKey(rsa) { KeyId = record.Kid };
+        }
+
+        if (record.Alg == Heimdall.Core.Tokens.SigningAlgorithm.Es256)
+        {
+            if (string.IsNullOrEmpty(record.PublicJwk.X) || string.IsNullOrEmpty(record.PublicJwk.Y))
+            {
+                return null;
+            }
+
+            var ecdsa = ECDsa.Create();
+            ecdsa.ImportParameters(new ECParameters
+            {
+                Curve = ECCurve.NamedCurves.nistP256,
+                Q = new ECPoint
+                {
+                    X = Base64UrlDecode(record.PublicJwk.X),
+                    Y = Base64UrlDecode(record.PublicJwk.Y),
+                },
+            });
+            return new ECDsaSecurityKey(ecdsa) { KeyId = record.Kid };
+        }
+
+        return null;
+    }
+
+    private static byte[] Base64UrlDecode(string value)
+    {
+        string padded = value.Replace('-', '+').Replace('_', '/');
+        int padding = (4 - (padded.Length % 4)) % 4;
+        if (padding > 0)
+        {
+            padded += new string('=', padding);
+        }
+
+        return Convert.FromBase64String(padded);
+    }
+}

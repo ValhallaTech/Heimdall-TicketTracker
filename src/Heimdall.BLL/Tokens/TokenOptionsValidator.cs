@@ -46,6 +46,28 @@ public sealed class TokenOptionsValidator : IValidateOptions<TokenOptions>
                 + "the overlap invariant.");
         }
 
+        if (options.RefreshTokenLifetime <= System.TimeSpan.Zero)
+        {
+            return ValidateOptionsResult.Fail(
+                $"TokenOptions.RefreshTokenLifetime must be positive (configured: {options.RefreshTokenLifetime}).");
+        }
+
+        // Phase 5.3 step 6 — Issuer + Audience are required for the JwtBearer scheme.
+        // We surface a clear failure at startup rather than letting the bearer middleware
+        // silently accept tokens with empty iss/aud (TokenValidationParameters would still
+        // refuse, but the diagnostic is much worse than failing fast here).
+        if (string.IsNullOrWhiteSpace(options.Issuer))
+        {
+            return ValidateOptionsResult.Fail(
+                "TokenOptions.Issuer must be configured (non-empty) — required by the JwtBearer scheme registered in Program.cs.");
+        }
+
+        if (string.IsNullOrWhiteSpace(options.Audience))
+        {
+            return ValidateOptionsResult.Fail(
+                "TokenOptions.Audience must be configured (non-empty) — required by the JwtBearer scheme registered in Program.cs.");
+        }
+
         return ValidateOptionsResult.Success;
     }
 }
