@@ -1,6 +1,6 @@
 # Phase 8 — Admin UI (Tuple-management surface): Implementation Checklist
 
-> Renumbered from Phase 7 to Phase 8 to accommodate the DI migration (Phase 7).
+> Renumbered from the original Phase 7 to Phase 8 to accommodate the newly inserted DI migration phase (the new Phase 7).
 
 > Note: a standalone `phase-7-checklist.md` for the Admin UI scope was never authored prior to this renumbering. The Phase 7 = Admin UI scope previously lived only in [`docs/proposals/security-and-authorization.md`](../proposals/security-and-authorization.md) §9 Phase 7 — Admin UI and [`docs/proposals/openfga.md`](../proposals/openfga.md) step 11. This Phase 8 checklist is the first dedicated implementation file for that scope, authored at the time of the renumbering (2026-05-22).
 
