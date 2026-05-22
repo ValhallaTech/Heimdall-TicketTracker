@@ -45,4 +45,28 @@ public class TokenOptions
     /// Default: 90 days (hardening §2.5 / security-and-authorization §5.4).
     /// </summary>
     public TimeSpan SigningKeyValidity { get; set; } = TimeSpan.FromDays(90);
+
+    /// <summary>
+    /// Gets or sets the lifetime of a freshly-issued refresh token —
+    /// <c>expires_at = issued_at + RefreshTokenLifetime</c>. Consumed by Phase 5.4
+    /// steps 9–10 in <c>Heimdall.Web.Endpoints.ApiAuthEndpoints</c> when minting the
+    /// <c>__Host-heimdall_refresh</c> cookie and inserting the matching
+    /// <c>refresh_tokens</c> row.
+    /// Default: 14 days (security-and-authorization §5.1 sliding-window guidance).
+    /// </summary>
+    public TimeSpan RefreshTokenLifetime { get; set; } = TimeSpan.FromDays(14);
+
+    /// <summary>
+    /// Gets or sets the expected JWT <c>iss</c> claim. Required (non-empty) when the
+    /// JWT bearer scheme is registered in Phase 5.3 step 6 — empty by default so the
+    /// Phase 5.1 / 5.2 surface remains bootable without bearer wiring;
+    /// <c>TokenOptionsValidator</c> enforces non-empty values once bearer is in scope.
+    /// </summary>
+    public string Issuer { get; set; } = string.Empty;
+
+    /// <summary>
+    /// Gets or sets the expected JWT <c>aud</c> claim. Same wiring contract as
+    /// <see cref="Issuer"/> — required at bearer-registration time, empty by default.
+    /// </summary>
+    public string Audience { get; set; } = string.Empty;
 }
