@@ -220,6 +220,19 @@ public static class ApiTicketsEndpoints
 
         if (dto is null)
         {
+            // Policy gate (CanViewTicket) already cleared FGA for this ticket id,
+            // so a missing row signals drift between FGA tuples and the DB (e.g.
+            // a delete that hasn't yet reaped the tuple). Log a warning so the
+            // SOC can correlate — the response stays 404 (changing to 410 Gone
+            // is a product decision tracked out-of-scope).
+            ILoggerFactory loggerFactory = httpContext.RequestServices.GetRequiredService<ILoggerFactory>();
+            ILogger logger = loggerFactory.CreateLogger("ApiTicketsEndpoints");
+            string? actorSub = httpContext.User.FindFirstValue("sub")
+                ?? httpContext.User.FindFirstValue(ClaimTypes.NameIdentifier);
+            logger.LogWarning(
+                "FGA/DB drift on GET /api/v1/tickets/{TicketId}: policy allowed view but ticket row is missing for actor sub={ActorSub}.",
+                ticketId,
+                actorSub ?? "(unknown)");
             return Results.NotFound();
         }
 
@@ -310,16 +323,49 @@ public static class ApiTicketsEndpoints
             return Results.StatusCode(StatusCodes.Status401Unauthorized);
         }
 
+        // Pre-check existence so the 200 {applied:false} branch unambiguously
+        // means "no-op (assignee already matches)" — the 404 branch means the
+        // ticket row is missing. CanAssignTicket policy already cleared FGA for
+        // this ticket id, so a missing row signals FGA/DB drift; warn so the
+        // SOC can correlate. We accept a small TOCTOU window (the row could be
+        // deleted between this check and AssignTicketAsync below — in that case
+        // the service returns false and the caller sees 200 {applied:false}, the
+        // same as a same-assignee no-op; that's the documented contract).
+        TicketDto? existing = await ticketService
+            .GetByIdAsync(ticketId, cancellationToken)
+            .ConfigureAwait(false);
+        if (existing is null)
+        {
+            ILoggerFactory loggerFactory = httpContext.RequestServices.GetRequiredService<ILoggerFactory>();
+            ILogger logger = loggerFactory.CreateLogger("ApiTicketsEndpoints");
+            string? actorSub = httpContext.User.FindFirstValue("sub")
+                ?? httpContext.User.FindFirstValue(ClaimTypes.NameIdentifier);
+            logger.LogWarning(
+                "FGA/DB drift on POST /api/v1/tickets/{TicketId}/assign: policy allowed assign but ticket row is missing for actor sub={ActorSub}.",
+                ticketId,
+                actorSub ?? "(unknown)");
+            return Results.Json(
+                new ProblemDetails
+                {
+                    Type = "https://datatracker.ietf.org/doc/html/rfc9110#name-404-not-found",
+                    Title = "Not Found",
+                    Status = StatusCodes.Status404NotFound,
+                    Detail = "Ticket not found.",
+                },
+                statusCode: StatusCodes.Status404NotFound,
+                contentType: ProblemJsonContentType);
+        }
+
         try
         {
             bool applied = await ticketService
                 .AssignTicketAsync(actorId, ticketId, request.AssigneeId, cancellationToken)
                 .ConfigureAwait(false);
 
-            // applied == false is the idempotent / no-op branch (ticket missing
-            // OR assignee already matches). Treat both as 200 OK; the caller
-            // gets back the current state regardless. Returning 404 here would
-            // race with concurrent deletes which is not the contract.
+            // applied == false is the idempotent / no-op branch (assignee already
+            // matches, or a concurrent delete raced the pre-check above). Return
+            // 200 with the current state; the explicit 404 above covers the
+            // policy-allowed / DB-missing drift case at request entry.
             return Results.Json(new { applied }, statusCode: StatusCodes.Status200OK);
         }
         catch (UnauthorizedAccessException)
