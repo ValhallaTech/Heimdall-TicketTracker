@@ -11,6 +11,8 @@ using Heimdall.Core.Models;
 using Heimdall.Core.Tokens;
 using Heimdall.DAL.Repositories;
 using Heimdall.Web.Authorization.Policies;
+using Microsoft.AspNetCore.Authentication.JwtBearer;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Identity;
@@ -112,6 +114,20 @@ public static class ApiAuthEndpoints
             .AllowAnonymous()
             .RequireRateLimiting("api-token")
             .WithName("ApiAuthRefreshToken");
+
+        // Phase 5.5 step 13 — logout. Bearer-required: the principal carries
+        // the jti/exp we denylist. Reads the refresh cookie if present so the
+        // refresh family can be revoked atomically with the access-token
+        // denylist write; succeeds (204) even when the cookie is absent so
+        // single-page apps don't have to coordinate cookie state to log out.
+        endpoints
+            .MapPost("/api/v1/auth/logout", HandleLogoutAsync)
+            .RequireAuthorization(new AuthorizeAttribute
+            {
+                AuthenticationSchemes = JwtBearerDefaults.AuthenticationScheme,
+            })
+            .RequireRateLimiting("api-token")
+            .WithName("ApiAuthLogout");
 
         return endpoints;
     }
@@ -542,6 +558,138 @@ public static class ApiAuthEndpoints
     };
 
     /// <summary>
+    /// Phase 5.5 step 13 — bearer-authenticated logout. Reads <c>jti</c> + <c>exp</c>
+    /// from the validated access-token principal and adds the jti to the Phase 5.5
+    /// Redis denylist; reads the <c>__Host-heimdall_refresh</c> cookie (when present),
+    /// resolves the family via the deterministic hash, and bulk-revokes every still-
+    /// active member of the family; expires the refresh cookie regardless; writes
+    /// <see cref="AuditEventTypes.TokenAccessRevoked"/> and (when a family was revoked)
+    /// <see cref="AuditEventTypes.TokenRefreshFamilyRevoked"/> audit rows.
+    /// </summary>
+    /// <remarks>
+    /// Returns <c>204 No Content</c> on every path that reaches a validated bearer —
+    /// logout is idempotent and the client has no actionable signal to distinguish
+    /// "denylist already had the jti" from "fresh entry written". The cookie /
+    /// family-revoke step is best-effort: a missing cookie, an unknown hash, or an
+    /// already-revoked family are all treated as no-ops; only the access-token
+    /// denylist write is load-bearing for the logout's primary contract.
+    /// </remarks>
+    /// <param name="httpContext">The current HTTP context.</param>
+    /// <param name="denylist">The Phase 5.5 Redis denylist.</param>
+    /// <param name="refreshTokens">Refresh-token repository.</param>
+    /// <param name="auditWriter">Audit-event writer.</param>
+    /// <param name="cancellationToken">Request cancellation token.</param>
+    /// <returns><c>204 No Content</c>.</returns>
+    internal static async Task<IResult> HandleLogoutAsync(
+        HttpContext httpContext,
+        [FromServices] IAccessTokenDenylist denylist,
+        [FromServices] IRefreshTokenRepository refreshTokens,
+        [FromServices] IAuditEventWriter auditWriter,
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(httpContext);
+        ArgumentNullException.ThrowIfNull(denylist);
+        ArgumentNullException.ThrowIfNull(refreshTokens);
+        ArgumentNullException.ThrowIfNull(auditWriter);
+
+        ClaimsPrincipal principal = httpContext.User;
+        string? jti = principal.FindFirstValue("jti");
+        string? expRaw = principal.FindFirstValue("exp");
+        string? subRaw = principal.FindFirstValue("sub");
+
+        string? ip = httpContext.Connection.RemoteIpAddress?.ToString();
+        string? userAgent = TruncateUserAgent(httpContext.Request.Headers.UserAgent.ToString());
+
+        Guid? actorUserId = null;
+        if (Guid.TryParse(subRaw, out Guid parsedSub))
+        {
+            actorUserId = parsedSub;
+        }
+
+        // Denylist the access jti. Best-effort transparent surface — a Redis outage
+        // here must not block logout (the refresh family revoke is the durable side
+        // of the contract), but we DO log it so the SOC can correlate.
+        if (!string.IsNullOrWhiteSpace(jti))
+        {
+            DateTimeOffset expiresAt = DateTimeOffset.UtcNow + TimeSpan.FromMinutes(5);
+            if (long.TryParse(expRaw, NumberStyles.Integer, CultureInfo.InvariantCulture, out long expSeconds))
+            {
+                expiresAt = DateTimeOffset.FromUnixTimeSeconds(expSeconds);
+            }
+
+            try
+            {
+                await denylist
+                    .DenyAsync(jti, expiresAt, "logout", cancellationToken)
+                    .ConfigureAwait(false);
+
+                await TryWriteAuditAsync(httpContext, auditWriter, new AuditEvent
+                {
+                    ActorUserId = actorUserId,
+                    EventType = AuditEventTypes.TokenAccessRevoked,
+                    Target = actorUserId?.ToString(),
+                    Ip = ip,
+                    UserAgent = userAgent,
+                    PayloadJson = JsonSerializer.Serialize(new
+                    {
+                        jti,
+                        reason = "logout",
+                    }),
+                }, cancellationToken).ConfigureAwait(false);
+            }
+            catch (Exception ex) when (ex is not OperationCanceledException)
+            {
+                ILoggerFactory loggerFactory = httpContext.RequestServices.GetRequiredService<ILoggerFactory>();
+                ILogger logger = loggerFactory.CreateLogger("ApiAuthEndpoints");
+                logger.LogWarning(
+                    ex,
+                    "Logout denylist write failed for jti {Jti}; continuing with refresh revoke.",
+                    jti);
+            }
+        }
+
+        // Family revoke — only when we can resolve a family from the cookie. A
+        // missing / unknown / already-revoked cookie is not an error.
+        if (httpContext.Request.Cookies.TryGetValue(RefreshCookieName, out string? cookieValue)
+            && !string.IsNullOrEmpty(cookieValue))
+        {
+            string hash = RefreshTokenHasher.ComputeHash(cookieValue);
+            RefreshToken? row = await refreshTokens
+                .GetByHashAsync(hash, cancellationToken)
+                .ConfigureAwait(false);
+
+            if (row is not null)
+            {
+                int revoked = await refreshTokens
+                    .RevokeFamilyAsync(row.FamilyId, RefreshTokenRevokedReason.Logout, cancellationToken)
+                    .ConfigureAwait(false);
+
+                if (revoked > 0)
+                {
+                    await TryWriteAuditAsync(httpContext, auditWriter, new AuditEvent
+                    {
+                        ActorUserId = actorUserId ?? row.UserId,
+                        EventType = AuditEventTypes.TokenRefreshFamilyRevoked,
+                        Target = row.UserId.ToString(),
+                        Ip = ip,
+                        UserAgent = userAgent,
+                        PayloadJson = JsonSerializer.Serialize(new
+                        {
+                            family_id = row.FamilyId,
+                            reason = RefreshTokenRevokedReason.Logout,
+                            revoked_count = revoked,
+                        }),
+                    }, cancellationToken).ConfigureAwait(false);
+                }
+            }
+        }
+
+        ExpireRefreshCookie(httpContext);
+        return Results.StatusCode(StatusCodes.Status204NoContent);
+    }
+
+
+    /// <summary>
     /// Builds a 400 Bad Request <c>application/json</c> result with the
     /// OAuth-style <c>{ "error": "invalid_grant" }</c> body. Used by the
     /// password-grant endpoint to refuse a credential mismatch without leaking
@@ -602,7 +750,7 @@ public static class ApiAuthEndpoints
         httpContext.Response.Cookies.Append(RefreshCookieName, plaintext, options);
     }
 
-    private static void ExpireRefreshCookie(HttpContext httpContext)
+    internal static void ExpireRefreshCookie(HttpContext httpContext)
     {
         // CookieOptions on Delete must mirror the Path/Secure used when setting,
         // or the browser will silently keep the cookie installed.

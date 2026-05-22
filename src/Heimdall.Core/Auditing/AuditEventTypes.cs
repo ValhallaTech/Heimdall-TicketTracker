@@ -110,4 +110,15 @@ public static class AuditEventTypes
     /// <c>{ "family_id": "&lt;guid&gt;", "reason": "logout" | "admin_revoke" | "family_replay" }</c>.
     /// </summary>
     public const string TokenRefreshFamilyRevoked = "token.refresh.family_revoked";
+
+    /// <summary>
+    /// The Phase 5.5 Redis access-token denylist was unreachable (connection /
+    /// timeout failure) when <c>JwtBearerEvents.OnTokenValidated</c> tried to
+    /// look up a presented <c>jti</c>. Written by the Phase 5.5 step 12 fail-open
+    /// branch (non-admin reads) so the SOC has a positive trace of "we let this
+    /// request through despite an outage." Admin-policy-gated endpoints fail
+    /// closed and do not write this event. Payload:
+    /// <c>{ "jti": "&lt;guid-n&gt;", "user_id": "&lt;guid&gt;" }</c>.
+    /// </summary>
+    public const string TokenAccessDenylistUnavailable = "token.access.denylist_unavailable";
 }
