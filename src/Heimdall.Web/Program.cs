@@ -976,7 +976,13 @@ app.MapJwksEndpoint();
 // (default false) so production deploys can opt in selectively without
 // rebuilding. Swagger UI under /api/v1/docs is Development-only.
 bool openApiEnabled = app.Configuration.GetValue("Api:Documentation:Enabled", defaultValue: false);
-if (openApiEnabled)
+
+// Defense-in-depth: Production is the only environment where the doc must
+// never be exposed; the explicit "not Production" check guards against
+// Api:Documentation:Enabled=true leaking into a prod config via misconfigured
+// environment-specific files (e.g. a stray Development settings file in a
+// container).
+if (openApiEnabled && !app.Environment.IsProduction())
 {
     app.MapOpenApi("/api/v1/openapi.json");
 }

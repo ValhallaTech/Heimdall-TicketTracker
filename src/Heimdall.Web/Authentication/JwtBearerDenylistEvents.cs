@@ -6,6 +6,7 @@ using System.Threading.Tasks;
 using Heimdall.BLL.Authorization.OpenFga;
 using Heimdall.BLL.Tokens;
 using Heimdall.Core.Auditing;
+using Heimdall.Core.Interfaces;
 using Heimdall.Web.Bootstrap;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.Extensions.DependencyInjection;
@@ -42,6 +43,15 @@ public static class JwtBearerDenylistEvents
     /// outage, falls back to the admin-or-not check above to decide between
     /// fail-closed and fail-open.
     /// </summary>
+    /// <remarks>
+    /// Exception posture: Redis transient outages
+    /// (<see cref="RedisConnectionException"/>, <see cref="RedisTimeoutException"/>)
+    /// are softened to the outage handler per the step 12 stance. All other
+    /// exceptions propagate so a programming bug (NRE, DI misconfiguration,
+    /// audit-writer failure, etc.) cannot silently fail-open for non-admin
+    /// requests — the JwtBearer middleware will surface them as 500s, which is
+    /// the correct posture.
+    /// </remarks>
     /// <param name="ctx">The <see cref="TokenValidatedContext"/> from the bearer pipeline.</param>
     /// <returns>A task representing the asynchronous check.</returns>
     public static async Task OnTokenValidatedAsync(TokenValidatedContext ctx)
@@ -87,15 +97,10 @@ public static class JwtBearerDenylistEvents
         }
         catch (Exception ex) when (ex is RedisConnectionException || ex is RedisTimeoutException)
         {
+            // Redis transient outages are softened (per step 12 outage stance);
+            // all other exceptions propagate.
             await HandleDenylistOutageAsync(ctx, services, logger, jti, ex).ConfigureAwait(false);
             return;
-        }
-        catch (Exception ex)
-        {
-            // Defence-in-depth — any unexpected exception is treated as an outage
-            // (same fail-closed-for-admin / fail-open-for-non-admin posture) so a
-            // bug in the denylist surface cannot crash the bearer pipeline.
-            await HandleDenylistOutageAsync(ctx, services, logger, jti, ex).ConfigureAwait(false);
         }
     }
 
@@ -162,6 +167,31 @@ public static class JwtBearerDenylistEvents
         }
     }
 
+    /// <summary>
+    /// Phase 5.5 step 12 — admin probe for the denylist-outage handler.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// This predicate must stay in lockstep with
+    /// <see cref="Heimdall.Web.Authorization.Policies.RequireMfaAuthorizationHandler"/>:
+    /// an actor is treated as admin if <strong>EITHER</strong> the OpenFGA
+    /// <c>Check(user, admin, organization:&lt;seedOrgId&gt;)</c> probe returns
+    /// true <strong>OR</strong>
+    /// <see cref="IUserLookup.IsSystemAdminAsync(Guid, System.Threading.CancellationToken)"/>
+    /// returns true. Otherwise a denylisted access token belonging to a
+    /// <c>system_admin</c> who is not also an org admin in FGA would fail-open
+    /// during a Redis outage.
+    /// </para>
+    /// <para>
+    /// Deny-closed-on-probe-failure: if the FGA call throws (non-cancellation)
+    /// we log and continue to the system_admin probe — the FGA adapter is
+    /// already deny-closed on transport failure. If
+    /// <see cref="IUserLookup.IsSystemAdminAsync(Guid, System.Threading.CancellationToken)"/>
+    /// throws (non-cancellation), we cannot prove non-admin, so we treat the
+    /// actor as admin (deny-closed) and the outage handler will fail the
+    /// bearer. Cancellation always propagates.
+    /// </para>
+    /// </remarks>
     private static async Task<bool> IsSeedOrgAdminAsync(
         IServiceProvider services,
         ILogger logger,
@@ -176,31 +206,58 @@ public static class JwtBearerDenylistEvents
         IOptionsMonitor<SeedOrganizationOptions>? optionsMonitor =
             services.GetService<IOptionsMonitor<SeedOrganizationOptions>>();
         Guid seedOrgId = optionsMonitor?.CurrentValue.OrganizationId ?? Guid.Empty;
+
+        bool isOrgAdmin = false;
         if (seedOrgId == Guid.Empty)
         {
-            // Mirror RequireMfaAuthorizationHandler — without a resolved seed-org
-            // id we cannot prove admin, so deny-closed (returning false means
-            // "not admin" which here drives the fail-open branch — but logging
-            // the warning is enough; the caller's posture is already correct).
+            // Mirror RequireMfaAuthorizationHandler — without a resolved
+            // seed-org id we cannot run the FGA probe. Fall through to the
+            // system_admin probe rather than returning false outright.
             logger.LogWarning(
-                "Denylist outage admin probe could not resolve seed-org id; treating as non-admin.");
-            return false;
+                "Denylist outage admin probe could not resolve seed-org id; skipping FGA probe and relying on system_admin probe.");
+        }
+        else
+        {
+            IOpenFgaAuthorizationService? fga = services.GetService<IOpenFgaAuthorizationService>();
+            if (fga is not null)
+            {
+                try
+                {
+                    FgaCheckRequest request = new(
+                        TupleShapes.UserRef(actorId),
+                        TupleShapes.AdminRelation,
+                        TupleShapes.OrganizationRef(seedOrgId),
+                        FgaConsistency.HigherConsistency);
+                    isOrgAdmin = await fga.CheckAsync(request, cancellationToken).ConfigureAwait(false);
+                }
+                catch (OperationCanceledException)
+                {
+                    throw;
+                }
+                catch (Exception ex)
+                {
+                    logger.LogWarning(
+                        ex,
+                        "OpenFGA admin probe threw during denylist-outage handling for {ActorId}; falling through to system_admin probe.",
+                        actorId);
+                    isOrgAdmin = false;
+                }
+            }
         }
 
-        IOpenFgaAuthorizationService? fga = services.GetService<IOpenFgaAuthorizationService>();
-        if (fga is null)
+        if (isOrgAdmin)
         {
-            return false;
+            return true;
         }
+
+        // OR-composition with the DB-only system_admin flag — mirrors
+        // RequireMfaAuthorizationHandler. RequireMfa requires IUserLookup via
+        // constructor injection, so we use GetRequiredService here for parity.
+        IUserLookup userLookup = services.GetRequiredService<IUserLookup>();
 
         try
         {
-            FgaCheckRequest request = new(
-                TupleShapes.UserRef(actorId),
-                TupleShapes.AdminRelation,
-                TupleShapes.OrganizationRef(seedOrgId),
-                FgaConsistency.HigherConsistency);
-            return await fga.CheckAsync(request, cancellationToken).ConfigureAwait(false);
+            return await userLookup.IsSystemAdminAsync(actorId, cancellationToken).ConfigureAwait(false);
         }
         catch (OperationCanceledException)
         {
@@ -208,11 +265,13 @@ public static class JwtBearerDenylistEvents
         }
         catch (Exception ex)
         {
+            // Deny-closed: we cannot prove the actor is NOT a system admin, so
+            // treat them as admin. The outage handler will then fail the bearer.
             logger.LogWarning(
                 ex,
-                "OpenFGA admin probe threw during denylist-outage handling for {ActorId}; treating as non-admin.",
+                "system_admin probe threw during denylist-outage handling for {ActorId}; deny-closed (treating as admin).",
                 actorId);
-            return false;
+            return true;
         }
     }
 
