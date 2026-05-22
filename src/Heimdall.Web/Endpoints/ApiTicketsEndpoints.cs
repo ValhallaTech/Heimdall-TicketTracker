@@ -98,6 +98,7 @@ public static class ApiTicketsEndpoints
                 AuthenticationSchemes = JwtBearerDefaults.AuthenticationScheme,
                 Policy = AuthorizationPolicies.IsAuthenticated,
             })
+            .DisableAntiforgery()
             .WithName("ApiTicketsCreate");
 
         group
@@ -107,6 +108,7 @@ public static class ApiTicketsEndpoints
                 AuthenticationSchemes = JwtBearerDefaults.AuthenticationScheme,
                 Policy = AuthorizationPolicies.CanEditTicket,
             })
+            .DisableAntiforgery()
             .WithName("ApiTicketsUpdate");
 
         // Assign requires both RequireMfa and CanAssignTicket — same composition
@@ -124,6 +126,7 @@ public static class ApiTicketsEndpoints
                 AuthenticationSchemes = JwtBearerDefaults.AuthenticationScheme,
                 Policy = AuthorizationPolicies.CanAssignTicket,
             })
+            .DisableAntiforgery()
             .WithName("ApiTicketsAssign");
 
         return endpoints;

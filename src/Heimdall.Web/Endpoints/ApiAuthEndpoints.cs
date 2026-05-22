@@ -99,11 +99,17 @@ public static class ApiAuthEndpoints
         // (ip|email) anti-spray gate for credential submission; api-token layers an
         // additional per-(ip[,sub]) ceiling so a single attacker can't blow through
         // the global budget by cycling fresh email addresses.
+        //
+        // .DisableAntiforgery() is applied to every JSON-bearer route here: bearer
+        // authentication is itself the CSRF defense — there is no ambient cookie
+        // for a forged request to ride. The global UseAntiforgery() middleware
+        // otherwise short-circuits application/json POST/PUT with a 400.
         endpoints
             .MapPost("/api/v1/auth/token", HandleIssueTokenAsync)
             .AllowAnonymous()
             .RequireRateLimiting("login")
             .RequireRateLimiting("api-token")
+            .DisableAntiforgery()
             .WithName("ApiAuthIssueToken");
 
         // Refresh is bearer-less — the request is authenticated purely by the
@@ -113,6 +119,7 @@ public static class ApiAuthEndpoints
             .MapPost("/api/v1/auth/refresh", HandleRefreshAsync)
             .AllowAnonymous()
             .RequireRateLimiting("api-token")
+            .DisableAntiforgery()
             .WithName("ApiAuthRefreshToken");
 
         // Phase 5.5 step 13 — logout. Bearer-required: the principal carries
@@ -127,6 +134,7 @@ public static class ApiAuthEndpoints
                 AuthenticationSchemes = JwtBearerDefaults.AuthenticationScheme,
             })
             .RequireRateLimiting("api-token")
+            .DisableAntiforgery()
             .WithName("ApiAuthLogout");
 
         return endpoints;

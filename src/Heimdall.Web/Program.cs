@@ -326,6 +326,14 @@ builder
             ValidAlgorithms = new[] { "RS256", "ES256" },
 
             ClockSkew = TimeSpan.FromSeconds(30),
+
+            // MapInboundClaims = false above suppresses the legacy auto-remap
+            // of "sub" -> ClaimTypes.NameIdentifier. Authorization handlers
+            // (e.g. OpenFgaAuthorizationHandler) read ClaimTypes.NameIdentifier
+            // to extract the actor id; pointing NameClaimType at the JWT "sub"
+            // claim restores that lookup without re-enabling the broader
+            // inbound-claim mapping table.
+            NameClaimType = "sub",
         };
 
         // PostConfigure runs after TokenOptions are bound, so Issuer/Audience
