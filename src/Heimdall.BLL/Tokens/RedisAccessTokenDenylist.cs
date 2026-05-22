@@ -104,8 +104,13 @@ public sealed class RedisAccessTokenDenylist : IAccessTokenDenylist
         IDatabase database = _redis.GetDatabase();
         string key = BuildKey(jti);
 
+        // SE.Redis IDatabase.*Async methods do not accept a CancellationToken, so we
+        // bridge the token via Task.WaitAsync — same pattern as RedisCacheService.
+        // OperationCanceledException surfaces cancellation; JwtBearerDenylistEvents
+        // re-throws it so this is safe to propagate.
         bool stored = await database
             .StringSetAsync(key, reason, ttl)
+            .WaitAsync(cancellationToken)
             .ConfigureAwait(false);
 
         if (!stored)
@@ -136,8 +141,11 @@ public sealed class RedisAccessTokenDenylist : IAccessTokenDenylist
         IDatabase database = _redis.GetDatabase();
         string key = BuildKey(jti);
 
+        // Bridge the token via Task.WaitAsync — SE.Redis IDatabase.*Async methods
+        // have no CancellationToken overload; same pattern as RedisCacheService.
         RedisValue value = await database
             .StringGetAsync(key)
+            .WaitAsync(cancellationToken)
             .ConfigureAwait(false);
 
         if (!value.HasValue)

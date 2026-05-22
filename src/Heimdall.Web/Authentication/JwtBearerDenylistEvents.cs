@@ -33,6 +33,15 @@ namespace Heimdall.Web.Authentication;
 /// <c>admin@organization:&lt;seedOrgId&gt;</c> that <see cref="Heimdall.Web.Authorization.Policies.RequireMfaAuthorizationHandler"/>
 /// already runs for the MFA gate — there is no second copy of the admin predicate.
 /// </para>
+/// <para>
+/// Implementation gap vs. spec wording: fail-open scope is any request whose
+/// authorization does not require organization admin (or system_admin) — not
+/// strictly "reads". Extending the fail-closed posture to writes would require
+/// deferring the denylist check to an authorization filter rather than
+/// <see cref="JwtBearerEvents.OnTokenValidated"/> (which fires before the
+/// endpoint is resolved and cannot easily probe HTTP method/endpoint metadata);
+/// see Phase 5.7 follow-up.
+/// </para>
 /// </remarks>
 public static class JwtBearerDenylistEvents
 {
@@ -46,11 +55,13 @@ public static class JwtBearerDenylistEvents
     /// <remarks>
     /// Exception posture: Redis transient outages
     /// (<see cref="RedisConnectionException"/>, <see cref="RedisTimeoutException"/>)
-    /// are softened to the outage handler per the step 12 stance. All other
-    /// exceptions propagate so a programming bug (NRE, DI misconfiguration,
-    /// audit-writer failure, etc.) cannot silently fail-open for non-admin
-    /// requests — the JwtBearer middleware will surface them as 500s, which is
-    /// the correct posture.
+    /// and shutdown-time multiplexer disposal (<see cref="ObjectDisposedException"/>,
+    /// observed when the host is being torn down — mirrors the
+    /// <see cref="Heimdall.DAL.Caching.RedisCacheService"/> precedent) are softened
+    /// to the outage handler per the step 12 stance. All other exceptions propagate
+    /// so a programming bug (NRE, DI misconfiguration, audit-writer failure, etc.)
+    /// cannot silently fail-open for non-admin requests — the JwtBearer middleware
+    /// will surface them as 500s, which is the correct posture.
     /// </remarks>
     /// <param name="ctx">The <see cref="TokenValidatedContext"/> from the bearer pipeline.</param>
     /// <returns>A task representing the asynchronous check.</returns>
@@ -95,10 +106,11 @@ public static class JwtBearerDenylistEvents
         {
             throw;
         }
-        catch (Exception ex) when (ex is RedisConnectionException || ex is RedisTimeoutException)
+        catch (Exception ex) when (ex is RedisConnectionException || ex is RedisTimeoutException || ex is ObjectDisposedException)
         {
-            // Redis transient outages are softened (per step 12 outage stance);
-            // all other exceptions propagate.
+            // Redis transient outages and shutdown-time multiplexer disposal are
+            // softened (per step 12 outage stance and the RedisCacheService
+            // precedent); all other exceptions propagate.
             await HandleDenylistOutageAsync(ctx, services, logger, jti, ex).ConfigureAwait(false);
             return;
         }
