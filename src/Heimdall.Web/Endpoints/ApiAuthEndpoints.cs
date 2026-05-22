@@ -64,18 +64,19 @@ public static class ApiAuthEndpoints
     /// <summary>
     /// Name of the <c>__Host-</c>-prefixed cookie that carries the refresh-token
     /// plaintext. The <c>__Host-</c> prefix enforces (browser-side) that the cookie
-    /// has <c>Secure=true</c>, no <c>Domain</c> attribute, and <c>Path=/</c> — we
-    /// pin <c>Path</c> to the auth subtree below to scope the cookie more tightly
-    /// than the bare browser rule requires.
+    /// has <c>Secure=true</c>, no <c>Domain</c> attribute, and <c>Path=/</c>. Per
+    /// the cookie prefix specification, browsers will reject a <c>__Host-</c> cookie
+    /// whose <c>Path</c> attribute is not exactly <c>/</c>, so <see cref="RefreshCookiePath"/>
+    /// must remain <c>"/"</c>.
     /// </summary>
     internal const string RefreshCookieName = "__Host-heimdall_refresh";
 
     /// <summary>
-    /// The path the refresh cookie is scoped to. The browser will only attach the
-    /// cookie to requests under this subtree, so it never leaks onto the rest of the
-    /// application's surface (Razor components, the JWKS endpoint, …).
+    /// The <c>Path</c> attribute applied to the refresh cookie. The <c>__Host-</c>
+    /// prefix specification requires this to be exactly <c>"/"</c>; browsers reject
+    /// (i.e. ignore) a <c>__Host-</c> cookie whose path is anything else.
     /// </summary>
-    internal const string RefreshCookiePath = "/api/v1/auth";
+    internal const string RefreshCookiePath = "/";
 
     private const string ContentTypeJson = "application/json";
 
@@ -132,7 +133,7 @@ public static class ApiAuthEndpoints
     /// <param name="httpContext">The current HTTP context.</param>
     /// <param name="request">The JSON-bound request body.</param>
     /// <param name="userManager">Identity user lookup.</param>
-    /// <param name="signInManager">Identity password check (no cookie sign-in).</param>
+    /// <param name="signInManager">Identity password check; also used to stamp the TwoFactorUserIdScheme cookie on the MFA path.</param>
     /// <param name="tokenIssuer">Access-token minter.</param>
     /// <param name="refreshTokens">Refresh-token repository.</param>
     /// <param name="auditWriter">Audit-event writer.</param>
@@ -190,24 +191,27 @@ public static class ApiAuthEndpoints
             return InvalidGrant();
         }
 
-        // PasswordSignInAsync (not CheckPasswordSignInAsync) — per phase-5-checklist
-        // step 9, only PasswordSignInAsync populates result.RequiresTwoFactor for
-        // MFA-enrolled users; CheckPasswordSignInAsync silently returns Succeeded=true
-        // and bypasses MFA. lockoutOnFailure=true mirrors the browser flow's lockout
-        // policy. NOTE on the TwoFactorUserId cookie: on RequiresTwoFactor,
-        // PasswordSignInAsync intentionally signs the user into Identity's
-        // TwoFactorUserId cookie. We deliberately leave that cookie set after
-        // returning 401 {"requires_two_factor": true} — the checklist requires the
-        // client to then call the existing UI MFA challenge to obtain a cookie
-        // principal carrying amr=mfa, and that challenge consumes exactly this
-        // TwoFactorUserId cookie. Do NOT clear it here as a "tidy-up" — doing so
-        // breaks the documented two-call MFA flow.
+        // CheckPasswordSignInAsync validates the password + lockout policy without
+        // issuing any application cookie. This is essential because this endpoint
+        // must remain cookie-free on its success path (see class doc comment).
+        // PasswordSignInAsync (which CheckPasswordSignInAsync calls internally) would
+        // issue the .Heimdall.Auth application cookie on a non-MFA success, which
+        // contradicts the endpoint's contract.
         Microsoft.AspNetCore.Identity.SignInResult result = await signInManager
-            .PasswordSignInAsync(user, password, isPersistent: false, lockoutOnFailure: true)
+            .CheckPasswordSignInAsync(user, password, lockoutOnFailure: true)
             .ConfigureAwait(false);
 
-        if (result.RequiresTwoFactor)
+        // If the password is valid, check whether the account requires a second
+        // factor. PasswordSignInAsync is used for the MFA branch only because it is
+        // the sole public API that stamps the TwoFactorUserIdScheme cookie the
+        // subsequent UI MFA challenge needs. Since 2FA is confirmed enabled for this
+        // user it will return RequiresTwoFactor (not Succeeded) and therefore will
+        // NOT issue the application cookie.
+        if (result.Succeeded && await userManager.GetTwoFactorEnabledAsync(user).ConfigureAwait(false))
         {
+            await signInManager
+                .PasswordSignInAsync(user, password, isPersistent: false, lockoutOnFailure: false)
+                .ConfigureAwait(false);
             string mfaPayload = JsonSerializer.Serialize(new { email_domain = emailDomain });
             await TryWriteAuditAsync(httpContext, auditWriter, new AuditEvent
             {
@@ -590,8 +594,8 @@ public static class ApiAuthEndpoints
             // /api/v1/auth/refresh from a same-origin SPA.
             SameSite = SameSiteMode.Strict,
 
-            // __Host- prefix forbids Domain; we set Path explicitly to scope the
-            // cookie below browser-default "/".
+            // __Host- prefix forbids Domain; Path must be "/" per the __Host-
+            // prefix specification (browsers reject the cookie otherwise).
             Path = RefreshCookiePath,
             Expires = expires,
         };
@@ -624,15 +628,8 @@ public static class ApiAuthEndpoints
             return false;
         }
 
-        foreach (Claim claim in principal.FindAll(RequireMfaAuthorizationHandler.AmrClaimType))
-        {
-            if (string.Equals(claim.Value, RequireMfaAuthorizationHandler.MfaAmrValue, StringComparison.Ordinal))
-            {
-                return true;
-            }
-        }
-
-        return false;
+        return principal.FindAll(RequireMfaAuthorizationHandler.AmrClaimType)
+            .Any(c => string.Equals(c.Value, RequireMfaAuthorizationHandler.MfaAmrValue, StringComparison.Ordinal));
     }
 
     // ---- Local mirrors of the AccountEndpoints helpers ------------------------

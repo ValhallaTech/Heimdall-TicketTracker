@@ -99,7 +99,7 @@ public sealed class ApiAuthEndpointsTests : IClassFixture<HeimdallWebApplication
         setCookieLower.Should().Contain("httponly", because: "HttpOnly is required for the refresh cookie");
         setCookieLower.Should().Contain("secure", because: "__Host- prefix mandates Secure=true");
         setCookieLower.Should().Contain("samesite=strict", because: "cross-site flows must never attach the refresh cookie");
-        setCookieLower.Should().Contain("path=/api/v1/auth", because: "the cookie is scoped to the auth subtree only");
+        setCookieLower.Should().Contain("path=/", because: "__Host- prefix mandates Path=/");
 
         // A single active refresh-tokens row for this user.
         await using var connection = OpenConnection();
@@ -129,10 +129,7 @@ public sealed class ApiAuthEndpointsTests : IClassFixture<HeimdallWebApplication
             new { email = user.Email, password = password });
 
         // Assert — per phase-5-checklist.md step 9 the response MUST be
-        // 401 + {"requires_two_factor": true}. The current implementation in
-        // ApiAuthEndpoints.HandleIssueTokenAsync returns 400 invalid_grant on
-        // result.RequiresTwoFactor instead. Skipping until production code is
-        // corrected.
+        // 401 + {"requires_two_factor": true}.
         response.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
         using JsonDocument doc = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
         doc.RootElement.GetProperty("requires_two_factor").GetBoolean().Should().BeTrue();
@@ -505,12 +502,10 @@ public sealed class ApiAuthEndpointsTests : IClassFixture<HeimdallWebApplication
             throw new InvalidOperationException("No Set-Cookie header on the response.");
         }
 
-        foreach (string raw in values)
+        string? raw = values.FirstOrDefault(v => v.StartsWith(cookieName + "=", StringComparison.Ordinal));
+        if (raw is not null)
         {
-            if (raw.StartsWith(cookieName + "=", StringComparison.Ordinal))
-            {
-                return raw;
-            }
+            return raw;
         }
 
         throw new InvalidOperationException(

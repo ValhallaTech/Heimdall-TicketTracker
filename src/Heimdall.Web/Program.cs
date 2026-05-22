@@ -535,8 +535,10 @@ builder.Services.AddRateLimiter(options =>
     options.AddPolicy("api-token", httpContext =>
     {
         string ip = httpContext.Connection.RemoteIpAddress?.ToString() ?? "unknown";
+        // MapInboundClaims = false on the JwtBearer scheme means the JWT "sub"
+        // claim is not remapped to ClaimTypes.NameIdentifier; read it directly.
         string sub =
-            httpContext.User?.FindFirstValue(ClaimTypes.NameIdentifier) ?? string.Empty;
+            httpContext.User?.FindFirstValue("sub") ?? string.Empty;
         string key = string.IsNullOrEmpty(sub) ? ip : $"{ip}|{sub}";
         return RateLimitPartition.GetFixedWindowLimiter(key, _ => new FixedWindowRateLimiterOptions
         {
@@ -907,11 +909,10 @@ public partial class Program
     /// Phase 5.1 <c>signing_keys</c> rows into the form the validator expects.
     /// </summary>
     /// <remarks>
-    /// Returns <c>null</c> when the JWK is missing the required public fields
-    /// (defensive — this should be impossible because <see cref="Heimdall.Core.Tokens.PublicJwk.FromRsa"/>
-    /// / <see cref="Heimdall.Core.Tokens.PublicJwk.FromEcdsa"/> always populate
-    /// them, but a corrupted row should fail closed rather than throw out of
-    /// the resolver).
+    /// Returns <c>null</c> when the JWK is missing the required public fields,
+    /// the base64url values are malformed, or <c>ImportParameters</c> rejects the
+    /// key material (fail-closed — a corrupted row must not throw out of the
+    /// resolver and produce a 500 during authentication).
     /// </remarks>
     private static SecurityKey? MaterialisePublicSecurityKey(Heimdall.Core.Tokens.SigningKeyRecord record)
     {
@@ -923,12 +924,20 @@ public partial class Program
             }
 
             var rsa = RSA.Create();
-            rsa.ImportParameters(new RSAParameters
+            try
             {
-                Modulus = Base64UrlDecode(record.PublicJwk.N),
-                Exponent = Base64UrlDecode(record.PublicJwk.E),
-            });
-            return new RsaSecurityKey(rsa) { KeyId = record.Kid };
+                rsa.ImportParameters(new RSAParameters
+                {
+                    Modulus = Base64UrlDecode(record.PublicJwk.N),
+                    Exponent = Base64UrlDecode(record.PublicJwk.E),
+                });
+                return new RsaSecurityKey(rsa) { KeyId = record.Kid };
+            }
+            catch (Exception)
+            {
+                rsa.Dispose();
+                return null;
+            }
         }
 
         if (record.Alg == Heimdall.Core.Tokens.SigningAlgorithm.Es256)
@@ -939,16 +948,24 @@ public partial class Program
             }
 
             var ecdsa = ECDsa.Create();
-            ecdsa.ImportParameters(new ECParameters
+            try
             {
-                Curve = ECCurve.NamedCurves.nistP256,
-                Q = new ECPoint
+                ecdsa.ImportParameters(new ECParameters
                 {
-                    X = Base64UrlDecode(record.PublicJwk.X),
-                    Y = Base64UrlDecode(record.PublicJwk.Y),
-                },
-            });
-            return new ECDsaSecurityKey(ecdsa) { KeyId = record.Kid };
+                    Curve = ECCurve.NamedCurves.nistP256,
+                    Q = new ECPoint
+                    {
+                        X = Base64UrlDecode(record.PublicJwk.X),
+                        Y = Base64UrlDecode(record.PublicJwk.Y),
+                    },
+                });
+                return new ECDsaSecurityKey(ecdsa) { KeyId = record.Kid };
+            }
+            catch (Exception)
+            {
+                ecdsa.Dispose();
+                return null;
+            }
         }
 
         return null;
