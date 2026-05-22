@@ -6,7 +6,7 @@
 **Decision required:** Resolve the six open decisions enumerated in §3–§8 below so Phase 6 implementation ([`phase-6-checklist.md`](../implementation/phase-6-checklist.md)) can proceed without further design work.
 **Depends on:** [`blazor-to-svelte-transition.md`](./blazor-to-svelte-transition.md) (approved 2026-05-15), [`security-and-authorization.md`](./security-and-authorization.md) §9.3 Phase 6, [`phase-6-checklist.md`](../implementation/phase-6-checklist.md).
 
-*This document is research and planning only.*
+> This document is research and planning only.
 
 ---
 

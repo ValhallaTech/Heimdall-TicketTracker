@@ -51,7 +51,7 @@
 
 ## Phase 8.3 — Policy gate
 
-- [ ] **3. Policy gate on admin routes.** Every admin route in this phase carries the `[Authorize(AuthenticationSchemes = "JwtBearer", Policy = SystemAdmin)]` attribute (API endpoint) and the SvelteKit server-side equivalent (`hooks.server.ts` or `+page.server.ts` `Check()` against the `system-admin` relation). The write surface is unreachable without:
+- [ ] **3. Policy gate on admin routes.** Every admin route in this phase carries the `[Authorize(AuthenticationSchemes = "JwtBearer", Policy = SystemAdmin)]` attribute (API endpoint) and the SvelteKit server-side equivalent (`hooks.server.ts` or `+page.server.ts` calling a server-side API/policy check that enforces `SystemAdmin` before rendering or accepting actions). The write surface is unreachable without:
   - A valid JWT bearer token (Phase 5).
   - The `SystemAdmin` policy satisfied (Phase 3.5 step 9 — resolves to `HeimdallUser.system_admin == true` via `SystemAdminAuthorizationHandler`).
   - If Phase 4 MFA is configured as required for admins, the `amr=mfa` claim must be present (the existing `RequireMfaPolicy` composition).

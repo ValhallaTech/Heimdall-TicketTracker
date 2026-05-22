@@ -6,7 +6,7 @@
 **Decision required:** Replace the Autofac DI container (`Autofac` + `Autofac.Extensions.DependencyInjection`) with DryIoc (`DryIoc` + `DryIoc.Microsoft.DependencyInjection`) as the new Phase 7, after Phase 6 (Svelte migration) completes.
 **Depends on:** [`docs/proposals/autofac-coverage-audit.md`](./autofac-coverage-audit.md) (current Autofac surface confirmed); [`docs/implementation/phase-6-checklist.md`](../implementation/phase-6-checklist.md) (Phase 6 retires Blazor, rewrites `Program.cs`, and reduces `Heimdall.Web` to a pure API host); decision in [`docs/proposals/blazor-to-svelte-transition.md`](./blazor-to-svelte-transition.md) to land Topology B + JWT bearer as the production auth model.
 
-*This document is research and planning only.*
+> This document is research and planning only.
 
 ---
 
@@ -32,7 +32,7 @@ Six factors motivate sequencing the DI container migration immediately after Pha
 - **`RegisterDelegate`** — the config-driven factory pattern is used today and will be used for future conditional registrations.
 - **Conditional registrations** — DryIoc's `RegisterMany`, `RegisterDelegate`, and `Setup.Condition` support patterns that plain MEL's `IServiceCollection` does not express cleanly.
 
-Plain MEL would work for the current 7-registration surface, but the growth trajectory (Phase 7 Admin UI, future enrollment services, potential multi-tenant scoping) makes a richer container worthwhile.
+Plain MEL would work for the current 7-registration surface, but the growth trajectory (Phase 8 Admin UI, future enrollment services, potential multi-tenant scoping) makes a richer container worthwhile.
 
 ---
 
@@ -116,7 +116,7 @@ The following documentation files mention Autofac and will need updates after th
 
 ## 3. Target DryIoc surface
 
-This section describes the DryIoc equivalent for every registration. Per the repository's "no code blocks longer than 4 lines in proposals" convention, the translation is described in prose.
+This section describes the DryIoc equivalent for every registration. To keep the proposal readable, the translation is described in prose instead of longer code blocks.
 
 ### 3.1 Container bridge
 
@@ -247,4 +247,4 @@ The following documentation files mention Autofac and will need a one-line updat
 
 ---
 
-**Next step:** Review this proposal. If approved, author [`docs/implementation/phase-7-checklist.md`](../implementation/phase-7-checklist.md) per the steps enumerated above and renumber the Admin UI phase to Phase 8.
+**Next step:** Review this proposal. If approved, execute the already-authored [`docs/implementation/phase-7-checklist.md`](../implementation/phase-7-checklist.md) in a follow-up implementation PR and keep the Admin UI work tracked as Phase 8.
