@@ -1,6 +1,6 @@
 # Phase 8 — Admin UI (Tuple-management surface): Implementation Checklist
 
-> Renumbered from the original Phase 7 to Phase 8 to accommodate the newly inserted DI migration phase (the new Phase 7).
+> Renumbered from the original Phase 7 to Phase 8 to accommodate the newly inserted DI migration phase (the new Phase 7; see [`phase-7-checklist.md`](./phase-7-checklist.md)).
 
 > Note: a standalone `phase-7-checklist.md` for the Admin UI scope was never authored prior to this renumbering. The Phase 7 = Admin UI scope previously lived only in [`docs/proposals/security-and-authorization.md`](../proposals/security-and-authorization.md) §9 Phase 7 — Admin UI and [`docs/proposals/openfga.md`](../proposals/openfga.md) step 11. This Phase 8 checklist is the first dedicated implementation file for that scope, authored at the time of the renumbering (2026-05-22).
 
@@ -51,7 +51,7 @@
 
 ## Phase 8.3 — Policy gate
 
-- [ ] **3. Policy gate on admin routes.** Every admin route in this phase carries the `[Authorize(AuthenticationSchemes = "JwtBearer", Policy = SystemAdmin)]` attribute (API endpoint) and the SvelteKit server-side equivalent (`hooks.server.ts` or `+page.server.ts` calling a server-side API/policy check that enforces `SystemAdmin` before rendering or accepting actions). The write surface is unreachable without:
+- [ ] **3. Policy gate on admin routes.** Every admin route in this phase carries the `[Authorize(AuthenticationSchemes = "JwtBearer", Policy = SystemAdmin)]` attribute (API endpoint, using the existing `AuthorizationPolicies.SystemAdmin` constant) and the SvelteKit server-side equivalent (`hooks.server.ts` or `+page.server.ts` calling a server-side API/policy check that enforces `SystemAdmin` before rendering or accepting actions). The write surface is unreachable without:
   - A valid JWT bearer token (Phase 5).
   - The `SystemAdmin` policy satisfied (Phase 3.5 step 9 — resolves to `HeimdallUser.system_admin == true` via `SystemAdminAuthorizationHandler`).
   - If Phase 4 MFA is configured as required for admins, the `amr=mfa` claim must be present (the existing `RequireMfaPolicy` composition).

@@ -6,7 +6,7 @@
 **Decision required:** Replace the Autofac DI container (`Autofac` + `Autofac.Extensions.DependencyInjection`) with DryIoc (`DryIoc` + `DryIoc.Microsoft.DependencyInjection`) as the new Phase 7, after Phase 6 (Svelte migration) completes.
 **Depends on:** [`docs/proposals/autofac-coverage-audit.md`](./autofac-coverage-audit.md) (current Autofac surface confirmed); [`docs/implementation/phase-6-checklist.md`](../implementation/phase-6-checklist.md) (Phase 6 retires Blazor, rewrites `Program.cs`, and reduces `Heimdall.Web` to a pure API host); decision in [`docs/proposals/blazor-to-svelte-transition.md`](./blazor-to-svelte-transition.md) to land Topology B + JWT bearer as the production auth model.
 
-> This document is research and planning only.
+> This document is **research and planning only**. **No code, package, configuration, or DI changes are made in this PR.** A follow-up implementation PR will execute the approved migration checklist.
 
 ---
 
@@ -116,7 +116,7 @@ The following documentation files mention Autofac and will need updates after th
 
 ## 3. Target DryIoc surface
 
-This section describes the DryIoc equivalent for every registration. To keep the proposal readable, the translation is described in prose instead of longer code blocks.
+This section describes the DryIoc equivalent for every registration. To keep the proposal readable, the translation is described in prose instead of lengthy code blocks.
 
 ### 3.1 Container bridge
 
