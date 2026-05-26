@@ -42,7 +42,7 @@
   >
     <Exec Command="corepack enable" WorkingDirectory="$(MSBuildProjectDirectory)" />
     <Exec
-      Command="corepack prepare yarn@4.14.1 --activate"
+      Command="corepack prepare yarn@4.15.0 --activate"
       WorkingDirectory="$(MSBuildProjectDirectory)"
     />
     <Exec Command="yarn install --immutable" WorkingDirectory="$(MSBuildProjectDirectory)" />

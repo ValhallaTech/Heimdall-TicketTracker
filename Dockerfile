@@ -5,7 +5,7 @@
 # ------------------------------------------------------------------
 FROM node:24.16.0-alpine AS assets
 WORKDIR /src/web
-RUN corepack enable && corepack prepare yarn@4.14.1 --activate
+RUN corepack enable && corepack prepare yarn@4.15.0 --activate
 COPY src/Heimdall.Web/package.json src/Heimdall.Web/yarn.lock src/Heimdall.Web/.yarnrc.yml ./
 RUN yarn install --immutable
 COPY src/Heimdall.Web/build-assets.mjs ./
