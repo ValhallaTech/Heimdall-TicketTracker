@@ -326,6 +326,14 @@ builder
             ValidAlgorithms = new[] { "RS256", "ES256" },
 
             ClockSkew = TimeSpan.FromSeconds(30),
+
+            // MapInboundClaims = false above suppresses the legacy auto-remap
+            // of "sub" -> ClaimTypes.NameIdentifier. Authorization handlers
+            // (e.g. OpenFgaAuthorizationHandler) read ClaimTypes.NameIdentifier
+            // to extract the actor id; pointing NameClaimType at the JWT "sub"
+            // claim restores that lookup without re-enabling the broader
+            // inbound-claim mapping table.
+            NameClaimType = "sub",
         };
 
         // PostConfigure runs after TokenOptions are bound, so Issuer/Audience
@@ -373,6 +381,32 @@ builder.Services.AddOptions<JwtBearerOptions>(JwtBearerDefaults.AuthenticationSc
 
             return keys;
         };
+
+        // Phase 5.5 step 12 — denylist check on every JwtBearer request. Looks
+        // up the validated token's jti against the Redis denylist; on hit, the
+        // token is refused with ctx.Fail("denylisted"). Outage handling:
+        // fail-closed for admins (the IOpenFgaAuthorizationService probe against
+        // admin@organization:<seedOrg> is the same predicate Phase 4.6 step 16
+        // uses in RequireMfaAuthorizationHandler, so there is no second copy of
+        // the admin check) and fail-open for non-admin requests with a
+        // token.access.denylist_unavailable audit event.
+        options.Events ??= new JwtBearerEvents();
+        var existingOnTokenValidated = options.Events.OnTokenValidated;
+        options.Events.OnTokenValidated = async ctx =>
+        {
+            if (existingOnTokenValidated is not null)
+            {
+                await existingOnTokenValidated(ctx).ConfigureAwait(false);
+                if (ctx.Result is { Failure: not null })
+                {
+                    return;
+                }
+            }
+
+            await Heimdall.Web.Authentication.JwtBearerDenylistEvents
+                .OnTokenValidatedAsync(ctx)
+                .ConfigureAwait(false);
+        };
     });
 
 // Authorization services + the global authenticated-only fallback policy
@@ -385,6 +419,46 @@ builder.Services.AddOptions<JwtBearerOptions>(JwtBearerDefaults.AuthenticationSc
 // so the focused unit tests in Heimdall.Web.Tests.Authorization apply the
 // exact same options as production startup.
 builder.Services.AddAuthorization(AuthorizationConfiguration.Configure);
+
+// Phase 5.6 step 16 — OpenAPI document generator. Documents both authentication
+// schemes used by the application (cookie for the Razor UI surface, bearer for
+// the /api/v1/* JSON surface). The raw document is mapped below at
+// /api/v1/openapi.json, gated on Api:Documentation:Enabled so production deploys
+// can opt in selectively. Swagger UI is wired only in Development.
+builder.Services.AddOpenApi("v1", options =>
+{
+    options.AddDocumentTransformer((document, context, cancellationToken) =>
+    {
+        document.Info = new Microsoft.OpenApi.OpenApiInfo
+        {
+            Title = "Heimdall API",
+            Version = "v1",
+            Description = "Heimdall TicketTracker JSON API (Phase 5.6).",
+        };
+
+        document.Components ??= new Microsoft.OpenApi.OpenApiComponents();
+        document.Components.SecuritySchemes ??=
+            new System.Collections.Generic.Dictionary<string, Microsoft.OpenApi.IOpenApiSecurityScheme>(StringComparer.Ordinal);
+
+        document.Components.SecuritySchemes["bearer"] = new Microsoft.OpenApi.OpenApiSecurityScheme
+        {
+            Type = Microsoft.OpenApi.SecuritySchemeType.Http,
+            Scheme = "bearer",
+            BearerFormat = "JWT",
+            Description = "Phase 5.3 JwtBearer scheme. Mint a token via POST /api/v1/auth/token.",
+        };
+
+        document.Components.SecuritySchemes["cookie"] = new Microsoft.OpenApi.OpenApiSecurityScheme
+        {
+            Type = Microsoft.OpenApi.SecuritySchemeType.ApiKey,
+            Name = ".Heimdall.Auth",
+            In = Microsoft.OpenApi.ParameterLocation.Cookie,
+            Description = "Phase 1 application cookie used by the Razor UI surface.",
+        };
+
+        return Task.CompletedTask;
+    });
+});
 
 // Phase 3.5 (docs/proposals/openfga.md §3 step 9 + step 10) — register the
 // OpenFGA + system-admin authorization handlers and IHttpContextAccessor.
@@ -885,17 +959,58 @@ app.MapRazorComponents<App>().AddInteractiveServerRenderMode();
 // after UseAntiforgery so form posts go through antiforgery validation.
 app.MapAccountEndpoints();
 
-// --- API auth endpoints (Phase 5.4 steps 9-10) ---------------------------
-// JSON-bodied /api/v1/auth/token (password grant) and /api/v1/auth/refresh
-// (refresh rotation with family-replay detection). Mapped here so they share
+// --- API auth endpoints (Phase 5.4 steps 9-10 + Phase 5.5 step 13) -------
+// JSON-bodied /api/v1/auth/token (password grant), /api/v1/auth/refresh
+// (refresh rotation with family-replay detection), and /api/v1/auth/logout
+// (bearer-required, denylist + family revoke). Mapped here so they share
 // the same routing namespace + middleware pipeline as the browser flow.
 app.MapApiAuthEndpoints();
+
+// --- API ticket endpoints (Phase 5.6 steps 14-15) ------------------------
+// GET / GET-by-id / POST / PUT / POST .../assign under /api/v1/tickets. Uses
+// the existing Phase 3 named policies (CanViewTicket, CanEditTicket,
+// CanAssignTicket) and chains RequireMfa onto the assign route in the same
+// way the Razor admin surfaces do.
+app.MapApiTicketsEndpoints();
 
 // --- JWKS endpoint (Phase 5.1 step 3) ------------------------------------
 // Publishes the public halves of the trusted signing keys at
 // /.well-known/jwks.json. Anonymous; response cached for 5 minutes with
 // in-process invalidation on rotation via IJwksCacheInvalidator.
 app.MapJwksEndpoint();
+
+// --- OpenAPI document + Swagger UI (Phase 5.6 step 16) -------------------
+// The raw document at /api/v1/openapi.json is gated on Api:Documentation:Enabled
+// (default false) so production deploys can opt in selectively without
+// rebuilding. Swagger UI under /api/v1/docs is Development-only.
+bool openApiEnabled = app.Configuration.GetValue("Api:Documentation:Enabled", defaultValue: false);
+
+// Defense-in-depth: Production is the only environment where the doc must
+// never be exposed; the explicit "not Production" check guards against
+// Api:Documentation:Enabled=true leaking into a prod config via misconfigured
+// environment-specific files (e.g. a stray Development settings file in a
+// container).
+if (openApiEnabled && !app.Environment.IsProduction())
+{
+    app.MapOpenApi("/api/v1/openapi.json");
+}
+
+if (app.Environment.IsDevelopment())
+{
+    if (!openApiEnabled)
+    {
+        // Always serve the document in Development so the UI below can resolve
+        // it, even when the config flag is off.
+        app.MapOpenApi("/api/v1/openapi.json");
+    }
+
+    app.UseSwaggerUI(options =>
+    {
+        options.RoutePrefix = "api/v1/docs";
+        options.SwaggerEndpoint("/api/v1/openapi.json", "Heimdall API v1");
+        options.DocumentTitle = "Heimdall API — Swagger UI";
+    });
+}
 
 app.Run();
 

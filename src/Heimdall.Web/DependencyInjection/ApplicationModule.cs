@@ -5,6 +5,7 @@ using Heimdall.BLL.Authorization.OpenFga;
 using Heimdall.BLL.Enrollment;
 using Heimdall.BLL.Mapping;
 using Heimdall.BLL.Services;
+using Heimdall.BLL.Tokens;
 using Heimdall.Core.Interfaces;
 using Heimdall.DAL.Caching;
 using Heimdall.DAL.Repositories;
@@ -30,6 +31,15 @@ public class ApplicationModule : Autofac.Module
 
         // Caching
         builder.RegisterType<RedisCacheService>().As<ICacheService>().SingleInstance();
+
+        // Phase 5.5 step 11 — access-token denylist sitting on the same Redis
+        // multiplexer as the cache. Stateless (it pulls IDatabase from the
+        // multiplexer per call) so SingleInstance is correct and matches the
+        // lifetime of the multiplexer itself.
+        builder
+            .RegisterType<RedisAccessTokenDenylist>()
+            .As<IAccessTokenDenylist>()
+            .SingleInstance();
 
         // Services
         builder.RegisterType<TicketService>().As<ITicketService>().InstancePerLifetimeScope();
