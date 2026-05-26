@@ -19,9 +19,9 @@
   <ItemGroup>
     <PackageReference Include="MailKit" Version="4.16.0" />
     <PackageReference Include="Mapster" Version="10.0.7" />
-    <PackageReference Include="Microsoft.IdentityModel.JsonWebTokens" Version="8.15.0" />
+    <PackageReference Include="Microsoft.IdentityModel.JsonWebTokens" Version="8.18.0" />
     <PackageReference Include="MimeKit" Version="4.16.0" />
-    <PackageReference Include="OpenFga.Sdk" Version="0.10.2" />
+    <PackageReference Include="OpenFga.Sdk" Version="0.10.3" />
     <PackageReference Include="OpenTelemetry.Api" Version="1.15.3" />
   </ItemGroup>
 
