@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Globalization;
 using System.IdentityModel.Tokens.Jwt;
 using System.Linq;
 using System.Net;
@@ -782,7 +783,7 @@ public sealed class Phase5AcceptanceTests : IClassFixture<HeimdallWebApplication
         long unixSeconds = DateTimeOffset.UtcNow.ToUnixTimeSeconds();
         long timestep = unixSeconds / 30;
         int code = ComputeTotp(keyBytes, (ulong)timestep);
-        return code.ToString("D6", System.Globalization.CultureInfo.InvariantCulture);
+        return code.ToString("D6", CultureInfo.InvariantCulture);
     }
 
     private static int ComputeTotp(byte[] keyBytes, ulong timestep)
