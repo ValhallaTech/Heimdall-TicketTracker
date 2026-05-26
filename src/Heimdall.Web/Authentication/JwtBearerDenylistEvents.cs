@@ -1,4 +1,5 @@
 using System;
+using System.Net.Http;
 using System.Globalization;
 using System.Security.Claims;
 using System.Text.Json;
@@ -13,6 +14,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using Microsoft.IdentityModel.JsonWebTokens;
+using Npgsql;
 using StackExchange.Redis;
 
 namespace Heimdall.Web.Authentication;
@@ -26,7 +28,7 @@ namespace Heimdall.Web.Authentication;
 /// Outage stance, per <c>docs/implementation/phase-5-checklist.md</c> step 12: a
 /// Redis transport failure is <strong>fail-closed for admin-policy-gated
 /// endpoints</strong> (matching the Phase 3 step 10 deny-closed precedent on
-/// OpenFGA outages) and <strong>fail-open for non-admin reads</strong>, with a
+/// OpenFGA outages) and <strong>fail-open for non-admin requests</strong>, with a
 /// <see cref="AuditEventTypes.TokenAccessDenylistUnavailable"/> audit row for the
 /// SOC to correlate. The admin/non-admin distinction is computed by re-issuing
 /// the same <see cref="IOpenFgaAuthorizationService.CheckAsync"/> probe against
@@ -246,7 +248,15 @@ public static class JwtBearerDenylistEvents
                 {
                     throw;
                 }
-                catch (Exception ex)
+                catch (HttpRequestException ex)
+                {
+                    logger.LogWarning(
+                        ex,
+                        "OpenFGA admin probe threw during denylist-outage handling for {ActorId}; falling through to system_admin probe.",
+                        actorId);
+                    isOrgAdmin = false;
+                }
+                catch (TimeoutException ex)
                 {
                     logger.LogWarning(
                         ex,
@@ -275,7 +285,17 @@ public static class JwtBearerDenylistEvents
         {
             throw;
         }
-        catch (Exception ex)
+        catch (NpgsqlException ex)
+        {
+            // Deny-closed: we cannot prove the actor is NOT a system admin, so
+            // treat them as admin. The outage handler will then fail the bearer.
+            logger.LogWarning(
+                ex,
+                "system_admin probe threw during denylist-outage handling for {ActorId}; deny-closed (treating as admin).",
+                actorId);
+            return true;
+        }
+        catch (TimeoutException ex)
         {
             // Deny-closed: we cannot prove the actor is NOT a system admin, so
             // treat them as admin. The outage handler will then fail the bearer.

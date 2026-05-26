@@ -388,7 +388,7 @@ builder.Services.AddOptions<JwtBearerOptions>(JwtBearerDefaults.AuthenticationSc
         // fail-closed for admins (the IOpenFgaAuthorizationService probe against
         // admin@organization:<seedOrg> is the same predicate Phase 4.6 step 16
         // uses in RequireMfaAuthorizationHandler, so there is no second copy of
-        // the admin check) and fail-open for non-admin reads with a
+        // the admin check) and fail-open for non-admin requests with a
         // token.access.denylist_unavailable audit event.
         options.Events ??= new JwtBearerEvents();
         var existingOnTokenValidated = options.Events.OnTokenValidated;

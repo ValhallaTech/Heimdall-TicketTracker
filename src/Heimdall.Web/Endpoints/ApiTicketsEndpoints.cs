@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Globalization;
 using System.Linq;
+using System.Net.Http;
 using System.Security.Claims;
 using System.Threading;
 using System.Threading.Tasks;
@@ -177,7 +178,7 @@ public static class ApiTicketsEndpoints
         {
             throw;
         }
-        catch (Exception ex)
+        catch (Exception ex) when (ex is HttpRequestException or TimeoutException)
         {
             // Deny-closed per Phase 3.5 step 10 — the FGA adapter contract is
             // supposed to swallow transport failures and return empty, but if it
@@ -196,7 +197,7 @@ public static class ApiTicketsEndpoints
         SortDirection direction = ParseSortDirection(sortDirection);
         PagedQuery query = new(
             page: page ?? 1,
-            pageSize: pageSize ?? DefaultPageSize,
+            pageSize: pageSize is null ? DefaultPageSize : Math.Clamp(pageSize.Value, 1, MaxPageSize),
             searchText: searchText,
             sortField: sortField ?? "DateCreated",
             sortDirection: direction);
@@ -383,12 +384,11 @@ public static class ApiTicketsEndpoints
     {
         string prefix = TupleShapes.TicketType + ":";
         List<int> ids = new(objectRefs.Count);
-        foreach (string r in objectRefs)
+        foreach (ReadOnlyMemory<char> objectRef in objectRefs.Select(static r => r.AsMemory()))
         {
-            ReadOnlySpan<char> span = r.AsSpan();
-            if (span.StartsWith(prefix, StringComparison.Ordinal)
+            if (objectRef.Span.StartsWith(prefix, StringComparison.Ordinal)
                 && int.TryParse(
-                    span[prefix.Length..],
+                    objectRef.Span[prefix.Length..],
                     NumberStyles.Integer,
                     CultureInfo.InvariantCulture,
                     out int id))

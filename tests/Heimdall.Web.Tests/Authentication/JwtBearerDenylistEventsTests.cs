@@ -1,5 +1,6 @@
 using System;
 using System.Net;
+using System.Net.Http;
 using System.Security.Claims;
 using System.Text.Json;
 using System.Threading;
@@ -283,7 +284,7 @@ public class JwtBearerDenylistEventsTests
             .Setup(d => d.IsDeniedAsync(Jti, It.IsAny<CancellationToken>()))
             .ThrowsAsync(new RedisConnectionException(ConnectionFailureType.UnableToConnect, "boom"));
 
-        SetupFgaThrows(new InvalidOperationException("fga down"));
+        SetupFgaThrows(new HttpRequestException("fga down"));
         SetupSystemAdmin(true);
 
         using ServiceProvider sp = BuildServices();
@@ -306,7 +307,7 @@ public class JwtBearerDenylistEventsTests
             .Setup(d => d.IsDeniedAsync(Jti, It.IsAny<CancellationToken>()))
             .ThrowsAsync(new RedisConnectionException(ConnectionFailureType.UnableToConnect, "boom"));
 
-        SetupFgaThrows(new InvalidOperationException("fga down"));
+        SetupFgaThrows(new HttpRequestException("fga down"));
         SetupSystemAdmin(false);
         SetupAuditWriteOk();
 
@@ -330,7 +331,7 @@ public class JwtBearerDenylistEventsTests
             .ThrowsAsync(new RedisConnectionException(ConnectionFailureType.UnableToConnect, "boom"));
 
         SetupFgaAdmin(false);
-        SetupSystemAdminThrows(new InvalidOperationException("db unreachable"));
+        SetupSystemAdminThrows(new TimeoutException("db unreachable"));
 
         using ServiceProvider sp = BuildServices();
         TokenValidatedContext ctx = BuildContext(sp, PrincipalWith(sub: ActorId));

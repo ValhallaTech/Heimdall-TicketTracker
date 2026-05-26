@@ -22,9 +22,12 @@ namespace Heimdall.BLL.Tokens;
 public interface IAccessTokenDenylist
 {
     /// <summary>
-    /// Adds <paramref name="jti"/> to the denylist with TTL = max(<paramref name="expiresAt"/> − now, 0).
-    /// Idempotent — a second call with a later expiry extends the TTL; a second call with
-    /// an earlier or equal expiry is a no-op write that still succeeds.
+    /// Adds <paramref name="jti"/> to the denylist with a TTL derived from the remaining
+    /// token lifetime. Implementations clamp already-expired (or nearly expired) tokens to
+    /// a small positive minimum so the entry still survives validator clock skew; the Redis
+    /// implementation uses a 30-second floor. Idempotent — a second call with a later expiry
+    /// extends the TTL; a second call with an earlier or equal expiry is a no-op write that
+    /// still succeeds.
     /// </summary>
     /// <param name="jti">The access token's <c>jti</c> claim. Must not be null or whitespace.</param>
     /// <param name="expiresAt">The token's <c>exp</c> as a UTC instant — drives the entry TTL.</param>

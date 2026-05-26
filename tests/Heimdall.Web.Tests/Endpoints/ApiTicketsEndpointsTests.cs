@@ -36,15 +36,14 @@ namespace Heimdall.Web.Tests.Endpoints;
 /// <list type="bullet">
 /// <item>
 /// <description>
-/// <b>NameIdentifier gap on JWT bearer principals.</b> <c>Program.cs</c> sets
-/// <c>MapInboundClaims = false</c> on the JwtBearer options and does not
-/// configure a <c>NameClaimType</c>; the <c>OpenFgaAuthorizationHandler</c>
-/// reads only <c>ClaimTypes.NameIdentifier</c>, which is therefore unpopulated
-/// on every bearer-authenticated request. Result: every <c>CanViewTicket</c> /
-/// <c>CanEditTicket</c> / <c>CanAssignTicket</c> policy check deny-closes
-/// today, regardless of FGA tuples. These tests assert the deny-closed
-/// observable behavior (403) rather than the intended happy-path, and the
-/// "policy ALLOWS" branches are surfaced as a finding rather than tested.
+/// <b>JWT actor-id seam on bearer principals.</b> <c>Program.cs</c> sets
+/// <c>MapInboundClaims = false</c> and <c>NameClaimType = "sub"</c> for JWT
+/// validation, but the bearer principal still carries the raw <c>"sub"</c>
+/// claim rather than a synthesised <c>ClaimTypes.NameIdentifier</c> claim.
+/// <c>OpenFgaAuthorizationHandler</c> reads only
+/// <c>ClaimTypes.NameIdentifier</c>, so bearer-backed FGA policy checks still
+/// deny-close today. These tests therefore assert the currently observable deny
+/// paths, while the "policy ALLOWS" cases remain documented separately.
 /// </description>
 /// </item>
 /// <item>
@@ -96,12 +95,9 @@ public sealed class ApiTicketsEndpointsTests : IClassFixture<HeimdallWebApplicat
         response.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
     }
 
-    [Fact(Skip = "Production gap: ApiTicketsEndpoints does not call .DisableAntiforgery() on its " +
-        "MapPost/MapPut routes, so the global UseAntiforgery() middleware short-circuits every " +
-        "POST/PUT with application/json body to 400 'The request has an incorrect Content-type.' " +
-        "BEFORE the [Authorize] gate runs — meaning we cannot observe the expected 401 here. " +
-        "Fix lives in production code (add .DisableAntiforgery() to the bearer-auth API routes), " +
-        "out of scope for this test-only PR.")]
+    [Fact(Skip = "Current integration-host behavior still returns 400 for unauthenticated JSON POST /api/v1/tickets "
+        + "before the bearer [Authorize] gate is reached, even with endpoint-level .DisableAntiforgery(). "
+        + "Keep this documented until the underlying POST pipeline behavior changes.")]
     [Trait("Category", "Integration")]
     public async Task Create_NoBearer_Returns401()
     {
@@ -119,8 +115,8 @@ public sealed class ApiTicketsEndpointsTests : IClassFixture<HeimdallWebApplicat
         response.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
     }
 
-    [Fact(Skip = "Same antiforgery production gap as Create_NoBearer_Returns401: PUT /api/v1/tickets/{id} " +
-        "with application/json is rejected by UseAntiforgery() at 400 before [Authorize] runs.")]
+    [Fact(Skip = "Current integration-host behavior still returns 405 (after the initial JSON PUT failure is "
+        + "re-executed) before the bearer [Authorize] gate is reached, so the expected 401 remains unobservable here.")]
     [Trait("Category", "Integration")]
     public async Task Update_NoBearer_Returns401()
     {
@@ -137,8 +133,8 @@ public sealed class ApiTicketsEndpointsTests : IClassFixture<HeimdallWebApplicat
         response.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
     }
 
-    [Fact(Skip = "Same antiforgery production gap as Create_NoBearer_Returns401: POST /api/v1/tickets/{id}/assign " +
-        "with application/json is rejected by UseAntiforgery() at 400 before [Authorize] runs.")]
+    [Fact(Skip = "Current integration-host behavior still returns 400 for JSON POST /api/v1/tickets/{id}/assign "
+        + "before the bearer [Authorize] gate is reached, so the expected 401 remains unobservable here.")]
     [Trait("Category", "Integration")]
     public async Task Assign_NoBearer_Returns401()
     {
@@ -235,10 +231,10 @@ public sealed class ApiTicketsEndpointsTests : IClassFixture<HeimdallWebApplicat
     }
 
     // -----------------------------------------------------------------------------
-    // Authenticated deny-closed paths — these exercise the policy gates and
+    // Authenticated deny paths — these exercise the current policy surface and
     // assert today's observable behavior. See the class remarks for the
-    // NameIdentifier production gap that makes "policy ALLOWS" paths
-    // unreachable via JWT bearer at the moment.
+    // bearer actor-id seam that still keeps FGA-backed "policy ALLOWS" paths
+    // out of reach in this suite.
     // -----------------------------------------------------------------------------
 
     [Fact]
@@ -259,14 +255,12 @@ public sealed class ApiTicketsEndpointsTests : IClassFixture<HeimdallWebApplicat
         using HttpResponseMessage response = await client.SendAsync(request);
 
         response.StatusCode.Should().Be(HttpStatusCode.Forbidden,
-            because: "CanViewTicket deny-closes for every bearer request today: "
-                + "OpenFgaAuthorizationHandler reads ClaimTypes.NameIdentifier, which "
-                + "is unpopulated when MapInboundClaims=false (see class remarks).");
+            because: "the current bearer-auth integration seam still deny-closes FGA-backed ticket reads "
+                + "(see the class remarks for the remaining actor-id seam).");
     }
 
-    [Fact(Skip = "Same antiforgery production gap as Create_NoBearer_Returns401 — PUT /api/v1/tickets/{id} " +
-        "with application/json is rejected by UseAntiforgery() at 400 (and 405 after StatusCodePagesWithReExecute " +
-        "fires) before the [Authorize]+CanEditTicket policy is consulted.")]
+    [Fact(Skip = "Current integration-host behavior still returns 405 (after the initial JSON PUT failure is "
+        + "re-executed) before the CanEditTicket policy runs, so the expected 403 remains unobservable here.")]
     [Trait("Category", "Integration")]
     public async Task Update_Bearer_PolicyDenies_Returns403()
     {
@@ -297,11 +291,11 @@ public sealed class ApiTicketsEndpointsTests : IClassFixture<HeimdallWebApplicat
         using HttpResponseMessage response = await client.SendAsync(request);
 
         response.StatusCode.Should().Be(HttpStatusCode.Forbidden,
-            because: "CanEditTicket deny-closes for every bearer request today (NameIdentifier gap).");
+            because: "the current bearer-auth integration seam still deny-closes FGA-backed ticket edits.");
     }
 
-    [Fact(Skip = "Same antiforgery production gap as Create_NoBearer_Returns401 — POST /api/v1/tickets/{id}/assign " +
-        "with application/json is rejected by UseAntiforgery() at 400 before RequireMfa is evaluated.")]
+    [Fact(Skip = "Current integration-host behavior still returns 400 for JSON POST /api/v1/tickets/{id}/assign "
+        + "before RequireMfa runs, so the expected 403 remains unobservable here.")]
     [Trait("Category", "Integration")]
     public async Task Assign_Bearer_NoMfaAmr_Returns403()
     {
@@ -335,23 +329,23 @@ public sealed class ApiTicketsEndpointsTests : IClassFixture<HeimdallWebApplicat
     // rather than buried in a tracker ticket.
     // -----------------------------------------------------------------------------
 
-    [Fact(Skip = "Production gap: MapInboundClaims=false + no NameClaimType means OpenFgaAuthorizationHandler "
-        + "(which reads ClaimTypes.NameIdentifier only) deny-closes every bearer-authenticated FGA policy check. "
-        + "Restoring this test requires either populating NameIdentifier on the bearer principal or teaching the "
-        + "handler to fall back to the 'sub' claim — both are production-code changes outside this test PR's scope.")]
+    [Fact(Skip = "The factory still wires a deny-only OpenFGA seam for this suite, and the minimal-hosting "
+        + "Autofac test override path does not let us inject an allowing authorization service. Until that seam "
+        + "is fixed, bearer-backed policy-allow cases remain unreachable here.")]
     [Trait("Category", "Integration")]
     public Task GetById_Bearer_PolicyAllows_Returns200() => Task.CompletedTask;
 
-    [Fact(Skip = "Same NameIdentifier production gap as GetById_Bearer_PolicyAllows_Returns200.")]
+    [Fact(Skip = "Same OpenFGA test-double seam as GetById_Bearer_PolicyAllows_Returns200.")]
     [Trait("Category", "Integration")]
     public Task Update_Bearer_PolicyAllows_Returns204() => Task.CompletedTask;
 
-    [Fact(Skip = "Same NameIdentifier production gap, plus the assign endpoint also requires amr=mfa which the "
-        + "password-grant issuance path doesn't emit; restoring this test requires fixing both seams.")]
+    [Fact(Skip = "Same OpenFGA test-double seam as GetById_Bearer_PolicyAllows_Returns200, plus the assign "
+        + "endpoint also requires amr=mfa which the password-grant issuance path does not emit.")]
     [Trait("Category", "Integration")]
     public Task Assign_Bearer_PolicyAllows_Returns200() => Task.CompletedTask;
 
-    [Fact(Skip = "Same NameIdentifier production gap; cannot reach the 404-vs-no-op discriminator branch via JWT bearer today.")]
+    [Fact(Skip = "Same OpenFGA test-double seam as GetById_Bearer_PolicyAllows_Returns200; cannot reach the "
+        + "policy-allow branch needed to distinguish 404 from the assign no-op path.")]
     [Trait("Category", "Integration")]
     public Task Assign_Bearer_TicketNotFound_Returns404_ProblemJson() => Task.CompletedTask;
 

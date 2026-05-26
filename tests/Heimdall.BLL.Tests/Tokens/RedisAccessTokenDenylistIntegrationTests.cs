@@ -75,9 +75,10 @@ public sealed class RedisAccessTokenDenylistIntegrationTests : IAsyncLifetime
 
         TimeSpan? ttl = await db.KeyTimeToLiveAsync(KeyPrefix + jti);
         ttl.Should().NotBeNull();
+        TimeSpan ttlValue = ttl.Value;
         // Positive TTL within reasonable bounds of (exp - now) ≈ 10 minutes.
-        ttl!.Value.Should().BeGreaterThan(TimeSpan.FromMinutes(9));
-        ttl.Value.Should().BeLessThan(TimeSpan.FromMinutes(11));
+        ttlValue.Should().BeGreaterThan(TimeSpan.FromMinutes(9));
+        ttlValue.Should().BeLessThan(TimeSpan.FromMinutes(11));
     }
 
     [Fact]
@@ -116,14 +117,16 @@ public sealed class RedisAccessTokenDenylistIntegrationTests : IAsyncLifetime
         await sut.DenyAsync(jti, DateTimeOffset.UtcNow.AddMinutes(2), "logout", CancellationToken.None);
         TimeSpan? firstTtl = await db.KeyTimeToLiveAsync(KeyPrefix + jti);
         firstTtl.Should().NotBeNull();
+        TimeSpan firstTtlValue = firstTtl.Value;
 
         // Second deny with a much later exp must extend the TTL.
         await sut.DenyAsync(jti, DateTimeOffset.UtcNow.AddMinutes(30), "admin_revoke", CancellationToken.None);
         TimeSpan? secondTtl = await db.KeyTimeToLiveAsync(KeyPrefix + jti);
 
         secondTtl.Should().NotBeNull();
-        secondTtl!.Value.Should().BeGreaterThan(firstTtl!.Value);
-        secondTtl.Value.Should().BeGreaterThan(TimeSpan.FromMinutes(25));
+        TimeSpan secondTtlValue = secondTtl.Value;
+        secondTtlValue.Should().BeGreaterThan(firstTtlValue);
+        secondTtlValue.Should().BeGreaterThan(TimeSpan.FromMinutes(25));
 
         // Reason updated to the later call's value.
         RedisValue value = await db.StringGetAsync(KeyPrefix + jti);
@@ -143,8 +146,9 @@ public sealed class RedisAccessTokenDenylistIntegrationTests : IAsyncLifetime
 
         TimeSpan? ttl = await db.KeyTimeToLiveAsync(KeyPrefix + jti);
         ttl.Should().NotBeNull();
-        ttl!.Value.Should().BeLessThanOrEqualTo(TimeSpan.FromSeconds(30));
-        ttl.Value.Should().BeGreaterThan(TimeSpan.FromSeconds(20),
+        TimeSpan ttlValue = ttl.Value;
+        ttlValue.Should().BeLessThanOrEqualTo(TimeSpan.FromSeconds(30));
+        ttlValue.Should().BeGreaterThan(TimeSpan.FromSeconds(20),
             because: "TTL is clamped to the documented minimum of 30s");
 
         // Verify the key actually expires by polling Redis (no Thread.Sleep).
