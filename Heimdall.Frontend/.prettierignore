@@ -1,0 +1,9 @@
+# Prettier ignore — generated, vendored, and non-source artefacts.
+node_modules
+.svelte-kit
+build
+coverage
+playwright-report
+test-results
+.yarn
+yarn.lock
