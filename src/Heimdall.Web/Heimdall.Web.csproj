@@ -16,6 +16,12 @@
     <PackageReference Include="Serilog.Settings.Configuration" Version="10.0.0" />
     <PackageReference Include="Serilog.Sinks.Console" Version="6.1.1" />
     <PackageReference Include="Swashbuckle.AspNetCore.SwaggerUI" Version="9.0.6" />
+    <!--
+      Phase 6.2 step 6 — YARP HttpForwarder backs the Development-only /app/* reverse
+      proxy to the SvelteKit Vite dev server (Program.cs). Renovate Bot owns the version
+      pin in this repo; do not bump this manually.
+    -->
+    <PackageReference Include="Yarp.ReverseProxy" Version="2.3.0" />
   </ItemGroup>
 
   <PropertyGroup>
