@@ -1,6 +1,9 @@
 using System;
 using System.Collections.Generic;
+using System.Globalization;
 using System.Threading.Tasks;
+using DotNet.Testcontainers.Builders;
+using DotNet.Testcontainers.Containers;
 using Heimdall.Tests.Shared.OpenFga;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
@@ -38,9 +41,11 @@ namespace Heimdall.Web.Tests.Infrastructure;
 /// environments.
 /// </para>
 /// <para>
-/// Redis is not stubbed: the production <c>AbortOnConnectFail=false</c>
-/// multiplexer degrades to cache misses gracefully when no Redis server is
-/// reachable.
+/// Redis is provisioned as a real Testcontainers sidecar (Phase&nbsp;5.7 step 21)
+/// so the access-token denylist and refresh-rotation suites can exercise the
+/// full multiplexer code path end-to-end. Earlier phases continue to work
+/// because the production <c>AbortOnConnectFail=false</c> multiplexer is
+/// indifferent to whether the cache is real or stubbed.
 /// </para>
 /// </remarks>
 public sealed class HeimdallWebApplicationFactoryWithOpenFga
@@ -53,6 +58,16 @@ public sealed class HeimdallWebApplicationFactoryWithOpenFga
         .Build();
 
     private readonly OpenFgaTestcontainersFixture _openFga = new();
+
+    // Phase 5.7 step 21 — a real Redis sidecar so the access-token denylist (Phase
+    // 5.5 step 11) and refresh-rotation paths can be exercised end-to-end. Image
+    // tag tracks docker-compose.yml. Container is gated by the same
+    // HEIMDALL_OPENFGA_TESTS_ENABLED env var so environments without Docker still
+    // skip cleanly.
+    private readonly IContainer _redis = new ContainerBuilder("redis:8-alpine")
+        .WithPortBinding(6379, assignRandomHostPort: true)
+        .WithWaitStrategy(Wait.ForUnixContainer().UntilCommandIsCompleted("redis-cli", "PING"))
+        .Build();
 
     private bool _started;
 
@@ -70,6 +85,17 @@ public sealed class HeimdallWebApplicationFactoryWithOpenFga
     /// </summary>
     public OpenFgaTestcontainersFixture OpenFga => _openFga;
 
+    /// <summary>
+    /// Gets the StackExchange.Redis-compatible connection string for the
+    /// Testcontainers Redis sidecar (<c>host:port</c>). Only valid after
+    /// <see cref="InitializeAsync"/> completes and only when the container was
+    /// started (i.e. when <c>HEIMDALL_OPENFGA_TESTS_ENABLED</c> is not gating).
+    /// </summary>
+    public string RedisConnectionString =>
+        string.Create(
+            CultureInfo.InvariantCulture,
+            $"localhost:{_redis.GetMappedPublicPort(6379)}");
+
     /// <inheritdoc />
     public async Task InitializeAsync()
     {
@@ -85,6 +111,7 @@ public sealed class HeimdallWebApplicationFactoryWithOpenFga
 
         await _postgres.StartAsync().ConfigureAwait(false);
         await _openFga.InitializeAsync().ConfigureAwait(false);
+        await _redis.StartAsync().ConfigureAwait(false);
         _started = true;
     }
 
@@ -93,6 +120,7 @@ public sealed class HeimdallWebApplicationFactoryWithOpenFga
     {
         if (_started)
         {
+            await _redis.DisposeAsync().ConfigureAwait(false);
             await _openFga.DisposeAsync().ConfigureAwait(false);
             await _postgres.DisposeAsync().ConfigureAwait(false);
         }
@@ -107,7 +135,9 @@ public sealed class HeimdallWebApplicationFactoryWithOpenFga
 
         // Core app infrastructure (mirrors HeimdallWebApplicationFactory).
         Environment.SetEnvironmentVariable("DATABASE_URL", _started ? _postgres.GetConnectionString() : string.Empty);
-        Environment.SetEnvironmentVariable("REDIS_URL", "localhost:6379");
+        Environment.SetEnvironmentVariable(
+            "REDIS_URL",
+            _started ? RedisConnectionString : "localhost:6379");
         Environment.SetEnvironmentVariable("SEED_DATABASE", "false");
         Environment.SetEnvironmentVariable("HEIMDALL_BOOTSTRAP_ADMIN_EMAIL", string.Empty);
         Environment.SetEnvironmentVariable("HEIMDALL_BOOTSTRAP_ADMIN_PASSWORD", string.Empty);

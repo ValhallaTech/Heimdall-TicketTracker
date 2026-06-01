@@ -135,6 +135,7 @@ Operator-facing runbooks live under [`docs/runbooks/`](docs/runbooks/):
 
 - [`docs/runbooks/openfga-bootstrap.md`](docs/runbooks/openfga-bootstrap.md) — one-time bootstrap of the OpenFGA sidecar (store + model + env-var wiring) and the Phase 3.4 tuple backfill.
 - [`docs/runbooks/mfa-enrolment.md`](docs/runbooks/mfa-enrolment.md) — operator-side MFA: seed-admin enrolment, recovery-code storage, the `mfa-setup` / `mfa-challenge` rate-limit policies, and the break-glass procedure.
+- [`docs/runbooks/jwt-signing-key-rotation.md`](docs/runbooks/jwt-signing-key-rotation.md) — JWT signing-key lifecycle: first-deploy generation, the 90-day rotation procedure, JWKS cache TTL + in-process invalidation, Redis denylist outage stance, family-replay incident response, the `Api:Documentation:Enabled` toggle, and the Data Protection key-ring cadence.
 
 ## Deployment
 
