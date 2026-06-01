@@ -117,6 +117,20 @@ dotnet run --project src/Heimdall.Web
 
 The Web project auto-runs FluentMigrator migrations on startup and (by default) seeds 50 sample tickets when the `tickets` table is empty.
 
+### SvelteKit frontend (`/app/*`) during development
+
+While the Blazor → SvelteKit migration is in progress, the Web host reverse-proxies `/app/{**catch-all}` to the SvelteKit Vite dev server so both frontends run on a single origin locally. This proxy is **Development-only** (guarded by `IsDevelopment()`) and has no effect in Production.
+
+```bash
+# In a second terminal, run the SvelteKit dev server
+cd Heimdall.Frontend
+corepack enable
+yarn install
+yarn dev   # serves http://localhost:5173
+```
+
+With `dotnet run --project src/Heimdall.Web` also running, browse to `/app` on the Web host. The proxy target is configurable via `Frontend:DevServerUrl` (default `http://localhost:5173`, set in `src/Heimdall.Web/appsettings.Development.json`). The full single-container deployment runbook lands in Phase 6.2 step 20 (see [`docs/implementation/phase-6-checklist.md`](docs/implementation/phase-6-checklist.md)).
+
 ## Testing
 
 Heimdall has three parallel test suites, all gated at **≥80% line and branch coverage** in CI. See [`docs/testing.md`](docs/testing.md) for the deep-dive guide and [`tests/README.md`](tests/README.md) for the suite index.
