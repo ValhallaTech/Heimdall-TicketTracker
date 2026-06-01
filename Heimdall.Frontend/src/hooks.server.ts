@@ -210,6 +210,26 @@ export const handle: Handle = async ({ event, resolve }) => {
   event.locals.accessToken = null;
   event.locals.checkPermission = async () => false;
 
+  // Phase 6.2 step 7 security-review (Medium) mitigation: the refresh exchange
+  // ROTATES the Phase 5 `__Host-heimdall_refresh` token, and re-presenting an
+  // already-rotated token trips family-replay detection (force-logout). Only
+  // run it for genuine app routes/endpoints:
+  //   - `event.route.id === null` → static assets (`/_app/immutable/*`,
+  //     favicon, unmatched paths) which never need auth locals.
+  //   - `event.isSubRequest` → server-side `fetch` from a load function to the
+  //     app's own endpoints; it reuses the parent render's context, so a second
+  //     rotation within one render must be avoided.
+  // Skipping these leaves the deny-closed defaults above in place.
+  //
+  // Residual limitation (tracked as a Phase 6 follow-up, intentionally not
+  // fixed here): truly-concurrent browser-initiated requests to multiple
+  // endpoints during one CSR navigation can still race the rotation. A fuller
+  // fix (single-flight refresh / access-token cache / API rotation grace
+  // window) is out of scope for this step.
+  if (event.route.id === null || event.isSubRequest) {
+    return resolve(event);
+  }
+
   const refreshToken = event.cookies.get(REFRESH_COOKIE_NAME);
   const rotatedCookies: string[] = [];
 

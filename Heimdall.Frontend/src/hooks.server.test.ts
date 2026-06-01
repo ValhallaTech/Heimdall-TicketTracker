@@ -113,6 +113,12 @@ function buildEvent(options: {
     fetch: options.fetch as unknown as typeof fetch,
     request: new Request('http://localhost/'),
     url: new URL('http://localhost/'),
+    // A matched app route (non-null id) that is not a sub-request, so the
+    // refresh exchange runs — the gating added for the Phase 6.2 step 7
+    // security review only skips static assets (route.id === null) and
+    // load-function sub-requests (isSubRequest === true).
+    route: { id: '/' },
+    isSubRequest: false,
   } as unknown as RequestEvent;
 
   const resolve = vi.fn(
