@@ -72,14 +72,13 @@ agent** (`agents/javascript-unit-tests.md`), per proposal §11 (open question 6,
 resolved 2026-05-15) and `phase-6-checklist.md` Phase 6.1 steps 3–4.
 
 The **Frontend Expert** authors production Svelte/SvelteKit code only and may
-**only scaffold stub specs** for the test engineer to fill in. The stubs in this
-repo are intentionally empty (`it.todo` / `test.fixme`) and are marked with a
-`STUB — JS/TS Unit Test Engineer authors the real assertions` comment:
+**only scaffold stub specs** for the test engineer to fill in. The authored
+tests in this scaffold contain real assertions:
 
-- [`src/routes/page.smoke.spec.ts`](src/routes/page.smoke.spec.ts) — splash render smoke (Vitest).
+- [`src/routes/page.smoke.test.ts`](src/routes/page.smoke.test.ts) — splash render smoke (Vitest).
 - [`e2e/smoke.test.ts`](e2e/smoke.test.ts) — `/` returns 200 + renders Splash (Playwright).
 
-Do not add real assertions to those files outside the test engineer's ownership.
+Do not add or modify assertions in those files outside the test engineer's ownership.
 
 ## Svelte MCP
 

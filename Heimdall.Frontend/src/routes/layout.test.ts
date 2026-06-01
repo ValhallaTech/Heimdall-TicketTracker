@@ -5,7 +5,6 @@
  * snippet. We supply a raw snippet so the layout's `{@render children()}` path
  * executes and we can assert the slotted content appears in the document.
  */
-import '@testing-library/jest-dom/vitest';
 import { describe, expect, it } from 'vitest';
 import { render, screen } from '@testing-library/svelte';
 import { createRawSnippet } from 'svelte';

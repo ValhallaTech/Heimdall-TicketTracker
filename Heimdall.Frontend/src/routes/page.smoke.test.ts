@@ -7,7 +7,6 @@
  * — the `data-testid="splash"` landmark, the "Heimdall" heading, and the
  * default tagline — rather than implementation details.
  */
-import '@testing-library/jest-dom/vitest';
 import { describe, expect, it } from 'vitest';
 import { render, screen } from '@testing-library/svelte';
 
