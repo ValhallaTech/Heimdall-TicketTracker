@@ -149,12 +149,14 @@ public static class ApiAuthEndpoints
         //
         // .DisableAntiforgery() is mandatory: the global UseAntiforgery() middleware
         // 400s application/json POSTs before they reach the handler. .AllowAnonymous()
-        // because these are pre-authentication flows. forgot/reset bind to the same
-        // "password-reset" limiter the form handlers use; register matches its form
-        // sibling (no rate-limit policy).
+        // because these are pre-authentication flows. register/forgot/reset all bind to
+        // the same "password-reset" limiter the form handlers use: each one dispatches a
+        // confirmation/reset email, so an un-throttled anonymous caller is an
+        // account-spray / confirmation-email-bombing primitive — the limiter is the gate.
         endpoints
             .MapPost("/api/v1/auth/register", HandleApiRegisterAsync)
             .AllowAnonymous()
+            .RequireRateLimiting("password-reset")
             .DisableAntiforgery()
             .WithName("ApiAuthRegister");
 

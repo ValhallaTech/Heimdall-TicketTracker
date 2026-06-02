@@ -32,7 +32,11 @@
   );
 
   /** Identity validation codes from the API, surfaced under the generic error. */
-  const codes = $derived(form?.error === 'registration_failed' ? (form?.codes ?? []) : []);
+  const codes = $derived<string[]>(
+    form?.error === 'registration_failed' && 'codes' in form && Array.isArray(form.codes)
+      ? form.codes
+      : [],
+  );
 </script>
 
 <svelte:head>
