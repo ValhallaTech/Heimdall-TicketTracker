@@ -39,6 +39,7 @@ using Microsoft.Extensions.Options;
 using Microsoft.IdentityModel.Tokens;
 using Serilog;
 using StackExchange.Redis;
+using Yarp.ReverseProxy.Forwarder;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -756,6 +757,17 @@ builder.Host.ConfigureContainer<ContainerBuilder>(containerBuilder =>
     containerBuilder.RegisterModule<ApplicationModule>()
 );
 
+// Phase 6.2 step 6 — register YARP's IHttpForwarder ONLY in Development. It backs the
+// dev-only /app/{**catch-all} passthrough to the SvelteKit Vite dev server mapped near
+// the end of the pipeline. Registering it solely in Development keeps the forwarder (and
+// its pooled HttpMessageInvoker) out of the Production service graph entirely — the route
+// mapping below is the load-bearing dev guard, this is defense-in-depth. Follows the
+// Phase 5.6 step 16 Swagger/OpenAPI dev-guard pattern.
+if (builder.Environment.IsDevelopment())
+{
+    builder.Services.AddHttpForwarder();
+}
+
 var app = builder.Build();
 
 // --- Run migrations at startup --------------------------------------------
@@ -973,6 +985,16 @@ app.MapApiAuthEndpoints();
 // way the Razor admin surfaces do.
 app.MapApiTicketsEndpoints();
 
+// --- API authz check endpoint (Phase 6.2 step 7) -------------------------
+// POST /api/v1/authz/check — bearer-only permission probe the SvelteKit
+// frontend calls to drive conditional UI. The subject is always derived
+// server-side from the authenticated principal (never client-supplied), and
+// all OpenFGA Check() calls remain server-side so the browser never talks to
+// the FGA sidecar directly (docs/proposals/blazor-to-svelte-transition.md
+// §4.2). Mapped here so it shares the routing namespace + middleware pipeline
+// with the rest of the /api/v1/* surface.
+app.MapApiAuthzEndpoints();
+
 // --- JWKS endpoint (Phase 5.1 step 3) ------------------------------------
 // Publishes the public halves of the trusted signing keys at
 // /.well-known/jwks.json. Anonymous; response cached for 5 minutes with
@@ -1010,6 +1032,29 @@ if (app.Environment.IsDevelopment())
         options.SwaggerEndpoint("/api/v1/openapi.json", "Heimdall API v1");
         options.DocumentTitle = "Heimdall API — Swagger UI";
     });
+}
+
+// --- Development-only SvelteKit dev-server reverse proxy (Phase 6.2 step 6) ---
+// Forwards every request under /app/{**catch-all} to the SvelteKit Vite dev server so
+// the SvelteKit frontend is a drop-in replacement for Blazor during local development
+// (docs/proposals/blazor-to-svelte-transition.md). This block is guarded by
+// app.Environment.IsDevelopment() exactly like the Phase 5.6 step 16 Swagger/OpenAPI
+// registration above — that guard is the pattern being followed here. There is no path
+// for this route to be active outside Development: the forwarder services are only
+// registered in Development (see AddHttpForwarder above) AND the route is only mapped
+// inside this dev guard, so Production behaviour is unchanged.
+//
+// The target base URL is configurable via Frontend:DevServerUrl (default
+// http://localhost:5173, set in appsettings.Development.json). MapForwarder uses YARP's
+// IHttpForwarder, which forwards HTTP upgrade (WebSocket) requests by default, so Vite's
+// HMR websocket passes through unchanged.
+if (app.Environment.IsDevelopment())
+{
+    string frontendDevServerUrl = app.Configuration.GetValue(
+        "Frontend:DevServerUrl",
+        defaultValue: "http://localhost:5173")!;
+
+    app.MapForwarder("/app/{**catch-all}", frontendDevServerUrl);
 }
 
 app.Run();

@@ -1,6 +1,6 @@
 # Phase 6 — Blazor → Svelte/SvelteKit Migration: Implementation Checklist
 
-**Status:** Phase 6.1 (Scaffold and tooling) in progress — steps 1–4 implemented in the Phase 6.1 PR; steps 5+ not started. Phase 5 is complete on `main` (Phase 5.7 / #65), which unblocks Phase 6.
+**Status:** Phase 6.1 (Scaffold and tooling, steps 1–4) complete (#68). Phase 6.2 (Auth glue and dev coexistence, steps 5–7) implemented on `copilot/phase-6-2`; steps 8+ not started. Phase 5 is complete on `main` (Phase 5.7 / #65), which unblocks Phase 6.
 **Source of truth:** [`docs/proposals/blazor-to-svelte-transition.md`](../proposals/blazor-to-svelte-transition.md) (design, topology, page inventory) and [`security-and-authorization.md`](../proposals/security-and-authorization.md) §9.3 Phase 6 (approval and constraints).
 **Upstream:** [Svelte 5](https://svelte.dev/docs/svelte/overview), [SvelteKit 2](https://svelte.dev/docs/kit/introduction), [`adapter-node`](https://svelte.dev/docs/kit/adapter-node), [`bits-ui`](https://bits-ui.com), [`shadcn-svelte`](https://shadcn-svelte.com), [Tailwind CSS](https://tailwindcss.com), [Vitest](https://vitest.dev), [`@testing-library/svelte`](https://testing-library.com/docs/svelte-testing-library/intro/), [Playwright](https://playwright.dev), [`eslint-plugin-svelte`](https://github.com/sveltejs/eslint-plugin-svelte), [`prettier-plugin-svelte`](https://github.com/sveltejs/prettier-plugin-svelte).
 **Depends on:**
