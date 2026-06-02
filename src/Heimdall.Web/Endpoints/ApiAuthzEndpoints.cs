@@ -42,19 +42,19 @@ public static class ApiAuthzEndpoints
     private const string ProblemJsonContentType = "application/problem+json";
 
     /// <summary>
-    /// Maps <c>POST /api/v1/authz/check</c> onto <paramref name="app"/>. Called from
+    /// Maps <c>POST /api/v1/authz/check</c> onto <paramref name="endpoints"/>. Called from
     /// <c>Program.cs</c> immediately after <see cref="ApiTicketsEndpoints.MapApiTicketsEndpoints"/>
     /// so it shares the same routing namespace + middleware pipeline as the rest of the
     /// <c>/api/v1/*</c> surface.
     /// </summary>
-    /// <param name="app">The web application / route builder.</param>
-    /// <returns><paramref name="app"/> for fluent chaining.</returns>
-    /// <exception cref="ArgumentNullException"><paramref name="app"/> is <c>null</c>.</exception>
-    public static WebApplication MapApiAuthzEndpoints(this WebApplication app)
+    /// <param name="endpoints">The endpoint route builder.</param>
+    /// <returns><paramref name="endpoints"/> for fluent chaining.</returns>
+    /// <exception cref="ArgumentNullException"><paramref name="endpoints"/> is <c>null</c>.</exception>
+    public static IEndpointRouteBuilder MapApiAuthzEndpoints(this IEndpointRouteBuilder endpoints)
     {
-        ArgumentNullException.ThrowIfNull(app);
+        ArgumentNullException.ThrowIfNull(endpoints);
 
-        RouteGroupBuilder group = app
+        RouteGroupBuilder group = endpoints
             .MapGroup("/api/v1/authz")
             .RequireRateLimiting("api-token")
             .WithTags("Authz");
@@ -74,7 +74,7 @@ public static class ApiAuthzEndpoints
             .DisableAntiforgery()
             .WithName("ApiAuthzCheck");
 
-        return app;
+        return endpoints;
     }
 
     /// <summary>
