@@ -1077,7 +1077,7 @@ public static class ApiAuthEndpoints
             // do not extend it here.
             string token = await userManager.GeneratePasswordResetTokenAsync(user).ConfigureAwait(false);
             string resetUrl =
-                $"{httpContext.Request.Scheme}://{httpContext.Request.Host}/reset-password" +
+                $"{httpContext.Request.Scheme}://{httpContext.Request.Host}/account/reset-password" +
                 $"?email={Uri.EscapeDataString(email)}&token={Uri.EscapeDataString(token)}";
 
             var message = new EmailMessage

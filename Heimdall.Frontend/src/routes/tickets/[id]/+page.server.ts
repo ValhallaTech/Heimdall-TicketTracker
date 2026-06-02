@@ -73,11 +73,16 @@ export const actions: Actions = {
     }
 
     const id = event.params.id;
+    const parsedId = Number.parseInt(id, 10);
+    if (Number.isNaN(parsedId)) {
+      error(404);
+    }
+
     const form = await event.request.formData();
     const assigneeId = readString(form, 'assigneeId');
     const values = {
       // Id must equal the route id (the API rejects a mismatch).
-      Id: Number.parseInt(id, 10),
+      Id: parsedId,
       Title: readString(form, 'title'),
       Description: readString(form, 'description'),
       Status: readInt(form, 'status', 0),

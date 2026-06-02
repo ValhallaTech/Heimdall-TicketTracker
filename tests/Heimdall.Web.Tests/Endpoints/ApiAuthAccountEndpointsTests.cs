@@ -61,10 +61,10 @@ public sealed class CapturingEmailSender : IEmailSender
 /// Test-only <see cref="IStartupFilter"/> that stamps a unique submitted-email value into
 /// <c>HttpContext.Items</c> at the very front of the pipeline (before
 /// <c>UseRateLimiter</c>), so the <c>password-reset</c> policy — which partitions on
-/// <c>(ip|submitted-email)</c> and only ever sees an empty email for JSON requests —
-/// places every request in its own partition. Without this, the shared <c>ip|</c>
-/// partition's 5-permits/10-minutes budget is exhausted within a single test class and
-/// later forgot/reset requests are rejected with an empty-bodied <c>429</c>, which
+/// <c>(ip|submitted-email)</c> — places every request in its own partition. Without
+/// this, repeated requests from the same in-test source can consume the shared
+/// 5-permits/10-minutes budget and later forgot/reset requests are rejected with an
+/// empty-bodied <c>429</c>, which
 /// <c>UseStatusCodePagesWithReExecute</c> then masks as a <c>400 text/html</c>. The
 /// rate limiter itself is tested elsewhere; here it must not interfere with the handler
 /// behavior under test.
@@ -551,6 +551,8 @@ public sealed class ApiAuthAccountEndpointsTests
 
         _active.EmailSender.MessagesTo(email).Should().ContainSingle()
             .Which.Subject.Should().Be("Reset your Heimdall password");
+        _active.EmailSender.MessagesTo(email).Single().PlainTextBody.Should()
+            .Contain("/account/reset-password?");
 
         await using NpgsqlConnection connection = OpenConnection(_active);
         int auditRows = await connection.ExecuteScalarAsync<int>(

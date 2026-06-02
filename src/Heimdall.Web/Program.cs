@@ -499,8 +499,9 @@ builder.Services.AddSingleton<
 // (which would sync-over-async on body I/O if the form isn't buffered yet
 // and risks threadpool starvation under load), the email is pre-extracted
 // asynchronously by RateLimitFormEmailMiddleware (registered earlier in the
-// pipeline) and stashed in HttpContext.Items. The callback below just reads
-// that value synchronously.
+// pipeline) and stashed in HttpContext.Items. Form and JSON auth payloads are
+// both supported so account-form and API flows share the same keying model.
+// The callback below just reads that value synchronously.
 builder.Services.AddRateLimiter(options =>
 {
     options.AddPolicy("login", httpContext =>
@@ -954,8 +955,9 @@ app.UseSerilogRequestLogging();
 // and will not break the existing public Tickets pages.
 app.UseAuthentication();
 app.UseAuthorization();
-// Pre-extract the form-submitted email on (ip|email)-keyed rate-limited POSTs
-// so the synchronous rate-limit policy callbacks (login, password-reset) can
+// Pre-extract the submitted email on (ip|email)-keyed rate-limited POSTs
+// (form + JSON) so the synchronous rate-limit policy callbacks (login,
+// password-reset) can
 // read it from HttpContext.Items without sync-over-async on body I/O. Must
 // run before UseRateLimiter so the policy observes the stashed value.
 app.UseRateLimitFormEmailExtraction();

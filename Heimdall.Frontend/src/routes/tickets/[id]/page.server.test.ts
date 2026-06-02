@@ -224,6 +224,21 @@ describe('/tickets/[id] +page.server.ts default action', () => {
     }
   });
 
+  it('throws error(404) when route param id is not numeric', async () => {
+    const { event, fetchMock } = actionEvent({
+      accessToken: 'tok',
+      id: 'not-a-number',
+      fields: { title: 'x', description: 'd', teamId: 't', projectId: 'p', reporterId: 'r' },
+    });
+    try {
+      await runAction(event);
+      throw new Error('expected error');
+    } catch (e) {
+      expect(isError(e) && e.status).toBe(404);
+      expect(fetchMock).not.toHaveBeenCalled();
+    }
+  });
+
   it('returns fail(422, { errors, values }) on a validation problem+json', async () => {
     const { event } = actionEvent({
       accessToken: 'tok',
