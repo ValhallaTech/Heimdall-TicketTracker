@@ -1,16 +1,45 @@
-// STUB: spec authored by the JS/TS Unit Test Engineer
 /**
- * Stub spec for the forgot-password confirmation page
+ * Unit spec for the forgot-password confirmation page
  * (`/account/forgot-password/confirmation` +page.svelte).
  *
- * Cases to cover (real assertions owned by the JS/TS Unit Test Engineer):
+ * Static, public "check your email" page whose copy is generic by design (never
+ * confirms whether an account existed). Asserts the landmark, heading, the
+ * non-leaking body copy, the decorative envelope, and the "Back to sign in"
+ * link target.
  */
-import { describe, it } from 'vitest';
+import { describe, expect, it } from 'vitest';
+import { render, screen } from '@testing-library/svelte';
+
+import Page from './+page.svelte';
 
 describe('/account/forgot-password/confirmation +page.svelte', () => {
-  it.todo('renders the data-testid="forgot-password-confirmation" landmark');
-  it.todo('renders the "Check your email" heading (level 1)');
-  it.todo('renders the generic, non-account-leaking body copy');
-  it.todo('renders a "Back to sign in" link pointing at root-relative "/login"');
-  it.todo('marks the decorative envelope SVG aria-hidden');
+  it('renders the data-testid="forgot-password-confirmation" landmark', () => {
+    render(Page);
+
+    expect(screen.getByTestId('forgot-password-confirmation')).toBeInTheDocument();
+  });
+
+  it('renders the "Check your email" heading (level 1)', () => {
+    render(Page);
+
+    expect(screen.getByRole('heading', { level: 1, name: 'Check your email' })).toBeInTheDocument();
+  });
+
+  it('renders the generic, non-account-leaking body copy', () => {
+    render(Page);
+
+    expect(screen.getByText(/if an account exists for the email you entered/i)).toBeInTheDocument();
+  });
+
+  it('renders a "Back to sign in" link pointing at root-relative "/login"', () => {
+    render(Page);
+
+    expect(screen.getByRole('link', { name: 'Back to sign in' })).toHaveAttribute('href', '/login');
+  });
+
+  it('marks the decorative envelope SVG aria-hidden', () => {
+    const { container } = render(Page);
+
+    expect(container.querySelector('[aria-hidden="true"]')).not.toBeNull();
+  });
 });
