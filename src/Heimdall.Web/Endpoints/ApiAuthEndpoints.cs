@@ -7,10 +7,13 @@ using System.Threading;
 using System.Threading.Tasks;
 using Heimdall.BLL.Tokens;
 using Heimdall.Core.Auditing;
+using Heimdall.Core.Email;
 using Heimdall.Core.Models;
 using Heimdall.Core.Tokens;
 using Heimdall.DAL.Repositories;
 using Heimdall.Web.Authorization.Policies;
+using Heimdall.Web.Email;
+using Heimdall.Web.Identity;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Builder;
@@ -136,6 +139,38 @@ public static class ApiAuthEndpoints
             .RequireRateLimiting("api-token")
             .DisableAntiforgery()
             .WithName("ApiAuthLogout");
+
+        // Phase 6.3/6.4 follow-up — JSON mirrors of the email-driven self-service
+        // flows in AccountEndpoints (register / forgot-password / reset-password) so
+        // the SvelteKit frontend can port the Register, ForgotPassword and
+        // ResetPassword pages. These are JSON-in/JSON-out and never touch the
+        // application cookie. Each carries the same security/audit semantics as its
+        // form-posted AccountEndpoints sibling.
+        //
+        // .DisableAntiforgery() is mandatory: the global UseAntiforgery() middleware
+        // 400s application/json POSTs before they reach the handler. .AllowAnonymous()
+        // because these are pre-authentication flows. forgot/reset bind to the same
+        // "password-reset" limiter the form handlers use; register matches its form
+        // sibling (no rate-limit policy).
+        endpoints
+            .MapPost("/api/v1/auth/register", HandleApiRegisterAsync)
+            .AllowAnonymous()
+            .DisableAntiforgery()
+            .WithName("ApiAuthRegister");
+
+        endpoints
+            .MapPost("/api/v1/auth/forgot-password", HandleApiForgotPasswordAsync)
+            .AllowAnonymous()
+            .RequireRateLimiting("password-reset")
+            .DisableAntiforgery()
+            .WithName("ApiAuthForgotPassword");
+
+        endpoints
+            .MapPost("/api/v1/auth/reset-password", HandleApiResetPasswordAsync)
+            .AllowAnonymous()
+            .RequireRateLimiting("password-reset")
+            .DisableAntiforgery()
+            .WithName("ApiAuthResetPassword");
 
         return endpoints;
     }
@@ -788,6 +823,456 @@ public static class ApiAuthEndpoints
             .Any(c => string.Equals(c.Value, RequireMfaAuthorizationHandler.MfaAmrValue, StringComparison.Ordinal));
     }
 
+    // ---- Phase 6.3/6.4 follow-up: JSON self-service auth handlers -------------
+
+    /// <summary>
+    /// JSON request body for <c>POST /api/v1/auth/register</c>.
+    /// </summary>
+    /// <param name="Email">The submitted email address.</param>
+    /// <param name="Password">The submitted password (never logged).</param>
+    /// <param name="ConfirmPassword">The password confirmation (never logged).</param>
+    public sealed record RegisterRequest(string? Email, string? Password, string? ConfirmPassword);
+
+    /// <summary>
+    /// JSON request body for <c>POST /api/v1/auth/forgot-password</c>.
+    /// </summary>
+    /// <param name="Email">The submitted email address.</param>
+    public sealed record ForgotPasswordRequest(string? Email);
+
+    /// <summary>
+    /// JSON request body for <c>POST /api/v1/auth/reset-password</c>.
+    /// </summary>
+    /// <param name="Email">The submitted email address.</param>
+    /// <param name="Token">The single-use password-reset token from the emailed link.</param>
+    /// <param name="Password">The submitted new password (never logged).</param>
+    /// <param name="ConfirmPassword">The new-password confirmation (never logged).</param>
+    public sealed record ResetPasswordRequest(string? Email, string? Token, string? Password, string? ConfirmPassword);
+
+    /// <summary>
+    /// JSON mirror of <see cref="AccountEndpoints.HandleRegisterAsync"/>. Gated on
+    /// <em>both</em> <see cref="EmailFlowGate.IsActive"/> and
+    /// <see cref="RegistrationOptions.Enabled"/>; either being off returns
+    /// <c>404</c> so the surface is indistinguishable from an un-deployed feature.
+    /// The new account is created with <c>EmailConfirmed = false</c>; a confirmation
+    /// link is mailed, and a send failure does <em>not</em> roll back the account.
+    /// The success response is intentionally generic
+    /// (<c>{ "status": "confirmation_pending" }</c>) so it does not reveal whether
+    /// the email was actually deliverable.
+    /// </summary>
+    /// <param name="httpContext">The current HTTP context.</param>
+    /// <param name="request">The JSON-bound request body.</param>
+    /// <param name="userManager">Identity user creation + normalization.</param>
+    /// <param name="emailSender">Confirmation-email transport.</param>
+    /// <param name="gate">Email-flow feature gate.</param>
+    /// <param name="registrationOptions">Bound <see cref="RegistrationOptions"/>.</param>
+    /// <param name="auditWriter">Audit-event writer.</param>
+    /// <param name="cancellationToken">Request cancellation token.</param>
+    /// <returns>
+    /// <c>200 { "status": "confirmation_pending" }</c> on success; <c>400</c> with
+    /// <c>{ "error": "invalid_email" | "password_mismatch" | "registration_failed", ... }</c>
+    /// on validation/identity failure; <c>404</c> when the gate is inactive or
+    /// registration is disabled.
+    /// </returns>
+    internal static async Task<IResult> HandleApiRegisterAsync(
+        HttpContext httpContext,
+        [FromBody] RegisterRequest request,
+        [FromServices] UserManager<HeimdallUser> userManager,
+        [FromServices] IEmailSender emailSender,
+        [FromServices] EmailFlowGate gate,
+        [FromServices] IOptions<RegistrationOptions> registrationOptions,
+        [FromServices] IAuditEventWriter auditWriter,
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(httpContext);
+        ArgumentNullException.ThrowIfNull(userManager);
+        ArgumentNullException.ThrowIfNull(emailSender);
+        ArgumentNullException.ThrowIfNull(gate);
+        ArgumentNullException.ThrowIfNull(registrationOptions);
+        ArgumentNullException.ThrowIfNull(auditWriter);
+
+        if (!gate.IsActive || !(registrationOptions.Value?.Enabled ?? false))
+        {
+            return Results.NotFound();
+        }
+
+        string email = request?.Email ?? string.Empty;
+        string password = request?.Password ?? string.Empty;
+        string confirmPassword = request?.ConfirmPassword ?? string.Empty;
+
+        string? ip = httpContext.Connection.RemoteIpAddress?.ToString();
+        string? userAgent = TruncateUserAgent(httpContext.Request.Headers.UserAgent.ToString());
+        string emailDomain = ExtractEmailDomain(email);
+
+        if (!IsLikelyEmail(email))
+        {
+            return Results.Json(
+                new { error = "invalid_email" },
+                statusCode: StatusCodes.Status400BadRequest,
+                contentType: ContentTypeJson);
+        }
+
+        if (!string.Equals(password, confirmPassword, StringComparison.Ordinal))
+        {
+            return Results.Json(
+                new { error = "password_mismatch" },
+                statusCode: StatusCodes.Status400BadRequest,
+                contentType: ContentTypeJson);
+        }
+
+        var user = new HeimdallUser
+        {
+            Id = Guid.NewGuid(),
+            Email = email,
+            NormalizedEmail = userManager.NormalizeEmail(email),
+            SecurityStamp = Guid.NewGuid().ToString(),
+            ConcurrencyStamp = Guid.NewGuid().ToString(),
+            EmailConfirmed = false,
+        };
+
+        IdentityResult createResult = await userManager.CreateAsync(user, password).ConfigureAwait(false);
+
+        if (!createResult.Succeeded)
+        {
+            string[] errorCodes = ExtractIdentityErrorCodes(createResult);
+            string failPayload = JsonSerializer.Serialize(new
+            {
+                email_domain = emailDomain,
+                error_codes = errorCodes,
+            });
+            await TryWriteAuditAsync(httpContext, auditWriter, new AuditEvent
+            {
+                ActorUserId = null,
+                EventType = "account.register.failure",
+                Target = null,
+                Ip = ip,
+                UserAgent = userAgent,
+                PayloadJson = failPayload,
+            }, cancellationToken).ConfigureAwait(false);
+
+            return Results.Json(
+                new { error = "registration_failed", codes = errorCodes },
+                statusCode: StatusCodes.Status400BadRequest,
+                contentType: ContentTypeJson);
+        }
+
+        // Mail the confirmation link. Send failures must NOT roll back the
+        // newly-created account — the user can re-request via forgot-password
+        // or an admin can resend — but we do audit the failure.
+        string confirmToken = await userManager.GenerateEmailConfirmationTokenAsync(user).ConfigureAwait(false);
+        string confirmUrl =
+            $"{httpContext.Request.Scheme}://{httpContext.Request.Host}/account/confirm-email" +
+            $"?email={Uri.EscapeDataString(email)}&token={Uri.EscapeDataString(confirmToken)}";
+
+        var message = new EmailMessage
+        {
+            To = email,
+            Subject = "Confirm your Heimdall account",
+            HtmlBody =
+                "<p>Welcome to Heimdall! Please confirm your email address to activate your account.</p>" +
+                $"<p><a href=\"{confirmUrl}\">Confirm your email</a></p>",
+            PlainTextBody =
+                "Welcome to Heimdall! Please confirm your email address to activate your account.\n\n" +
+                $"Confirm your email: {confirmUrl}",
+        };
+
+        try
+        {
+            await emailSender.SendAsync(message, cancellationToken).ConfigureAwait(false);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            ILoggerFactory loggerFactory = httpContext.RequestServices.GetRequiredService<ILoggerFactory>();
+            ILogger logger = loggerFactory.CreateLogger("ApiAuthEndpoints");
+            logger.LogError(
+                ex,
+                "Account-confirmation email send failed for new user {UserId}; account remains in unconfirmed state.",
+                user.Id);
+
+            string sendFailPayload = JsonSerializer.Serialize(new
+            {
+                email_domain = emailDomain,
+                exception_type = ex.GetType().FullName,
+            });
+            await TryWriteAuditAsync(httpContext, auditWriter, new AuditEvent
+            {
+                ActorUserId = user.Id,
+                EventType = "account.register.confirmation_email.failure",
+                Target = user.Id.ToString(),
+                Ip = ip,
+                UserAgent = userAgent,
+                PayloadJson = sendFailPayload,
+            }, cancellationToken).ConfigureAwait(false);
+        }
+
+        string successPayload = JsonSerializer.Serialize(new { email_domain = emailDomain });
+        await TryWriteAuditAsync(httpContext, auditWriter, new AuditEvent
+        {
+            ActorUserId = user.Id,
+            EventType = "account.register.success",
+            Target = user.Id.ToString(),
+            Ip = ip,
+            UserAgent = userAgent,
+            PayloadJson = successPayload,
+        }, cancellationToken).ConfigureAwait(false);
+
+        return Results.Json(
+            new { status = "confirmation_pending" },
+            statusCode: StatusCodes.Status200OK,
+            contentType: ContentTypeJson);
+    }
+
+    /// <summary>
+    /// JSON mirror of <see cref="AccountEndpoints.HandleForgotPasswordAsync"/>.
+    /// Always returns the same generic <c>200 { "status": "ok" }</c> regardless of
+    /// whether the email matches a real, confirmed account — surfacing existence
+    /// here would expose a user-enumeration oracle. When
+    /// <see cref="EmailFlowGate.IsActive"/> is false, returns <c>404</c>. The
+    /// matched/confirmed branch mails a reset link and audits
+    /// <c>password.reset.requested</c>; the unmatched branch runs the fixed
+    /// <c>Task.Delay(50)</c> timing mitigation and audits
+    /// <c>password.reset.requested.unknown_email</c>.
+    /// </summary>
+    /// <param name="httpContext">The current HTTP context.</param>
+    /// <param name="request">The JSON-bound request body.</param>
+    /// <param name="userManager">Identity user lookup + token generation.</param>
+    /// <param name="emailSender">Reset-email transport.</param>
+    /// <param name="gate">Email-flow feature gate.</param>
+    /// <param name="auditWriter">Audit-event writer.</param>
+    /// <param name="cancellationToken">Request cancellation token.</param>
+    /// <returns><c>200 { "status": "ok" }</c> in all non-gated cases; <c>404</c> when the gate is inactive.</returns>
+    internal static async Task<IResult> HandleApiForgotPasswordAsync(
+        HttpContext httpContext,
+        [FromBody] ForgotPasswordRequest request,
+        [FromServices] UserManager<HeimdallUser> userManager,
+        [FromServices] IEmailSender emailSender,
+        [FromServices] EmailFlowGate gate,
+        [FromServices] IAuditEventWriter auditWriter,
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(httpContext);
+        ArgumentNullException.ThrowIfNull(userManager);
+        ArgumentNullException.ThrowIfNull(emailSender);
+        ArgumentNullException.ThrowIfNull(gate);
+        ArgumentNullException.ThrowIfNull(auditWriter);
+
+        if (!gate.IsActive)
+        {
+            return Results.NotFound();
+        }
+
+        string email = request?.Email ?? string.Empty;
+
+        string? ip = httpContext.Connection.RemoteIpAddress?.ToString();
+        string? userAgent = TruncateUserAgent(httpContext.Request.Headers.UserAgent.ToString());
+        string emailDomain = ExtractEmailDomain(email);
+
+        HeimdallUser? user = await userManager.FindByEmailAsync(email).ConfigureAwait(false);
+
+        if (user is not null && user.EmailConfirmed)
+        {
+            // Generate a single-use token and mail the reset link. Token lifetime
+            // is governed by Identity's DataProtectorTokenProvider defaults — we
+            // do not extend it here.
+            string token = await userManager.GeneratePasswordResetTokenAsync(user).ConfigureAwait(false);
+            string resetUrl =
+                $"{httpContext.Request.Scheme}://{httpContext.Request.Host}/reset-password" +
+                $"?email={Uri.EscapeDataString(email)}&token={Uri.EscapeDataString(token)}";
+
+            var message = new EmailMessage
+            {
+                To = email,
+                Subject = "Reset your Heimdall password",
+                HtmlBody =
+                    "<p>A password reset was requested for your Heimdall account.</p>" +
+                    $"<p><a href=\"{resetUrl}\">Reset your password</a></p>" +
+                    "<p>If you did not request this, you can safely ignore this email. " +
+                    "The link will expire automatically.</p>",
+                PlainTextBody =
+                    "A password reset was requested for your Heimdall account.\n\n" +
+                    $"Reset your password: {resetUrl}\n\n" +
+                    "If you did not request this, you can safely ignore this email. " +
+                    "The link will expire automatically.",
+            };
+
+            try
+            {
+                await emailSender.SendAsync(message, cancellationToken).ConfigureAwait(false);
+
+                string payload = JsonSerializer.Serialize(new { email_domain = emailDomain });
+                await TryWriteAuditAsync(httpContext, auditWriter, new AuditEvent
+                {
+                    ActorUserId = user.Id,
+                    EventType = "password.reset.requested",
+                    Target = user.Id.ToString(),
+                    Ip = ip,
+                    UserAgent = userAgent,
+                    PayloadJson = payload,
+                }, cancellationToken).ConfigureAwait(false);
+            }
+            catch (Exception ex) when (ex is not OperationCanceledException)
+            {
+                ILoggerFactory loggerFactory = httpContext.RequestServices.GetRequiredService<ILoggerFactory>();
+                ILogger logger = loggerFactory.CreateLogger("ApiAuthEndpoints");
+                logger.LogError(
+                    ex,
+                    "Password-reset email send failed for user {UserId}; returning generic confirmation.",
+                    user.Id);
+
+                string failPayload = JsonSerializer.Serialize(new { email_domain = emailDomain });
+                await TryWriteAuditAsync(httpContext, auditWriter, new AuditEvent
+                {
+                    ActorUserId = user.Id,
+                    EventType = "password.reset.send_failed",
+                    Target = user.Id.ToString(),
+                    Ip = ip,
+                    UserAgent = userAgent,
+                    PayloadJson = failPayload,
+                }, cancellationToken).ConfigureAwait(false);
+            }
+        }
+        else
+        {
+            // Timing-attack mitigation, mirroring the unknown-user login branch.
+            await Task.Delay(50, cancellationToken).ConfigureAwait(false);
+
+            string payload = JsonSerializer.Serialize(new { submitted_email_domain = emailDomain });
+            await TryWriteAuditAsync(httpContext, auditWriter, new AuditEvent
+            {
+                ActorUserId = null,
+                EventType = "password.reset.requested.unknown_email",
+                Target = null,
+                Ip = ip,
+                UserAgent = userAgent,
+                PayloadJson = payload,
+            }, cancellationToken).ConfigureAwait(false);
+        }
+
+        return Results.Json(
+            new { status = "ok" },
+            statusCode: StatusCodes.Status200OK,
+            contentType: ContentTypeJson);
+    }
+
+    /// <summary>
+    /// JSON mirror of <see cref="AccountEndpoints.HandleResetPasswordAsync"/>.
+    /// Validates the supplied token via
+    /// <see cref="UserManager{TUser}.ResetPasswordAsync"/> (which rotates the
+    /// security stamp on success). Returns <c>404</c> when the email gate is
+    /// inactive. Never discloses whether the email or the token was wrong: an
+    /// unknown user and an invalid token both produce the identical
+    /// <c>400 { "error": "invalid_token" }</c> response, while the internal audit
+    /// events (<c>password.reset.failure.unknown_email</c> vs
+    /// <c>password.reset.failure.invalid_token</c>) stay distinct.
+    /// </summary>
+    /// <param name="httpContext">The current HTTP context.</param>
+    /// <param name="request">The JSON-bound request body.</param>
+    /// <param name="userManager">Identity user lookup + password reset.</param>
+    /// <param name="gate">Email-flow feature gate.</param>
+    /// <param name="auditWriter">Audit-event writer.</param>
+    /// <param name="cancellationToken">Request cancellation token.</param>
+    /// <returns>
+    /// <c>200 { "status": "ok" }</c> on success; <c>400</c> with
+    /// <c>{ "error": "password_mismatch" | "invalid_token" }</c> on failure;
+    /// <c>404</c> when the gate is inactive.
+    /// </returns>
+    internal static async Task<IResult> HandleApiResetPasswordAsync(
+        HttpContext httpContext,
+        [FromBody] ResetPasswordRequest request,
+        [FromServices] UserManager<HeimdallUser> userManager,
+        [FromServices] EmailFlowGate gate,
+        [FromServices] IAuditEventWriter auditWriter,
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(httpContext);
+        ArgumentNullException.ThrowIfNull(userManager);
+        ArgumentNullException.ThrowIfNull(gate);
+        ArgumentNullException.ThrowIfNull(auditWriter);
+
+        if (!gate.IsActive)
+        {
+            return Results.NotFound();
+        }
+
+        string email = request?.Email ?? string.Empty;
+        string token = request?.Token ?? string.Empty;
+        string password = request?.Password ?? string.Empty;
+        string confirmPassword = request?.ConfirmPassword ?? string.Empty;
+
+        string? ip = httpContext.Connection.RemoteIpAddress?.ToString();
+        string? userAgent = TruncateUserAgent(httpContext.Request.Headers.UserAgent.ToString());
+        string emailDomain = ExtractEmailDomain(email);
+
+        if (!string.Equals(password, confirmPassword, StringComparison.Ordinal))
+        {
+            return Results.Json(
+                new { error = "password_mismatch" },
+                statusCode: StatusCodes.Status400BadRequest,
+                contentType: ContentTypeJson);
+        }
+
+        HeimdallUser? user = await userManager.FindByEmailAsync(email).ConfigureAwait(false);
+        if (user is null)
+        {
+            string unknownPayload = JsonSerializer.Serialize(new { submitted_email_domain = emailDomain });
+            await TryWriteAuditAsync(httpContext, auditWriter, new AuditEvent
+            {
+                ActorUserId = null,
+                EventType = "password.reset.failure.unknown_email",
+                Target = null,
+                Ip = ip,
+                UserAgent = userAgent,
+                PayloadJson = unknownPayload,
+            }, cancellationToken).ConfigureAwait(false);
+
+            // Never disclose whether the email or the token was the problem.
+            return Results.Json(
+                new { error = "invalid_token" },
+                statusCode: StatusCodes.Status400BadRequest,
+                contentType: ContentTypeJson);
+        }
+
+        IdentityResult result = await userManager.ResetPasswordAsync(user, token, password).ConfigureAwait(false);
+
+        if (result.Succeeded)
+        {
+            string payload = JsonSerializer.Serialize(new { email_domain = emailDomain });
+            await TryWriteAuditAsync(httpContext, auditWriter, new AuditEvent
+            {
+                ActorUserId = user.Id,
+                EventType = "password.reset.success",
+                Target = user.Id.ToString(),
+                Ip = ip,
+                UserAgent = userAgent,
+                PayloadJson = payload,
+            }, cancellationToken).ConfigureAwait(false);
+
+            return Results.Json(
+                new { status = "ok" },
+                statusCode: StatusCodes.Status200OK,
+                contentType: ContentTypeJson);
+        }
+
+        string failPayload = JsonSerializer.Serialize(new
+        {
+            email_domain = emailDomain,
+            error_codes = ExtractIdentityErrorCodes(result),
+        });
+        await TryWriteAuditAsync(httpContext, auditWriter, new AuditEvent
+        {
+            ActorUserId = user.Id,
+            EventType = "password.reset.failure.invalid_token",
+            Target = user.Id.ToString(),
+            Ip = ip,
+            UserAgent = userAgent,
+            PayloadJson = failPayload,
+        }, cancellationToken).ConfigureAwait(false);
+
+        return Results.Json(
+            new { error = "invalid_token" },
+            statusCode: StatusCodes.Status400BadRequest,
+            contentType: ContentTypeJson);
+    }
+
     // ---- Local mirrors of the AccountEndpoints helpers ------------------------
     // The originals are private static so cannot be reused across files. Keeping
     // them small and identical keeps the audit-payload conventions consistent
@@ -829,5 +1314,46 @@ public static class ApiAuthEndpoints
                 "Failed to write audit event {EventType}; token flow continued without audit.",
                 auditEvent.EventType);
         }
+    }
+
+    /// <summary>
+    /// Cheap structural check for "looks like an email" — non-empty, exactly one '@',
+    /// at least one character on each side. Identity will reject obviously-broken
+    /// addresses too, but this rejects them before allocating a HeimdallUser. Mirrors
+    /// <c>AccountEndpoints.IsLikelyEmail</c>.
+    /// </summary>
+    private static bool IsLikelyEmail(string email)
+    {
+        if (string.IsNullOrWhiteSpace(email))
+        {
+            return false;
+        }
+
+        int atIdx = email.IndexOf('@', StringComparison.Ordinal);
+        if (atIdx <= 0 || atIdx >= email.Length - 1)
+        {
+            return false;
+        }
+
+        return email.IndexOf('@', atIdx + 1) < 0;
+    }
+
+    /// <summary>
+    /// Projects an <see cref="IdentityResult"/>'s errors into a simple array of
+    /// error codes. Codes are not secret — see Identity's IdentityErrorDescriber —
+    /// so they are safe to surface in audit payloads and response bodies. Mirrors
+    /// <c>AccountEndpoints.ExtractIdentityErrorCodes</c>.
+    /// </summary>
+    private static string[] ExtractIdentityErrorCodes(IdentityResult result)
+    {
+        if (result.Errors is null)
+        {
+            return Array.Empty<string>();
+        }
+
+        return result.Errors
+            .Where(err => !string.IsNullOrEmpty(err.Code))
+            .Select(err => err.Code)
+            .ToArray();
     }
 }
