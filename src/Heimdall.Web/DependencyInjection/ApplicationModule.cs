@@ -1,14 +1,17 @@
 using System;
 using Autofac;
+using FluentValidation;
 using Heimdall.BLL.Authorization;
 using Heimdall.BLL.Authorization.OpenFga;
 using Heimdall.BLL.Enrollment;
 using Heimdall.BLL.Mapping;
 using Heimdall.BLL.Services;
 using Heimdall.BLL.Tokens;
+using Heimdall.Core.Dtos;
 using Heimdall.Core.Interfaces;
 using Heimdall.DAL.Caching;
 using Heimdall.DAL.Repositories;
+using Heimdall.Web.Validation;
 using Microsoft.Extensions.Configuration;
 
 namespace Heimdall.Web.DependencyInjection;
@@ -43,6 +46,15 @@ public class ApplicationModule : Autofac.Module
 
         // Services
         builder.RegisterType<TicketService>().As<ITicketService>().InstancePerLifetimeScope();
+
+        // Phase 6.5 (docs/proposals/phase-6-adr.md §5, Option C "Hybrid") — FluentValidation
+        // is the authoritative server-side validation boundary for the ticket API, mirroring
+        // the frontend Zod schema. Registered per lifetime scope to match the request-scoped
+        // handlers that resolve IValidator<TicketDto>.
+        builder
+            .RegisterType<TicketDtoValidator>()
+            .As<IValidator<TicketDto>>()
+            .InstancePerLifetimeScope();
 
         // Phase 3.6 step 11 — admin tuple-management surface. Routes admin
         // membership Add/Remove through the existing ITupleWriter seam so the
