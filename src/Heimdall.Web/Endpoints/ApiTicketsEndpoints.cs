@@ -6,6 +6,8 @@ using System.Net.Http;
 using System.Security.Claims;
 using System.Threading;
 using System.Threading.Tasks;
+using FluentValidation;
+using FluentValidation.Results;
 using Heimdall.BLL.Authorization.OpenFga;
 using Heimdall.Core.Auditing;
 using Heimdall.Core.Dtos;
@@ -247,19 +249,24 @@ public static class ApiTicketsEndpoints
         HttpContext httpContext,
         [FromBody] TicketDto dto,
         [FromServices] ITicketService ticketService,
+        [FromServices] IValidator<TicketDto> ticketValidator,
         CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(httpContext);
         ArgumentNullException.ThrowIfNull(ticketService);
+        ArgumentNullException.ThrowIfNull(ticketValidator);
 
         if (dto is null)
         {
             return UnprocessableEntity("Request body is required.");
         }
 
-        if (!TryValidate(dto, out IDictionary<string, string[]> errors))
+        ValidationResult validationResult = await ticketValidator
+            .ValidateAsync(dto, cancellationToken)
+            .ConfigureAwait(false);
+        if (!validationResult.IsValid)
         {
-            return ValidationProblem(errors);
+            return ValidationProblem(ToErrorDictionary(validationResult));
         }
 
         TicketDto created = await ticketService
@@ -277,10 +284,12 @@ public static class ApiTicketsEndpoints
         [FromRoute(Name = TicketIdRouteKey)] int ticketId,
         [FromBody] TicketDto dto,
         [FromServices] ITicketService ticketService,
+        [FromServices] IValidator<TicketDto> ticketValidator,
         CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(httpContext);
         ArgumentNullException.ThrowIfNull(ticketService);
+        ArgumentNullException.ThrowIfNull(ticketValidator);
 
         if (dto is null)
         {
@@ -292,9 +301,12 @@ public static class ApiTicketsEndpoints
             dto.Id = ticketId;
         }
 
-        if (!TryValidate(dto, out IDictionary<string, string[]> errors))
+        ValidationResult validationResult = await ticketValidator
+            .ValidateAsync(dto, cancellationToken)
+            .ConfigureAwait(false);
+        if (!validationResult.IsValid)
         {
-            return ValidationProblem(errors);
+            return ValidationProblem(ToErrorDictionary(validationResult));
         }
 
         bool updated = await ticketService
@@ -432,56 +444,22 @@ public static class ApiTicketsEndpoints
         return Guid.TryParse(rawSub, out actorId);
     }
 
-    private static bool TryValidate(TicketDto dto, out IDictionary<string, string[]> errors)
+    private static IDictionary<string, string[]> ToErrorDictionary(ValidationResult validationResult)
     {
         Dictionary<string, List<string>> collected = new(StringComparer.Ordinal);
 
-        if (string.IsNullOrWhiteSpace(dto.Title))
+        foreach (ValidationFailure failure in validationResult.Errors)
         {
-            AddError(collected, nameof(TicketDto.Title), "Title is required.");
-        }
-        else if (dto.Title.Length > 200)
-        {
-            AddError(collected, nameof(TicketDto.Title), "Title must be 200 characters or fewer.");
+            if (!collected.TryGetValue(failure.PropertyName, out List<string>? list))
+            {
+                list = new List<string>(1);
+                collected[failure.PropertyName] = list;
+            }
+
+            list.Add(failure.ErrorMessage);
         }
 
-        if (string.IsNullOrWhiteSpace(dto.Description))
-        {
-            AddError(collected, nameof(TicketDto.Description), "Description is required.");
-        }
-        else if (dto.Description.Length > 4000)
-        {
-            AddError(collected, nameof(TicketDto.Description), "Description must be 4000 characters or fewer.");
-        }
-
-        if (dto.ProjectId == Guid.Empty)
-        {
-            AddError(collected, nameof(TicketDto.ProjectId), "ProjectId is required.");
-        }
-
-        if (dto.TeamId == Guid.Empty)
-        {
-            AddError(collected, nameof(TicketDto.TeamId), "TeamId is required.");
-        }
-
-        if (dto.ReporterId == Guid.Empty)
-        {
-            AddError(collected, nameof(TicketDto.ReporterId), "ReporterId is required.");
-        }
-
-        errors = collected.ToDictionary(kv => kv.Key, kv => kv.Value.ToArray(), StringComparer.Ordinal);
-        return collected.Count == 0;
-    }
-
-    private static void AddError(Dictionary<string, List<string>> bag, string field, string message)
-    {
-        if (!bag.TryGetValue(field, out List<string>? list))
-        {
-            list = new List<string>(1);
-            bag[field] = list;
-        }
-
-        list.Add(message);
+        return collected.ToDictionary(kv => kv.Key, kv => kv.Value.ToArray(), StringComparer.Ordinal);
     }
 
     private static IResult ValidationProblem(IDictionary<string, string[]> errors) =>

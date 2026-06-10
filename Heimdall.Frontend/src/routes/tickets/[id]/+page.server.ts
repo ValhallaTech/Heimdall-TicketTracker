@@ -1,19 +1,27 @@
 /**
- * Ticket edit loader + update action — ports `TicketEdit.razor` (Phase 6.4).
+ * Ticket edit loader + update action — ports `TicketEdit.razor` and retrofits
+ * Superforms + Zod (Phase 6.5).
+ *
+ * Validation is layered per `docs/proposals/phase-6-adr.md` §5 (Option C —
+ * Hybrid): {@link editTicketSchema} drives instant inline UX validation in the
+ * browser, while the .NET API (`PUT /api/v1/tickets/{id}`) is the
+ * **authoritative trust boundary** via FluentValidation. The loader fetches the
+ * ticket and seeds the Superforms `form`; the action re-validates, forces `Id`
+ * to the route id, PUTs the PascalCase JSON, and maps API status codes
+ * (204 → redirect, 404 → `error(404)`, 422 → inline field errors).
  *
  * Authenticated: requires `event.locals.accessToken`; redirects to `/login`
- * otherwise. The loader fetches the ticket (`GET /api/v1/tickets/{id}`) and maps
- * the API status codes to SvelteKit errors (404 → `error(404)`, 403 →
- * `error(403)`). The default action PUTs the edited PascalCase JSON back
- * (`PUT /api/v1/tickets/{id}`, with `Id` forced to the route id) and maps 204 →
- * redirect, 422 → field errors, 404 → `error(404)`.
+ * otherwise. The loader maps 404 → `error(404)`, 403 → `error(403)`.
  *
  * Deviation: Team / Project / Reporter / Assignee are edited as raw id fields
  * (no lookup API yet) — see the new-ticket loader NOTE.
  */
 import { env } from '$env/dynamic/private';
 import { error, fail, redirect } from '@sveltejs/kit';
+import { superValidate, setError } from 'sveltekit-superforms';
+import { zod4 } from 'sveltekit-superforms/adapters';
 import { asTicket, fetchJson, parseValidationErrors } from '$lib/api/tickets';
+import { editTicketSchema } from '$lib/schemas/ticket';
 import type { Actions, PageServerLoad, RequestEvent } from './$types';
 
 const DEFAULT_INTERNAL_API_ORIGIN = 'http://127.0.0.1:5000';
@@ -26,20 +34,22 @@ function ticketUrl(id: string): string {
   return `${internalApiOrigin()}/api/v1/tickets/${encodeURIComponent(id)}`;
 }
 
-/** Read a string form field, trimming to '' when absent. */
-function readString(form: FormData, key: string): string {
-  const value = form.get(key);
-  return typeof value === 'string' ? value : '';
-}
+/** Editable leaf fields of the edit-ticket form (PascalCase, schema-aligned). */
+const EDIT_TICKET_FIELDS = [
+  'Id',
+  'Title',
+  'Description',
+  'Status',
+  'Priority',
+  'ProjectId',
+  'TeamId',
+  'ReporterId',
+  'AssigneeId',
+] as const;
+type EditTicketField = (typeof EDIT_TICKET_FIELDS)[number];
 
-/** Read an integer (enum) form field, falling back to a default. */
-function readInt(form: FormData, key: string, fallback: number): number {
-  const value = form.get(key);
-  if (typeof value !== 'string') {
-    return fallback;
-  }
-  const parsed = Number.parseInt(value, 10);
-  return Number.isNaN(parsed) ? fallback : parsed;
+function isEditTicketField(field: string): field is EditTicketField {
+  return (EDIT_TICKET_FIELDS as readonly string[]).includes(field);
 }
 
 export const load: PageServerLoad = async (event) => {
@@ -62,7 +72,24 @@ export const load: PageServerLoad = async (event) => {
     error(404);
   }
 
-  return { ticket };
+  // Seed the Superforms form from the fetched ticket (extra fields like
+  // DateCreated / DateUpdated are ignored by the schema).
+  const form = await superValidate(
+    {
+      Id: ticket.Id,
+      Title: ticket.Title,
+      Description: ticket.Description,
+      Status: ticket.Status,
+      Priority: ticket.Priority,
+      ProjectId: ticket.ProjectId,
+      TeamId: ticket.TeamId,
+      ReporterId: ticket.ReporterId,
+      AssigneeId: ticket.AssigneeId,
+    },
+    zod4(editTicketSchema),
+  );
+
+  return { ticket, form };
 };
 
 export const actions: Actions = {
@@ -78,24 +105,33 @@ export const actions: Actions = {
       error(404);
     }
 
-    const form = await event.request.formData();
-    const assigneeId = readString(form, 'assigneeId');
-    const values = {
-      // Id must equal the route id (the API rejects a mismatch).
+    const form = await superValidate(event.request, zod4(editTicketSchema));
+    // Id must equal the route id (the API rejects a mismatch).
+    form.data.Id = parsedId;
+
+    if (!form.valid) {
+      return fail(400, { form });
+    }
+
+    const assigneeId = form.data.AssigneeId;
+    const payload = {
       Id: parsedId,
-      Title: readString(form, 'title'),
-      Description: readString(form, 'description'),
-      Status: readInt(form, 'status', 0),
-      Priority: readInt(form, 'priority', 1),
-      ProjectId: readString(form, 'projectId'),
-      TeamId: readString(form, 'teamId'),
-      ReporterId: readString(form, 'reporterId'),
-      AssigneeId: assigneeId.length > 0 ? assigneeId : null,
+      Title: form.data.Title,
+      Description: form.data.Description,
+      Status: form.data.Status,
+      Priority: form.data.Priority,
+      ProjectId: form.data.ProjectId,
+      TeamId: form.data.TeamId,
+      ReporterId: form.data.ReporterId,
+      // An empty string / missing assignee means "unassigned" → null.
+      AssigneeId: assigneeId !== undefined && assigneeId !== null && assigneeId.length > 0
+        ? assigneeId
+        : null,
     };
 
     const result = await fetchJson(event.fetch, ticketUrl(id), accessToken, {
       method: 'PUT',
-      body: JSON.stringify(values),
+      body: JSON.stringify(payload),
     });
 
     if (result.status === 204) {
@@ -104,13 +140,20 @@ export const actions: Actions = {
     if (result.status === 404) {
       error(404);
     }
+
     if (result.status === 422) {
-      return fail(422, { errors: parseValidationErrors(result.data), values });
+      // Surface the API's authoritative validation errors inline.
+      for (const [field, messages] of Object.entries(parseValidationErrors(result.data))) {
+        if (isEditTicketField(field)) {
+          setError(form, field, messages);
+        } else {
+          setError(form, messages);
+        }
+      }
+      return fail(422, { form });
     }
 
-    return fail(result.status === 0 ? 400 : result.status, {
-      errors: { '': ['Unable to save the ticket. Please try again.'] },
-      values,
-    });
+    setError(form, 'Unable to save the ticket. Please try again.');
+    return fail(result.status === 0 ? 400 : result.status, { form });
   },
 };

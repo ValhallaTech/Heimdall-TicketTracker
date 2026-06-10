@@ -52,10 +52,14 @@
   },
   "packageManager": "yarn@4.16.0",
   "dependencies": {
+    "@internationalized/date": "3.12.2",
     "@lucide/svelte": "1.17.0",
     "bits-ui": "2.18.1",
     "clsx": "2.1.1",
+    "formsnap": "2.0.1",
+    "sveltekit-superforms": "2.30.1",
     "tailwind-merge": "3.6.0",
-    "tailwind-variants": "3.2.2"
+    "tailwind-variants": "3.2.2",
+    "zod": "4.4.3"
   }
 }

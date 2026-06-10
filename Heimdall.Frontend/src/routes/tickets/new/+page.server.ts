@@ -1,13 +1,18 @@
 /**
- * New-ticket form action — ports the create path from `NewTicket.razor`
- * (Phase 6.4).
+ * New-ticket loader + form action — ports the create path from `NewTicket.razor`
+ * and retrofits Superforms + Zod (Phase 6.5).
+ *
+ * Validation is layered per `docs/proposals/phase-6-adr.md` §5 (Option C —
+ * Hybrid): the {@link newTicketSchema} Zod schema drives instant inline UX
+ * feedback in the browser, while the .NET API (`POST /api/v1/tickets`) remains
+ * the **authoritative trust boundary** via FluentValidation. The browser result
+ * is never trusted — the same PascalCase JSON is still POSTed to the API and any
+ * API 422 is mapped back onto the Superforms `form` so server-only rules surface
+ * inline too.
  *
  * Authenticated: requires `event.locals.accessToken`; redirects to `/login`
- * otherwise. Reads the form fields, sets `ReporterId` to the current user
- * (mirroring the Razor default of the signed-in user as reporter), and POSTs
- * PascalCase JSON to `POST /api/v1/tickets`. On 201 it redirects to the created
- * ticket; on 422 it returns the field-keyed validation errors plus the
- * submitted values so the form can re-render them.
+ * otherwise. `ReporterId` defaults to the signed-in user (mirroring the Razor
+ * default) and `AssigneeId` is null on create.
  *
  * Deviation from parity: `NewTicket.razor` populates Team / Project / Reporter /
  * Assignee from repositories that the JSON ticket API does not expose. Until a
@@ -17,8 +22,11 @@
  */
 import { env } from '$env/dynamic/private';
 import { fail, redirect } from '@sveltejs/kit';
+import { superValidate, setError } from 'sveltekit-superforms';
+import { zod4 } from 'sveltekit-superforms/adapters';
 import { asTicket, fetchJson, parseValidationErrors } from '$lib/api/tickets';
-import type { Actions, RequestEvent } from './$types';
+import { newTicketSchema } from '$lib/schemas/ticket';
+import type { Actions, PageServerLoad, RequestEvent } from './$types';
 
 const DEFAULT_INTERNAL_API_ORIGIN = 'http://127.0.0.1:5000';
 
@@ -26,21 +34,28 @@ function internalApiOrigin(): string {
   return env.INTERNAL_API_ORIGIN ?? DEFAULT_INTERNAL_API_ORIGIN;
 }
 
-/** Read a string form field, trimming to '' when absent. */
-function readString(form: FormData, key: string): string {
-  const value = form.get(key);
-  return typeof value === 'string' ? value : '';
+/** Editable leaf fields of the new-ticket form (PascalCase, schema-aligned). */
+const NEW_TICKET_FIELDS = [
+  'Title',
+  'Description',
+  'Status',
+  'Priority',
+  'ProjectId',
+  'TeamId',
+] as const;
+type NewTicketField = (typeof NEW_TICKET_FIELDS)[number];
+
+function isNewTicketField(field: string): field is NewTicketField {
+  return (NEW_TICKET_FIELDS as readonly string[]).includes(field);
 }
 
-/** Read an integer (enum) form field, falling back to a default. */
-function readInt(form: FormData, key: string, fallback: number): number {
-  const value = form.get(key);
-  if (typeof value !== 'string') {
-    return fallback;
+export const load: PageServerLoad = async (event) => {
+  if (event.locals.accessToken === null) {
+    redirect(303, '/login?returnUrl=' + encodeURIComponent(event.url.pathname));
   }
-  const parsed = Number.parseInt(value, 10);
-  return Number.isNaN(parsed) ? fallback : parsed;
-}
+
+  return { form: await superValidate(zod4(newTicketSchema)) };
+};
 
 export const actions: Actions = {
   default: async (event: RequestEvent) => {
@@ -49,14 +64,18 @@ export const actions: Actions = {
       redirect(303, '/login?returnUrl=' + encodeURIComponent(event.url.pathname));
     }
 
-    const form = await event.request.formData();
-    const values = {
-      Title: readString(form, 'title'),
-      Description: readString(form, 'description'),
-      Status: readInt(form, 'status', 0),
-      Priority: readInt(form, 'priority', 1),
-      ProjectId: readString(form, 'projectId'),
-      TeamId: readString(form, 'teamId'),
+    const form = await superValidate(event.request, zod4(newTicketSchema));
+    if (!form.valid) {
+      return fail(400, { form });
+    }
+
+    const payload = {
+      Title: form.data.Title,
+      Description: form.data.Description,
+      Status: form.data.Status,
+      Priority: form.data.Priority,
+      ProjectId: form.data.ProjectId,
+      TeamId: form.data.TeamId,
       // Reporter defaults to the signed-in user, mirroring NewTicket.razor.
       ReporterId: event.locals.user?.id ?? '',
       AssigneeId: null,
@@ -66,7 +85,7 @@ export const actions: Actions = {
       event.fetch,
       `${internalApiOrigin()}/api/v1/tickets`,
       accessToken,
-      { method: 'POST', body: JSON.stringify(values) },
+      { method: 'POST', body: JSON.stringify(payload) },
     );
 
     if (result.status === 201) {
@@ -79,12 +98,20 @@ export const actions: Actions = {
     }
 
     if (result.status === 422) {
-      return fail(422, { errors: parseValidationErrors(result.data), values });
+      // Map the API's field-keyed validation errors onto the Superforms form so
+      // server-authoritative rules surface inline. Unknown / non-form fields
+      // (e.g. ReporterId, which is server-supplied) fall back to the form level.
+      for (const [field, messages] of Object.entries(parseValidationErrors(result.data))) {
+        if (isNewTicketField(field)) {
+          setError(form, field, messages);
+        } else {
+          setError(form, messages);
+        }
+      }
+      return fail(422, { form });
     }
 
-    return fail(result.status === 0 ? 400 : result.status, {
-      errors: { '': ['Unable to create the ticket. Please try again.'] },
-      values,
-    });
+    setError(form, 'Unable to create the ticket. Please try again.');
+    return fail(result.status === 0 ? 400 : result.status, { form });
   },
 };

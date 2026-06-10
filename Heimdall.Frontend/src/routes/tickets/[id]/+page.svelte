@@ -1,29 +1,38 @@
 <script lang="ts">
   /**
-   * Ticket edit form — ports `TicketEdit.razor` (Phase 6.4).
+   * Ticket edit form — ports `TicketEdit.razor` and retrofits Superforms +
+   * Formsnap + Zod (Phase 6.5).
    *
-   * Prefilled from the loaded ticket (`data.ticket`); after a failed submit the
-   * action returns `form.values` (which take precedence so the user's edits are
-   * preserved) and `form.errors` (surfaced per field). Posts to the co-located
-   * default action, progressively enhanced with `use:enhance`.
+   * The form is seeded from the loaded ticket (`data.form`, populated in the
+   * loader from `data.ticket`). {@link editTicketSchema} drives instant inline
+   * Zod validation in the browser (`zod4Client`); the co-located action
+   * re-validates and PUTs to the .NET API, which is the authoritative trust
+   * boundary (`docs/proposals/phase-6-adr.md` §5). Field-level errors render via
+   * Formsnap `<FieldErrors />`; the form-level region (role="alert") surfaces the
+   * generic submit failure and any API errors mapped onto `$errors._errors`.
    *
    * Deviation: Team / Project / Reporter / Assignee are raw id fields (no lookup
    * API yet) — see the loader NOTE.
    */
-  import { enhance } from '$app/forms';
   import { resolve } from '$app/paths';
+  import { superForm } from 'sveltekit-superforms';
+  import { zod4Client } from 'sveltekit-superforms/adapters';
+  import { Field, Control, Label, FieldErrors } from 'formsnap';
   import {
     TicketStatus,
     TicketPriority,
     ticketStatusLabels,
     ticketPriorityLabels,
   } from '$lib/api/tickets';
-  import type { ActionData, PageData } from './$types';
+  import { editTicketSchema } from '$lib/schemas/ticket';
+  import type { PageData } from './$types';
 
-  let { data, form }: { data: PageData; form: ActionData } = $props();
+  let { data }: { data: PageData } = $props();
 
-  /** Effective values: the user's last submission wins over the loaded ticket. */
-  const values = $derived(form?.values ?? data.ticket);
+  const form = superForm(data.form, {
+    validators: zod4Client(editTicketSchema),
+  });
+  const { form: formData, errors, enhance } = form;
 
   const statusOptions = [
     TicketStatus.Open,
@@ -38,11 +47,8 @@
     TicketPriority.Critical,
   ];
 
-  function fieldError(field: string): string {
-    return form?.errors?.[field]?.[0] ?? '';
-  }
-
-  const formError = $derived(fieldError(''));
+  /** Form-level (non field-specific) errors, e.g. a generic API failure. */
+  const formErrors = $derived($errors._errors ?? []);
 </script>
 
 <svelte:head>
@@ -60,135 +66,143 @@
     </div>
 
     <form method="POST" use:enhance class="space-y-5 p-6" data-testid="ticket-edit-form">
-      {#if formError}
+      {#if formErrors.length > 0}
         <div
           class="border-destructive/40 bg-destructive/10 rounded-lg border px-4 py-3 text-sm"
           role="alert"
         >
-          {formError}
+          {formErrors.join(' ')}
         </div>
       {/if}
 
-      <div>
-        <label for="title" class="mb-1 block text-sm font-medium">Title</label>
-        <input
-          id="title"
-          name="title"
-          required
-          value={values.Title}
-          aria-invalid={fieldError('Title') ? 'true' : undefined}
-          class="border-input bg-background w-full rounded-lg border px-3 py-2"
-        />
-        {#if fieldError('Title')}
-          <p class="text-destructive mt-1 text-sm">{fieldError('Title')}</p>
-        {/if}
-      </div>
+      <Field {form} name="Title">
+        <Control>
+          {#snippet children({ props })}
+            <Label class="mb-1 block text-sm font-medium">Title</Label>
+            <input
+              {...props}
+              bind:value={$formData.Title}
+              class="border-input bg-background w-full rounded-lg border px-3 py-2"
+            />
+          {/snippet}
+        </Control>
+        <FieldErrors class="text-destructive mt-1 text-sm" />
+      </Field>
 
-      <div>
-        <label for="description" class="mb-1 block text-sm font-medium">Description</label>
-        <textarea
-          id="description"
-          name="description"
-          rows="5"
-          required
-          aria-invalid={fieldError('Description') ? 'true' : undefined}
-          class="border-input bg-background w-full rounded-lg border px-3 py-2"
-          >{values.Description}</textarea
-        >
-        {#if fieldError('Description')}
-          <p class="text-destructive mt-1 text-sm">{fieldError('Description')}</p>
-        {/if}
+      <Field {form} name="Description">
+        <Control>
+          {#snippet children({ props })}
+            <Label class="mb-1 block text-sm font-medium">Description</Label>
+            <textarea
+              {...props}
+              bind:value={$formData.Description}
+              rows="5"
+              class="border-input bg-background w-full rounded-lg border px-3 py-2"
+            ></textarea>
+          {/snippet}
+        </Control>
+        <FieldErrors class="text-destructive mt-1 text-sm" />
+      </Field>
+
+      <div class="grid gap-4 sm:grid-cols-2">
+        <Field {form} name="Status">
+          <Control>
+            {#snippet children({ props })}
+              <Label class="mb-1 block text-sm font-medium">Status</Label>
+              <select
+                {...props}
+                bind:value={$formData.Status}
+                class="border-input bg-background w-full rounded-lg border px-3 py-2"
+              >
+                {#each statusOptions as status (status)}
+                  <option value={status}>{ticketStatusLabels[status]}</option>
+                {/each}
+              </select>
+            {/snippet}
+          </Control>
+          <FieldErrors class="text-destructive mt-1 text-sm" />
+        </Field>
+
+        <Field {form} name="Priority">
+          <Control>
+            {#snippet children({ props })}
+              <Label class="mb-1 block text-sm font-medium">Priority</Label>
+              <select
+                {...props}
+                bind:value={$formData.Priority}
+                class="border-input bg-background w-full rounded-lg border px-3 py-2"
+              >
+                {#each priorityOptions as priority (priority)}
+                  <option value={priority}>{ticketPriorityLabels[priority]}</option>
+                {/each}
+              </select>
+            {/snippet}
+          </Control>
+          <FieldErrors class="text-destructive mt-1 text-sm" />
+        </Field>
       </div>
 
       <div class="grid gap-4 sm:grid-cols-2">
-        <div>
-          <label for="status" class="mb-1 block text-sm font-medium">Status</label>
-          <select
-            id="status"
-            name="status"
-            class="border-input bg-background w-full rounded-lg border px-3 py-2"
-          >
-            {#each statusOptions as status (status)}
-              <option value={status} selected={status === values.Status}>
-                {ticketStatusLabels[status]}
-              </option>
-            {/each}
-          </select>
-        </div>
-        <div>
-          <label for="priority" class="mb-1 block text-sm font-medium">Priority</label>
-          <select
-            id="priority"
-            name="priority"
-            class="border-input bg-background w-full rounded-lg border px-3 py-2"
-          >
-            {#each priorityOptions as priority (priority)}
-              <option value={priority} selected={priority === values.Priority}>
-                {ticketPriorityLabels[priority]}
-              </option>
-            {/each}
-          </select>
-        </div>
+        <Field {form} name="TeamId">
+          <Control>
+            {#snippet children({ props })}
+              <Label class="mb-1 block text-sm font-medium">Team</Label>
+              <input
+                {...props}
+                bind:value={$formData.TeamId}
+                class="border-input bg-background w-full rounded-lg border px-3 py-2"
+              />
+            {/snippet}
+          </Control>
+          <FieldErrors class="text-destructive mt-1 text-sm" />
+        </Field>
+
+        <Field {form} name="ProjectId">
+          <Control>
+            {#snippet children({ props })}
+              <Label class="mb-1 block text-sm font-medium">Project</Label>
+              <input
+                {...props}
+                bind:value={$formData.ProjectId}
+                class="border-input bg-background w-full rounded-lg border px-3 py-2"
+              />
+            {/snippet}
+          </Control>
+          <FieldErrors class="text-destructive mt-1 text-sm" />
+        </Field>
       </div>
 
       <div class="grid gap-4 sm:grid-cols-2">
-        <div>
-          <label for="teamId" class="mb-1 block text-sm font-medium">Team</label>
-          <input
-            id="teamId"
-            name="teamId"
-            required
-            value={values.TeamId}
-            aria-invalid={fieldError('TeamId') ? 'true' : undefined}
-            class="border-input bg-background w-full rounded-lg border px-3 py-2"
-          />
-          {#if fieldError('TeamId')}
-            <p class="text-destructive mt-1 text-sm">{fieldError('TeamId')}</p>
-          {/if}
-        </div>
-        <div>
-          <label for="projectId" class="mb-1 block text-sm font-medium">Project</label>
-          <input
-            id="projectId"
-            name="projectId"
-            required
-            value={values.ProjectId}
-            aria-invalid={fieldError('ProjectId') ? 'true' : undefined}
-            class="border-input bg-background w-full rounded-lg border px-3 py-2"
-          />
-          {#if fieldError('ProjectId')}
-            <p class="text-destructive mt-1 text-sm">{fieldError('ProjectId')}</p>
-          {/if}
-        </div>
-      </div>
+        <Field {form} name="ReporterId">
+          <Control>
+            {#snippet children({ props })}
+              <Label class="mb-1 block text-sm font-medium">Reporter</Label>
+              <input
+                {...props}
+                bind:value={$formData.ReporterId}
+                class="border-input bg-background w-full rounded-lg border px-3 py-2"
+              />
+            {/snippet}
+          </Control>
+          <FieldErrors class="text-destructive mt-1 text-sm" />
+        </Field>
 
-      <div class="grid gap-4 sm:grid-cols-2">
-        <div>
-          <label for="reporterId" class="mb-1 block text-sm font-medium">Reporter</label>
-          <input
-            id="reporterId"
-            name="reporterId"
-            required
-            value={values.ReporterId}
-            aria-invalid={fieldError('ReporterId') ? 'true' : undefined}
-            class="border-input bg-background w-full rounded-lg border px-3 py-2"
-          />
-          {#if fieldError('ReporterId')}
-            <p class="text-destructive mt-1 text-sm">{fieldError('ReporterId')}</p>
-          {/if}
-        </div>
-        <div>
-          <label for="assigneeId" class="mb-1 block text-sm font-medium">
-            Assignee <span class="text-muted-foreground font-normal">(optional)</span>
-          </label>
-          <input
-            id="assigneeId"
-            name="assigneeId"
-            value={values.AssigneeId ?? ''}
-            placeholder="Unassigned"
-            class="border-input bg-background w-full rounded-lg border px-3 py-2"
-          />
-        </div>
+        <Field {form} name="AssigneeId">
+          <Control>
+            {#snippet children({ props })}
+              <Label class="mb-1 block text-sm font-medium">
+                Assignee <span class="text-muted-foreground font-normal">(optional)</span>
+              </Label>
+              <input
+                {...props}
+                bind:value={$formData.AssigneeId}
+                placeholder="Unassigned"
+                class="border-input bg-background w-full rounded-lg border px-3 py-2"
+              />
+            {/snippet}
+          </Control>
+          <FieldErrors class="text-destructive mt-1 text-sm" />
+        </Field>
       </div>
 
       <div class="flex gap-3 pt-2">
